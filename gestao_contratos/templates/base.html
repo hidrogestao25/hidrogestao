@@ -74,7 +74,6 @@
             flex: 1;
         }
 
-
         footer {
             background-color: #022935;
             color: white;
@@ -87,10 +86,26 @@
 
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container-fluid">
-          <a class="navbar-brand" href="{% url 'home' %}">
+          <a class="navbar-brand d-flex align-items-center" href="{% url 'home' %}">
             <img src="{% static 'img/HidroBR_logo2.png' %}" alt="Logo" height="50" class="me-2">
-            HIDROGestão
+            <div>
+                <div>HIDROGestão</div>
+                {% if user.is_authenticated %}
+                <div class="d-flex flex-wrap align-items-center mt-1" style="font-size: 0.9rem;">
+                    <span class="badge bg-primary me-1">Usuário: {{ user.get_full_name|default:user.username }}</span>
+                    <span class="badge bg-success me-1">Grupo: {{ user.grupo|title }}</span>
+                    {% if user.centros.exists %}
+                        {% for centro in user.centros.all %}
+                            <span class="badge bg-warning text-dark me-1">{{ centro.nome }}</span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="badge bg-secondary me-1">Nenhum Centro</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
           </a>
+
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
                 aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -101,85 +116,77 @@
 
                     {% if user.is_authenticated %}
 
-
                     <!-- Solicitações Dropdown -->
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                             <i class="bi bi-clipboard2-plus-fill"></i> Solicitações
-                            <!--span class="badge badge-custom">3</span -->
                         </a>
                         <ul class="dropdown-menu">
                             {% if request.user.grupo == 'coordenador' %}
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-plus-square-fill"></i> Solicitação de Prospecção</a></li>
-                              <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i>Minhas Solicitações</a></li>
+                              <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Minhas Solicitações</a></li>
                             {% elif request.user.grupo == 'financeiro' or request.user.grupo == 'gerente' %}
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-plus-square-fill"></i> Solicitação de Prospecção</a></li>
                               <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Minhas Solicitações</a></li>
                               <li><a class="dropdown-item" href="{% url 'elaboracao_contrato' %}"><i class="bi bi-feather"></i> Elaboração de Contrato</a></li>
                             {% endif %}
                             {% if request.user.grupo == 'suprimento' %}
-                              <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i>Lista de Solicitações</a></li>
+                              <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Lista de Solicitações</a></li>
                               <li><a class="dropdown-item" href="{% url 'elaboracao_contrato' %}"><i class="bi bi-feather"></i> Elaboração de Contrato</a></li>
                             {% endif %}
-                            <!--<li><a class="dropdown-item" href="#"><i class="bi bi-people-fill"></i> Contratos com Terceiros</a></li>
-                            <li><a class="dropdown-item" href="#"><i class="bi bi-pencil-square"></i> Aditivos</a></li> -->
                         </ul>
                     </li>
 
+                    <!-- Contratos Dropdown -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-file-text-fill"></i> Contratos
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{% url 'lista_contratos' %}"><i class="bi bi-person-lines-fill"></i> Contratos com Clientes</a></li>
+                            <li><a class="dropdown-item" href="{% url 'lista_contratos_fornecedores' %}"><i class="bi bi-people-fill"></i> Contratos com Terceiros</a></li>
+                            <li><a class="dropdown-item" href="#"><i class="bi bi-pencil-square"></i> Aditivos</a></li>
+                        </ul>
+                    </li>
 
-                        <!-- Contratos Dropdown -->
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-file-text-fill"></i> Contratos
-                                <!--span class="badge badge-custom">3</span -->
-                            </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{% url 'lista_contratos' %}"><i class="bi bi-person-lines-fill"></i> Contratos com Clientes</a></li>
-                                <li><a class="dropdown-item" href="{% url 'lista_contratos_fornecedores' %}"><i class="bi bi-people-fill"></i> Contratos com Terceiros</a></li>
-                                <li><a class="dropdown-item" href="#"><i class="bi bi-pencil-square"></i> Aditivos</a></li>
-                            </ul>
-                        </li>
+                    <!-- Clientes Dropdown -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-briefcase-fill"></i> Clientes
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{% url 'lista_clientes' %}"><i class="bi bi-list-ul"></i> Lista de Clientes</a></li>
+                            {% if request.user.grupo == 'suprimento' %}
+                              <li><a class="dropdown-item" href="{% url 'novo_cliente' %}"><i class="bi bi-plus-square-fill"></i> Novo Cliente</a></li>
+                            {% endif %}
+                        </ul>
+                    </li>
 
-                        <!-- Clientes Dropdown -->
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-briefcase-fill"></i> Clientes
-                            </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{% url 'lista_clientes' %}"><i class="bi bi-list-ul"></i> Lista de Clientes</a></li>
-                                {% if request.user.grupo == 'suprimento' %}
-                                  <li><a class="dropdown-item" href="{% url 'novo_cliente' %}"><i class="bi bi-plus-square-fill"></i> Novo Cliente</a></li>
-                                {% endif %}
+                    <!-- Fornecedores Dropdown -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-truck"></i> Fornecedores
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{% url 'lista_fornecedores' %}"><i class="bi bi-list-ul"></i> Lista de Fornecedores</a></li>
+                            {% if request.user.grupo == 'suprimento' %}
+                              <li><a class="dropdown-item" href="{% url 'novo_fornecedor' %}"><i class="bi bi-plus-square-fill"></i> Novo Fornecedor</a></li>
+                            {% endif %}
+                            {% if request.user.grupo == 'coordenador' %}
+                              <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-search"></i> Solicitação de Prospecção</a></li>
+                            {% endif %}
+                            <li><a class="dropdown-item" href="#"><i class="bi bi-star-fill"></i> Avaliações</a></li>
+                        </ul>
+                    </li>
 
-                                <!-- <li><a class="dropdown-item" href="#"><i class="bi bi-file-earmark-diff"></i> Propostas</a></li> -->
-                            </ul>
-                        </li>
-
-                        <!-- Fornecedores Dropdown -->
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-truck"></i> Fornecedores
-                            </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{% url 'lista_fornecedores' %}"><i class="bi bi-list-ul"></i> Lista de Fornecedores</a></li>
-                                {% if request.user.grupo == 'suprimento' %}
-                                  <li><a class="dropdown-item" href="{% url 'novo_fornecedor' %}"><i class="bi bi-plus-square-fill"></i> Novo Fornecedor</a></li>
-                                {% endif %}
-                                {% if request.user.grupo == 'coordenador' %}
-                                  <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-search"></i> Solicitação de Prospecção</a></li>
-                                {% endif %}
-                                <li><a class="dropdown-item" href="#"><i class="bi bi-star-fill"></i> Avaliações</a></li>
-                            </ul>
-                        </li>
-
-                        <li class="nav-item">
-                          <form method="post" action="{% url 'logout' %}" style="display: inline;">
-                            {% csrf_token %}
-                            <button type="submit" class="nav-link btn btn-link" style="border: none; background: none;">
-                              <i class="bi bi-box-arrow-right"></i> Sair
-                            </button>
-                          </form>
-                        </li>
+                    <li class="nav-item">
+                      <form method="post" action="{% url 'logout' %}" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="nav-link btn btn-link" style="border: none; background: none;">
+                          <i class="bi bi-box-arrow-right"></i> Sair
+                        </button>
+                      </form>
+                    </li>
 
                     {% else %}
                         <li class="nav-item">
