@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Propostas - {{ solicitacao.contrato }}</h2>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Fornecedor</th>
+                    <th>Valor da Proposta</th>
+                    <th>Arquivo PDF</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for form in formset %}
+                <tr>
+                    <td>{{ form.instance.fornecedor.nome }}</td>
+                    <td>{{ form.valor_proposta }}</td>
+                    <td>
+                        {{ form.arquivo_proposta }}
+                        {% if form.instance.arquivo_proposta %}
+                            <a href="{{ form.instance.arquivo_proposta.url }}" target="_blank">📄 Ver Proposta</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="text-end">
+            <button type="submit" class="btn btn-success">Salvar Propostas</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

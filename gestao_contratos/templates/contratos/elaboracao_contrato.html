@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container mt-4">
+    <h2>Elaboração de Contratos</h2>
+
+    {% if lista_solicitacoes %}
+        <table class="table table-bordered table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>Solicitação</th>
+                    <th>Fornecedor Selecionado</th>
+                    <th>Valor da Proposta</th>
+                    <th>Prazo de Validade</th>
+                    <th>Arquivo</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in lista_solicitacoes %}
+                    <tr style="cursor: pointer;" onclick="window.location='{% url 'detalhes_solicitacao' item.solicitacao.id %}'">
+                        <td>{{ item.solicitacao.contrato }}</td>
+                        <td>{{ item.fornecedor.nome }}</td>
+                        <td>
+                            {% if item.proposta %}
+                                R$ {{ item.proposta.valor_proposta|floatformat:2 }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.proposta and item.proposta.prazo_validade %}
+                                {{ item.proposta.prazo_validade }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.proposta and item.proposta.arquivo_proposta %}
+                                <a href="{{ item.proposta.arquivo_proposta.url }}" target="_blank" onclick="event.stopPropagation();">Ver PDF</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if request.user.grupo == 'gerente' %}
+                                <!-- Botão Avaliar para gerentes -->
+                                <a href="{% url 'detalhes_contrato' item.solicitacao.id %}" class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
+                                    Avaliar
+                                </a>
+                            {% else %}
+                                <!-- Cadastrar ou Revisar Contrato para outros usuários -->
+                                {% if item.contrato %}
+                                    <a href="{% url 'cadastrar_contrato' item.solicitacao.id %}"
+                                       class="btn btn-warning btn-sm"
+                                       onclick="event.stopPropagation();">
+                                        Revisar Contrato
+                                    </a>
+                                {% else %}
+                                    <a href="{% url 'cadastrar_contrato' item.solicitacao.id %}"
+                                       class="btn btn-primary btn-sm"
+                                       onclick="event.stopPropagation();">
+                                        Cadastrar Contrato
+                                    </a>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="alert alert-warning">
+            Nenhuma solicitação com fornecedor selecionado disponível para elaboração de contrato.
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}

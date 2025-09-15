@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block title %}Home - HIDROGestao{% endblock %}
+
+{% block content %}
+<div class="text-center">
+    <h1>Bem-vindo ao HIDROGestão</h1>
+    <p class="lead">Sistema de gestão de contratos, clientes e fornecedores.</p>
+    {% if user.is_authenticated %}
+        <p>Você está logado como: <strong>{{ user.username }}</strong></p>
+    {% else %}
+        <a href="{% url 'login' %}" class="btn btn-primary">Entrar</a>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    {% if request.user.grupo == 'suprimento' %}
+        <h2>Solicitações de Prospecção - Suprimento</h2>
+    {% elif request.user.grupo == 'gerente' %}
+        <h2>Solicitações de Prospecção - Gerência</h2>
+    {% else %}
+        <h2>Minhas Solicitações de Prospecção</h2>
+    {% endif %}
+
+    {% if page_obj %}
+        <table class="table table-striped text-center">
+            <thead>
+                <tr>
+                    <th>Contrato</th>
+                    <th>Descrição</th>
+                    <th>Data</th>
+                    <th>Previsto no Orçamento</th>
+                    <th>Valor Provisionado</th>
+                    <th>Status</th>
+                    <th>Aprovação Gerente</th>
+                    {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+                        <th>Ações</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for solicitacao in page_obj %}
+                    <tr
+                        {% if solicitacao.fornecedor_escolhido %}
+                            onclick="window.location='{% url 'detalhes_solicitacao' solicitacao.id %}'" style="cursor:pointer;"
+                        {% elif request.user.grupo in 'coordenador,financeiro' and solicitacao.triagem_realizada %}
+                            onclick="window.location='{% url 'detalhes_triagem_fornecedores' solicitacao.id %}'" style="cursor:pointer;"
+                        {% endif %}
+                    >
+                        <td>{{ solicitacao.contrato }}</td>
+                        <td>{{ solicitacao.descricao }}</td>
+                        <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            {% if solicitacao.previsto_no_orcamento %}
+                                <i class="bi bi-check-lg text-success fs-4"></i>
+                            {% else %}
+                                <i class="bi bi-x-lg text-danger fs-4"></i>
+                            {% endif %}
+                        </td>
+                        <td>{{ solicitacao.valor_provisionado }}</td>
+                        <td>
+                            {% if solicitacao.nenhum_fornecedor_ideal %}
+                                Nenhum fornecedor é ideal
+                            {% else %}
+                                {{ solicitacao.status }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if solicitacao.aprovacao_gerencia == True %}
+                                <span class="badge bg-success">Aprovado</span>
+                            {% elif solicitacao.reprovacao_gerencia == True %}
+                                <span class="badge bg-danger">Reprovado</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Pendente</span>
+                            {% endif %}
+                        </td>
+
+                        {% if request.user.grupo == 'suprimento' %}
+                        <td>
+                            {% if solicitacao.aprovado == None %}
+                                <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success btn-sm">Aprovar</a>
+                                <a href="{% url 'aprovar_solicitacao' solicitacao.id 'reprovar' %}" class="btn btn-danger btn-sm">Reprovar</a>
+                            {% endif %}
+
+                            {% if solicitacao.aprovado %}
+                                {% if solicitacao.triagem_realizada %}
+                                    {% if not solicitacao.fornecedor_escolhido %}
+                                        <a href="{% url 'triagem_fornecedores' solicitacao.id %}" class="btn btn-success btn-sm">Refazer Triagem</a>
+                                    {% endif %}
+                                {% else %}
+                                    <a href="{% url 'triagem_fornecedores' solicitacao.id %}" class="btn btn-primary btn-sm">Fazer Triagem</a>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <nav>
+            <ul class="pagination">
+                {% if page_obj.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?page=1">« Primeiro</a></li>
+                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Anterior</a></li>
+                {% endif %}
+                <li class="page-item disabled"><a class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</a></li>
+                {% if page_obj.has_next %}
+                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Próximo</a></li>
+                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Último »</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    {% else %}
+        <p>Nenhuma solicitação encontrada.</p>
+    {% endif %}
+</div>
+{% endblock %}

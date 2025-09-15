@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Renegociar Valor da Proposta</h2>
+    <p><strong>Solicitação:</strong> {{ solicitacao.contrato }}</p>
+    <p><strong>Fornecedor:</strong> {{ proposta.fornecedor }}</p>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="valor_proposta" class="form-label">Novo Valor da Proposta</label>
+            <input type="number" step="0.01" class="form-control" name="valor_proposta"
+                   value="{{ proposta.valor_proposta }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <a href="{% url 'detalhes_contrato' solicitacao.pk %}" class="btn btn-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

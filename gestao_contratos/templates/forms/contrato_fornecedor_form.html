@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom text-white d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Adicionar Novo Contrato com Fornecedor</h5>
+      <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>
+    </div>
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <!-- Exibir erros de validação -->
+        {% if form.errors %}
+        <div class="alert alert-danger">
+            <ul>
+                {% for field in form %}
+                    {% for error in field.errors %}
+                        <li>{{ field.label }}: {{ error }}</li>
+                    {% endfor %}
+                {% endfor %}
+                {% for error in form.non_field_errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.cod_projeto.id_for_label }}">Código do Projeto</label>
+            {{ form.cod_projeto }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.cliente.id_for_label }}">Fornecedor</label>
+            {{ form.empresa_terceira }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.cliente.id_for_label }}">Fiscal do contrato</label>
+            {{ form.coordenador }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+              <label class="form-label" for="{{ form.data_inicio.id_for_label }}">Data Início</label>
+              {{ form.data_inicio }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+              <label class="form-label" for="{{ form.data_fim.id_for_label }}">Data Fim</label>
+              {{ form.data_fim }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.valor_total.id_for_label }}">Valor Total</label>
+            {{ form.valor_total }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.cliente.id_for_label }}">Proposta</label>
+            {{ form.proposta }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.status.id_for_label }}">Status</label>
+            {{ form.status }}
+          </div>
+
+          <div class="col-12 mb-3">
+            <label class="form-label" for="{{ form.objeto.id_for_label }}">Objeto</label>
+            {{ form.objeto }}
+          </div>
+        </div>
+
+        <div class="text-end">
+          <button type="submit" class="btn btn-custom">Salvar Contrato</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- jQuery -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<!-- Inputmask -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
+
+<script>
+  $(document).ready(function(){
+    $('#id_valor_total').inputmask('currency', {
+      prefix: "R$ ",
+      radixPoint: ",",
+      groupSeparator: ".",
+      digits: 2,
+      autoGroup: true,
+      rightAlign: false,
+      removeMaskOnSubmit: true   // 🔑 envia apenas o número limpo para o Django
+    });
+  });
+</script>
+{% endblock %}

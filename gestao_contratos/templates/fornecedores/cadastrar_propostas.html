@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Cadastrar Propostas - {{ solicitacao.contrato }}</h2>
+
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Fornecedor</th>
+                    <th>Valor Total</th>
+                    <th>Prazo de Validade</th>
+                    <th>Arquivo da Proposta (PDF)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in fornecedores %}
+                <tr>
+                    <td>{{ f.nome }}</td>
+                    <td>
+                        <input type="number" step="0.01" name="valor_{{ f.id }}" class="form-control"
+                               placeholder="R$" value="{% if f.propostas.first %}{{ f.propostas.first.valor_total }}{% endif %}">
+                    </td>
+                    <td>
+                        <input type="date" name="prazo_{{ f.id }}" class="form-control"
+                               value="{% if f.propostas.first %}{{ f.propostas.first.prazo_validade|date:'Y-m-d' }}{% endif %}">
+                    </td>
+                    <td>
+                        {% if f.propostas.first and f.propostas.first.arquivo_proposta %}
+                            <a href="{{ f.propostas.first.arquivo_proposta.url }}" target="_blank">Ver Arquivo</a><br>
+                        {% endif %}
+                        <input type="file" name="arquivo_{{ f.id }}" accept="application/pdf" class="form-control">
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="text-end">
+            <button type="submit" class="btn btn-success">Salvar Propostas</button>
+            <a href="{% url 'lista_solicitacoes' %}" class="btn btn-secondary">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

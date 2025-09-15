@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container mt-4">
+    <h2>{% if contrato %} Revisão de Contrato {% else %} Cadastro de Contrato {% endif %}</h2>
+
+    <p><strong>Solicitação:</strong> {{ solicitacao.contrato }}</p>
+    <p><strong>Fornecedor Selecionado:</strong> {{ fornecedor.nome }}</p>
+
+    <form method="post" enctype="multipart/form-data" class="mt-3">
+      
+        {% csrf_token %}
+
+        <div class="mb-3">
+            <label for="numero_contrato" class="form-label">Número do Contrato</label>
+            <input type="text" id="numero_contrato" name="numero_contrato"
+                   value="{{ form.numero_contrato.value|default_if_none:'' }}"
+                   class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="objeto" class="form-label">Objeto</label>
+            <input type="text" id="objeto" name="objeto"
+                   value="{{ form.objeto.value|default_if_none:'' }}"
+                   class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="prazo_inicio" class="form-label">Data de Início</label>
+            <input type="date" id="prazo_inicio" name="prazo_inicio"
+                   value="{{ form.prazo_inicio.value|date:'Y-m-d' }}"
+                   class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="prazo_fim" class="form-label">Data de Término</label>
+            <input type="date" id="prazo_fim" name="prazo_fim"
+                   value="{{ form.prazo_fim.value|date:'Y-m-d' }}"
+                   class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="valor_total" class="form-label">Valor Total (R$)</label>
+            <input type="text" id="valor_total" name="valor_total"
+                   value="{{ form.valor_total.value|default_if_none:'' }}"
+                   class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="arquivo_contrato" class="form-label">Arquivo do Contrato (PDF)</label>
+            {% if contrato and contrato.arquivo_contrato %}
+                <p>Já existe um arquivo:
+                    <a href="{{ contrato.arquivo_contrato.url }}" target="_blank">Ver atual</a>
+                </p>
+            {% endif %}
+            <input type="file" id="arquivo_contrato" name="arquivo_contrato"
+                   accept="application/pdf" class="form-control"
+                   {% if not contrato %} required {% endif %}>
+        </div>
+
+        <button type="submit" class="btn btn-success">
+            {% if contrato %} Atualizar Contrato {% else %} Salvar Contrato {% endif %}
+        </button>
+        <a href="{% url 'elaboracao_contrato' %}" class="btn btn-secondary">Voltar</a>
+    </form>
+</div>
+
+<!-- Máscara para Valor Total -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
+<script>
+    $(document).ready(function(){
+        $('#valor_total').mask('#.##0,00', {reverse: true});
+    });
+</script>
+
+{% endblock %}

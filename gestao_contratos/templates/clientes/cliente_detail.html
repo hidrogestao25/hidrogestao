@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom text-white">
+      <h5>Detalhes do Cliente</h5>
+    </div>
+    <div class="card-body">
+      <p><strong>Nome:</strong> {{ cliente.nome }}</p>
+      <p><strong>CNPJ:</strong> {{ cliente.cpf_cnpj }}</p>
+      <p><strong>Endereço:</strong> {{ cliente.endereco }}</p>
+      <p><strong>Telefone:</strong> {{ cliente.telefone }}</p>
+      <p><strong>E-mail:</strong> {{ cliente.email }}</p>
+    </div>
+    <div class="card-footer text-end">
+      <a href="{% url 'lista_clientes' %}" class="btn btn-custom">← Voltar</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

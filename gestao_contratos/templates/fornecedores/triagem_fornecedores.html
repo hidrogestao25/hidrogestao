@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% load custom_tags %}
+{% block content %}
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Selecionar</th>
+                <th>Nome</th>
+                <th>Setor de Atuação</th>
+                <th>Indicadores</th>
+                <th>Proposta (R$)</th>
+                <th>Condição</th>
+                <th>Prazo de Validade</th>
+                <th>Arquivo PDF</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in fornecedores %}
+                {% with prop=propostas_dict|dict_get:f.id %}
+                <tr>
+                    <td>
+                        <input type="checkbox" name="fornecedores" value="{{ f.id }}"
+                            {% if f in fornecedores_selecionados %}checked{% endif %}>
+                    </td>
+                    <td>{{ f.nome }}</td>
+                    <td>{{ f.setor_de_atuacao }}</td>
+                    <td>
+                        {% with ind_list=fornecedores_indicadores|dict_get:f.id %}
+                            {% if ind_list %}
+                                <ul>
+                                    {% for ind in ind_list %}
+                                        <li>IQ: {{ ind.IQ|floatformat:2 }}%</li>
+                                        <li>IP: {{ ind.IP|floatformat:2 }}%</li>
+                                        <li>INC: {{ ind.INC|floatformat:2 }}%</li>
+                                        <li>IS: {{ ind.IS|floatformat:2 }}%</li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                Nenhum indicador cadastrado
+                            {% endif %}
+                        {% endwith %}
+                    </td>
+                    <td>
+                        <input type="text" name="valor_{{ f.id }}" class="form-control"
+                               placeholder="R$" value="{% if prop %}{{ prop.valor_proposta }}{% endif %}">
+                    </td>
+                    <td>
+                      <select name="condicao_{{ f.id }}" class="form-select">
+                          <option value="">Selecione...</option>
+                          {% for value, label in condicoes_choices %}
+                              <option value="{{ value }}"
+                                  {% if prop and prop.condicao_pagamento == value %}selected{% endif %}>
+                                  {{ label }}
+                              </option>
+                          {% endfor %}
+                      </select>
+                    </td>
+                    <td>
+                        <input type="date" name="prazo_{{ f.id }}" class="form-control"
+                               value="{% if prop and prop.prazo_validade %}{{ prop.prazo_validade|date:'Y-m-d' }}{% endif %}">
+                    </td>
+                    <td>
+                        {% if prop and prop.arquivo_proposta %}
+                            <a href="{{ prop.arquivo_proposta.url }}" target="_blank">Ver PDF</a><br>
+                        {% endif %}
+                        <input type="file" name="arquivo_{{ f.id }}" accept="application/pdf">
+                    </td>
+                </tr>
+                {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
+    <button type="submit" class="btn btn-primary">Salvar Triagem e Propostas</button>
+</form>
+{% endblock %}
