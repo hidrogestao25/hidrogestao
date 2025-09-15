@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom text-white d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Adicionar Novo Cliente</h5>
+      <a href="{% url 'lista_clientes' %}" class="btn btn-custom">← Voltar</a>
+    </div>
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.nome.id_for_label }}">Nome</label>
+            {{ form.nome }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.cpf_cnpj.id_for_label }}">CNPJ</label>
+            {{ form.cpf_cnpj }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+              <label class="form-label" for="{{ form.endereco.id_for_label }}">Endereço</label>
+              {{ form.endereco }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+              <label class="form-label" for="{{ form.telefone.id_for_label }}">Telefone</label>
+              {{ form.telefone }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.email.id_for_label }}">E-mail</label>
+            {{ form.email }}
+          </div>
+        </div>
+
+        <div class="text-end">
+          <button type="submit" class="btn btn-custom">Salvar Cliente</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- JQuery Mask (para CNPJ) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
+
+<script>
+    $(document).ready(function(){
+        $('#id_cpf_cnpj').mask('00.000.000/0000-00');
+    });
+</script>
+{% endblock %}

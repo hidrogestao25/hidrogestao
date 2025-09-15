@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Renegociar Prazo do Contrato</h2>
+    <p><strong>Solicitação:</strong> {{ solicitacao.contrato }}</p>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="prazo_inicio" class="form-label">Novo Prazo de Início</label>
+            <input type="date" class="form-control" name="prazo_inicio" value="{{ contrato.prazo_inicio }}">
+        </div>
+        <div class="mb-3">
+            <label for="prazo_fim" class="form-label">Novo Prazo de Fim</label>
+            <input type="date" class="form-control" name="prazo_fim" value="{{ contrato.prazo_fim }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <a href="{% url 'detalhes_contrato' solicitacao.pk %}" class="btn btn-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

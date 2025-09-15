@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom text-white">
+      <h5>Detalhes do Fornecedor</h5>
+    </div>
+    <div class="card-body">
+      <p><strong>Nome:</strong> {{ fornecedor.nome }}</p>
+      <p><strong>Setor de Atuação:</strong> {{ fornecedor.setor_de_atuacao }}</p>
+      <p><strong>CPF/CNPJ:</strong> {{ fornecedor.cpf_cnpj }}</p>
+      <p><strong>Endereço:</strong> {{ fornecedor.endereco }}</p>
+      <p><strong>Telefone:</strong> {{ fornecedor.telefone }}</p>
+      <p><strong>E-mail:</strong> {{ fornecedor.email }}</p>
+      <p><strong>Informações bancárias:</strong> {{ fornecedor.informacoes_bancarias }}</p>
+    </div>
+    <div class="card-footer text-end">
+      <a href="{% url 'lista_fornecedores' %}" class="btn btn-custom">← Voltar</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

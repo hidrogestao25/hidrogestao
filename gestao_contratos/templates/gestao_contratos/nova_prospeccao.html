@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Nova Prospecção</h2>
+    <p>Você está criando uma nova prospecção baseada na solicitação:</p>
+    <p><strong>Contrato:</strong> {{ solicitacao.contrato }}</p>
+    <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-success">Confirmar Nova Prospecção</button>
+        <a href="{% url 'detalhes_contrato' solicitacao.pk %}" class="btn btn-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

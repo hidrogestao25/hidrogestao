@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% load custom_tags %}
+{% block content %}
+
+<div class="container mt-4">
+    <h2>Triagem Realizada - {{ solicitacao.contrato }}</h2>
+    <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
+
+    {% if fornecedores_selecionados %}
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Escolher</th>
+                        <th>Nome</th>
+                        <th>Setor de Atuação</th>
+                        <th>Valor da Proposta</th>
+                        <th>Prazo de Validade</th>
+                        <th>Arquivo PDF</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for f in fornecedores_selecionados %}
+                        {% with prop=propostas_dict|dict_get:f.id %}
+                        <tr>
+                            <td>
+                                {% if request.user == solicitacao.coordenador %}
+                                <input type="radio" name="fornecedor_escolhido" value="{{ f.id }}"
+                                    {% if solicitacao.fornecedor_escolhido == f %}checked{% endif %}>
+                                {% endif %}
+                            </td>
+                            <td>{{ f.nome }}</td>
+                            <td>{{ f.setor_de_atuacao }}</td>
+                            <td>
+                                {% if prop and prop.valor_proposta %}
+                                    R$ {{ prop.valor_proposta|floatformat:2 }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if prop and prop.prazo_validade %}
+                                    {{ prop.prazo_validade|date:"d/m/Y" }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if prop and prop.arquivo_proposta %}
+                                    <a href="{{ prop.arquivo_proposta.url }}" target="_blank">Ver PDF</a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endwith %}
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% if request.user == solicitacao.coordenador %}
+            <div class="mb-3">
+                <button type="submit" class="btn btn-success">Escolher Fornecedor</button>
+            </div>
+            {% endif %}
+        </form>
+    {% else %}
+        <p>Nenhum fornecedor selecionado na triagem.</p>
+    {% endif %}
+
+    <div class="mt-4">
+        {% if not solicitacao.nenhum_fornecedor_ideal and request.user == solicitacao.coordenador %}
+        <form method="post" action="{% url 'nenhum_fornecedor_ideal' solicitacao.id %}" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-warning btn-sm">
+                Nenhum fornecedor é ideal
+            </button>
+        </form>
+        {% endif %}
+    </div>
+
+    <div class="mt-3">
+        <a href="{% url 'lista_solicitacoes' %}" class="btn btn-secondary">Voltar</a>
+    </div>
+</div>
+
+{% endblock %}
