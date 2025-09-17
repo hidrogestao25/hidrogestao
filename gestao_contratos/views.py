@@ -1,13 +1,19 @@
-from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
+from django.core.mail import send_mail
 from django.core.paginator import Paginator
+from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
-from django.views.generic.edit import CreateView
 from django.utils import timezone
+from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro
 from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm
+
+
+User = get_user_model()
+
 
 class ContratoCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
     model = Contrato
@@ -68,8 +74,10 @@ class ContratoFornecedorCreateView(LoginRequiredMixin, UserPassesTestMixin, Crea
         # Redireciona para a home
         return redirect('home')
 
+
 def is_financeiro(user):
     return user.is_authenticated and getattr(user, "grupo", None) == "financeiro"
+
 
 def home(request):
     return render(request, 'home.html')
@@ -235,7 +243,31 @@ def nova_solicitacao_prospeccao(request):
             if form.is_valid():
                 solicitacao = form.save(commit=False)
                 solicitacao.coordenador = request.user
+                solicitacao.status = "Solicitação de prospecção"
                 solicitacao.save()
+
+
+                suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
+
+                if suprimentos:
+                    assunto = "Nova Solicitação de Prospecção"
+                    mensagem = (
+                        f"O usuário {request.user.get_full_name() or request.user.username} "
+                        f"solicitou uma prospecção.\n\n"
+                        f"Detalhes da solicitação:\n"
+                        f"- ID: {solicitacao.id}\n"
+                        f"- Valor Provisionado: {solicitacao.valor_provisionado}\n"
+                        f"- Descrição: {solicitacao.descricao}\n\n"
+                        "Acesse o sistema HIDROGestão para mais informações.\n"
+                        "https://hidrogestao.pythonanywhere.com/"
+                    )
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao25@gmail.com",
+                        list(suprimentos),
+                        fail_silently=False,
+                    )
+                messages.success(request, "Solicitação de prospecção criada com sucesso!")
                 return redirect('lista_solicitacoes')
         else:
             form = SolicitacaoProspeccaoForm(user=request.user)
@@ -355,6 +387,21 @@ def triagem_fornecedores(request, pk):
                         proposta_obj.condicao_pagamento = condicao
                     proposta_obj.save()
 
+            coordenador = solicitacao.coordenador
+            assunto = "Triagem de fornecedores realizada"
+            mensagem = (
+                f"Olá, {coordenador.username}\n\n"
+                f"A equipe de suprimentos realizou uma triagem de fornecedores para você. \n\n"
+                "Por favor, entre no sistema HIDROGestão para selecionar sua escolha.\n"
+                "https://hidrogestao.pythonanywhere.com/"
+            )
+            send_mail(
+                assunto, mensagem,
+                "hidro.gestao25@gmail.com",
+                list(coordenador.email),
+                fail_silently=False,
+            )
+
             messages.success(request, "Triagem e propostas salvas com sucesso!")
             return redirect("lista_solicitacoes")
         else:
@@ -386,6 +433,24 @@ def nenhum_fornecedor_ideal(request, pk):
         solicitacao.fornecedores_selecionados.clear()
         solicitacao.triagem_realizada = False
         solicitacao.save()
+
+        suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
+
+        if suprimentos:
+            assunto = "Triagem declarada ineficaz pelo coordenador"
+            mensagem = (
+                f"Olá,\n\n"
+                f"O coordenador {solicitacao.coordenador.username} declarou que nenhum dos fornecedores é ideal."
+                "Acesse o sistema HIDROGestão para mais informações.\n"
+                "https://hidrogestao.pythonanywhere.com/"
+            )
+            send_mail(
+                assunto, mensagem,
+                "hidro.gestao25@gmail.com",
+                list(suprimentos),
+                fail_silently=False,
+            )
+
         messages.success(request, "Solicitação atualizada: nenhum fornecedor é ideal.")
     return redirect("lista_solicitacoes")
 
@@ -412,6 +477,24 @@ def detalhes_triagem_fornecedores(request, pk):
             solicitacao.nenhum_fornecedor_ideal = False
             solicitacao.status = 'Fornecedor Selecionado'
             solicitacao.save()
+
+            suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
+
+            if suprimentos:
+                assunto = f"Fornecedor escolhido pelo coordenador {solicitacao.coordenador.username}"
+                mensagem = (
+                    f"Olá,\n\n"
+                    f"O coordenador {solicitacao.coordenador.username} selecionou o fornecedor {fornecedor.nome} da triagem como ideal."
+                    "Acesse o sistema HIDROGestão para mais informações.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                )
+                send_mail(
+                    assunto, mensagem,
+                    "hidro.gestao25@gmail.com",
+                    list(suprimentos),
+                    fail_silently=False,
+                )
+
             messages.success(request, f"Fornecedor do {solicitacao.contrato} escolhido: {fornecedor.nome}")
         return redirect('lista_solicitacoes')
 
@@ -472,7 +555,7 @@ def propostas_fornecedores(request, pk):
         formset = PropostaFormSet(request.POST, request.FILES, queryset=queryset)
         if formset.is_valid():
             formset.save()
-            menssages.success(request, "Propostas salvas com sucesso!")
+            messages.success(request, "Propostas salvas com sucesso!")
             return redirect("lista_solicitacoes")
     else:
         formset = PropostaFormSet(queryset=queryset)
@@ -566,13 +649,31 @@ def cadastrar_contrato(request, solicitacao_id):
         if form.is_valid():
             contrato = form.save(commit=False)
             contrato.solicitacao = solicitacao
-            contrato.status = "Contrato Elaborado"
+            contrato.status = "Minuta do Contrato Elaborada"
 
             # mantém arquivo antigo se não foi enviado novo
             if not request.FILES.get("arquivo_contrato") and contrato_existente:
                 contrato.arquivo_contrato = contrato_existente.arquivo_contrato
 
             contrato.save()
+
+            gerente = User.objects.filter(grupo="gerente", centros=solicitacao.coordenador.centros).values_list("email", flat=True)
+
+            if gerente:
+                assunto = "Foi anexado uma nova minuta de contrato"
+                mensagem = (
+                    f"Olá,\n\n"
+                    f"A equipe de Suprimento anexou uma nova minuta de contrato para análise.\n\n"
+                    "por favor, acesse o sistema HIDROGestão para avaliar a referente minuta.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                )
+                send_mail(
+                    assunto, mensagem,
+                    "hidro.gestao25@gmail.com",
+                    list(gerente),
+                    fail_silently=False,
+                )
+
             messages.success(request, "Contrato salvo com sucesso!")
             return redirect("elaboracao_contrato")
         else:
@@ -622,13 +723,72 @@ def detalhes_contrato(request, pk):
             solicitacao.reprovacao_gerencia = False
             solicitacao.justificativa_gerencia = ""
             solicitacao.status = "Aprovado pela gerência"
+
+            coordenador = solicitacao.coordenador
+            suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
+            assunto = "A minuta de contrato foi APROVADA pela Gerência"
+            mensagem = (
+                f"Olá,\n\n"
+                f"A minuta de contrato foi aprovada pela Gerência. \n\n"
+                "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
+                "https://hidrogestao.pythonanywhere.com/"
+            )
+            send_mail(
+                assunto, mensagem,
+                "hidro.gestao25@gmail.com",
+                list(suprimentos),
+                fail_silently=False,
+            )
+            mensagem = (
+                f"Olá, {coordenador.username}\n\n"
+                f"A minuta de contrato de contratação de terceiro foi aprovada pela Gerência. \n\n"
+                "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
+                "https://hidrogestao.pythonanywhere.com/"
+            )
+            send_mail(
+                assunto, mensagem,
+                "hidro.gestao25@gmail.com",
+                list(coordenador.email),
+                fail_silently=False,
+            )
             messages.success(
                 request, f"Solicitação {solicitacao.id} aprovada com sucesso!"
             )
+
+
         elif acao == "reprovar":
             solicitacao.aprovacao_gerencia = False
             solicitacao.reprovacao_gerencia = True
             solicitacao.justificativa_gerencia = justificativa
+            coordenador = solicitacao.coordenador
+            suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
+            assunto = "A minuta de contrato foi REPROVADA pela Gerência"
+            mensagem = (
+                f"Olá,\n\n"
+                f"A minuta de contrato foi reprovada pela Gerência. \n\n"
+                f"A justificativa para a reprovação foi:\n"
+                f'"{solicitacao.justificativa_gerencia}"\n\n'
+                "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
+                "https://hidrogestao.pythonanywhere.com/"
+            )
+            send_mail(
+                assunto, mensagem,
+                "hidro.gestao25@gmail.com",
+                list(suprimentos),
+                fail_silently=False,
+            )
+            mensagem = (
+                f"Olá, {coordenador.username}\n\n"
+                f"A minuta de contrato para a contratação de terceiro foi reprovada pela Gerência e encaminhada para revisão. \n\n"
+                "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
+                "https://hidrogestao.pythonanywhere.com/"
+            )
+            send_mail(
+                assunto, mensagem,
+                "hidro.gestao25@gmail.com",
+                list(coordenador.email),
+                fail_silently=False,
+            )
             solicitacao.status = "Reprovado pela gerência"
             messages.warning(request, f"Solicitação {solicitacao.id} reprovada.")
         else:
