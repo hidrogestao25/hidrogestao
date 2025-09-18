@@ -294,6 +294,7 @@ class SolicitacaoContratacaoTerceiro(models.Model):
         upload_to='proposta_vencedora/',
         verbose_name='Inserir indicação clara da proposta vencedora em PDF'
     )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -490,6 +491,33 @@ class AditivoTerceiro(models.Model):
         return f"Aditivo - {self.contrato.cod_projeto} - {self.contrato.empresa_terceira}"
 
 
+# -------------
+# Documento BM
+# -------------
+class DocumentoBM(models.Model):
+    solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE)
+    minuta_boletim = models.FileField(
+        upload_to='Minuta boletim/',
+        blank=True,
+        null=True
+    )
+    assinatura_fornecedor = models.FileField(
+        upload_to='Assinaturas/',
+        blank=True,
+        null=True
+    )
+    assinatura_gerente = models.FileField(
+        upload_to='Assinaturas/',
+        blank=True,
+        null=True
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Boletim de Medição - {self.solicitacao.contrato.cod_projeto}"
+
+
 # ------
 # BM (Boletim de Medição) - contrato de terceiros
 # ------
@@ -499,6 +527,11 @@ class BM(models.Model):
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     parcela_paga = models.PositiveIntegerField()
     data_pagamento = models.DateField(default=timezone.now)
+    arquivo_bm = models.FileField(
+        upload_to='BM/',
+        verbose_name='Inserir arquivo do Boletim de Medição',
+        null=True, blank=True
+    )
 
     def __str__(self):
         return f"Parcela {self.parcela_paga} - {self.valor_pago}"

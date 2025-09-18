@@ -398,7 +398,7 @@ def triagem_fornecedores(request, pk):
             send_mail(
                 assunto, mensagem,
                 "hidro.gestao25@gmail.com",
-                list(coordenador.email),
+                [coordenador.email],
                 fail_silently=False,
             )
 
@@ -484,7 +484,7 @@ def detalhes_triagem_fornecedores(request, pk):
                 assunto = f"Fornecedor escolhido pelo coordenador {solicitacao.coordenador.username}"
                 mensagem = (
                     f"Olá,\n\n"
-                    f"O coordenador {solicitacao.coordenador.username} selecionou o fornecedor {fornecedor.nome} da triagem como ideal."
+                    f"O coordenador {solicitacao.coordenador.username} selecionou o fornecedor {fornecedor.nome} da triagem como ideal./n"
                     "Acesse o sistema HIDROGestão para mais informações.\n"
                     "https://hidrogestao.pythonanywhere.com/"
                 )
@@ -657,7 +657,7 @@ def cadastrar_contrato(request, solicitacao_id):
 
             contrato.save()
 
-            gerente = User.objects.filter(grupo="gerente", centros=solicitacao.coordenador.centros).values_list("email", flat=True)
+            gerente = User.objects.filter(grupo="gerente", centros__in=solicitacao.coordenador.centros.all()).values_list("email", flat=True).distinct()
 
             if gerente:
                 assunto = "Foi anexado uma nova minuta de contrato"
@@ -722,7 +722,7 @@ def detalhes_contrato(request, pk):
             solicitacao.aprovacao_gerencia = True
             solicitacao.reprovacao_gerencia = False
             solicitacao.justificativa_gerencia = ""
-            solicitacao.status = "Aprovado pela gerência"
+            solicitacao.status = "Aguardando boletim"
 
             coordenador = solicitacao.coordenador
             suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
@@ -748,7 +748,7 @@ def detalhes_contrato(request, pk):
             send_mail(
                 assunto, mensagem,
                 "hidro.gestao25@gmail.com",
-                list(coordenador.email),
+                [coordenador.email],
                 fail_silently=False,
             )
             messages.success(
@@ -786,7 +786,7 @@ def detalhes_contrato(request, pk):
             send_mail(
                 assunto, mensagem,
                 "hidro.gestao25@gmail.com",
-                list(coordenador.email),
+                [coordenador.email],
                 fail_silently=False,
             )
             solicitacao.status = "Reprovado pela gerência"
