@@ -2,7 +2,9 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Clientes Cadastrados</h2>
-    <a href="{% url 'novo_cliente' %}" class="btn btn-custom">+ Adicionar Cliente</a>
+    {% if user.grupo == "suprimento" %}
+      <a href="{% url 'novo_cliente' %}" class="btn btn-custom">+ Adicionar Cliente</a>
+    {% endif %}
 </div>
 
 <table id="tabela-clientes" class="table table-striped">

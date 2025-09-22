@@ -59,7 +59,7 @@ class ContratoForm(forms.ModelForm):
         self.fields['proposta'].queryset = (
             Proposta.objects.all()
         )
-
+        
     def clean_valor_total(self):
         valor = self.cleaned_data['valor_total']
         try:
@@ -154,19 +154,50 @@ class ContratoFornecedorForm(forms.ModelForm):
 
 
 class SolicitacaoProspeccaoForm(forms.ModelForm):
+    valor_provisionado = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Provisionado",
+        required=True
+    )
     class Meta:
         model = SolicitacaoProspeccao
-        fields = ['contrato', 'descricao', 'previsto_no_orcamento', 'valor_provisionado']
+        fields = ['contrato', 'descricao', 'requisitos','previsto_no_orcamento', 'valor_provisionado']
+        widgets = {
+            'valor_provisionado': forms.TextInput(attrs ={
+                'class': 'form-control money',
+                'placeholder': 'R$ 0,00'
+            })
+        }
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
+
+        self.fields['descricao'].label = "Escopo de Contratação"
+        self.fields['requisitos'].label = "Requisitos Mínimos"
+
         if user and user.grupo == 'coordenador':
             self.fields['contrato'].queryset = Contrato.objects.filter(coordenador=user)
         elif user and user.grupo == 'financeiro':
             self.fields['contrato'].queryset = Contrato.objects.all()
+        elif user and user.grupo == 'gerente':
+            self.fields['contrato'].queryset = Contrato.objects.filter(coordenador__centros__in=user.centros.all())
         else:
             self.fields['contrato'].queryset = Contrato.objects.none()
+
+    def clean_valor_provisionado(self):
+        valor = self.cleaned_data.get('valor_provisionado')
+        if valor:
+            try:
+                # Remove pontos de milhar e troca vírgula por ponto
+                valor = valor.replace('.', '').replace(',', '.')
+                return Decimal(valor)
+            except (InvalidOperation, AttributeError):
+                raise forms.ValidationError("Informe um valor numérico válido (ex: 1.234,56)")
+        return valor
 
 
 
