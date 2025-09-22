@@ -64,9 +64,14 @@ class EmpresaTerceira(models.Model):
     setor_de_atuacao = models.TextField(blank=True, null=True)
     cpf_cnpj = models.CharField(max_length=18, unique=True)
     endereco = models.TextField(blank=True, null=True)
+    numero = models.TextField(blank=True, null=True)
+    bairro = models.TextField(blank=True, null=True)
+    municipio = models.TextField(blank=True, null=True)
+    estado = models.TextField(blank=True, null=True)
+    cep = models.TextField(blank=True, null=True)
     telefone = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
-    informacoes_bancarias = models.CharField(max_length=200)
+    informacoes_bancarias = models.TextField(max_length=200)
     guarda_chuva = models.BooleanField(default=False)
 
     ponto_focal = models.CharField(max_length=200, null=True, blank=True)
@@ -156,6 +161,7 @@ class SolicitacaoProspeccao(models.Model):
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes')
     coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     descricao = models.TextField(blank=True, null=True)
+    requisitos = models.TextField(blank=True, null=True)
     previsto_no_orcamento = models.BooleanField(default=False)
     valor_provisionado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -167,6 +173,7 @@ class SolicitacaoProspeccao(models.Model):
 
     fornecedores_selecionados = models.ManyToManyField(EmpresaTerceira, blank=True)
     triagem_realizada = models.BooleanField(default=False)
+    #aprovacao_triagem = models.BooleanField(default=False)
 
     nenhum_fornecedor_ideal = models.BooleanField(default=False)
 

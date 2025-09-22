@@ -2,7 +2,9 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Contratos com Fornecedores Cadastrados</h2>
-    <a href="{% url 'novo_contrato_fornecedor' %}" class="btn btn-custom">+ Adicionar Contrato</a>
+    {% if user.grupo == "suprimento" %}
+      <a href="{% url 'novo_contrato_fornecedor' %}" class="btn btn-custom">+ Adicionar Contrato</a>
+    {% endif %}
 </div>
 
 

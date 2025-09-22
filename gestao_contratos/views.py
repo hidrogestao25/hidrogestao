@@ -95,6 +95,9 @@ def lista_contratos(request):
     elif request.user.grupo == 'coordenador':
         contratos = Contrato.objects.filter(coordenador=request.user).order_by('-data_inicio')
 
+    elif request.user.grupo =='gerente':
+        contratos = Contrato.objects.filter(coordenador__centros__in=request.user.centros.all()).order_by('-data_inicio')
+
     else:
         return redirect('home')
 
@@ -112,6 +115,9 @@ def lista_clientes(request):
         clientes = Cliente.objects.all().order_by('nome')
     elif request.user.grupo == 'coordenador':
         clientes = Cliente.objects.filter(contrato__coordenador=request.user).distinct().order_by('nome')
+
+    elif request.user.grupo == 'gerente':
+        clientes = Cliente.objects.filter(contrato__coordenador__centros__in=request.user.centros.all()).distinct().order_by('nome')
 
     else:
         return redirect('home')
@@ -132,6 +138,10 @@ def lista_contratos_fornecedor(request):
     elif request.user.grupo == 'coordenador':
         contratos = ContratoTerceiros.objects.filter(coordenador=request.user).order_by('-data_inicio')
 
+    elif request.user.grupo == 'gerente':
+        contratos = ContratoTerceiros.objects.filter(coordenador__centros__in=request.user.centros.all()).order_by('-data_inicio')
+
+
     else:
         return redirect('home')
     paginator = Paginator(contratos, 10)
@@ -148,6 +158,8 @@ def lista_fornecedores(request):
         fornecedores = EmpresaTerceira.objects.all().order_by('nome')
     elif request.user.grupo == 'coordenador':
         fornecedores = EmpresaTerceira.objects.filter(contratoterceiros__coordenador=request.user).distinct().order_by('nome')
+    elif request.user.grupo == 'gerente':
+        fornecedores = EmpresaTerceira.objects.filter(contratoterceiros__coordenador__centros__in=request.user.centros.all()). distinct().order_by('nome')
     else:
         return redirect('home')
 
@@ -237,7 +249,7 @@ def fornecedor_detalhe(request, pk):
 
 @login_required
 def nova_solicitacao_prospeccao(request):
-    if request.user.grupo == 'coordenador' or request.user.grupo == 'financeiro':
+    if request.user.grupo == 'coordenador' or request.user.grupo == 'financeiro' or request.user.grupo == 'gerente':
         if request.method == 'POST':
             form = SolicitacaoProspeccaoForm(request.POST, user=request.user)
             if form.is_valid():
@@ -269,6 +281,8 @@ def nova_solicitacao_prospeccao(request):
                     )
                 messages.success(request, "Solicitação de prospecção criada com sucesso!")
                 return redirect('lista_solicitacoes')
+            else:
+                messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
         else:
             form = SolicitacaoProspeccaoForm(user=request.user)
         return render(request, 'fornecedores/nova_solicitacao.html', {'form':form})
