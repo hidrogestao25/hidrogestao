@@ -22,6 +22,7 @@ urlpatterns = [
     path('fornecedores/solicitacoes/', views.lista_solicitacoes, name='lista_solicitacoes'),
     path('fornecedores/solicitacoes/<int:pk>/<str:acao>/', views.aprovar_solicitacao, name='aprovar_solicitacao'),
     path('fornecedores/solicitacoes/triagem/<int:pk>/', views.triagem_fornecedores, name='triagem_fornecedores'),
+    path('solicitacoes/<int:pk>/aprovar_fornecedor/', views.aprovar_fornecedor_gerente, name='aprovar_fornecedor_gerente'),
     path('fornecedores/solicitacoes//nenhum<int:pk>/', views.nenhum_fornecedor_ideal, name='nenhum_fornecedor_ideal'),
     path('fornecedores/solicitacoes/<int:pk>', views.detalhes_triagem_fornecedores, name='detalhes_triagem_fornecedores'),
 
@@ -35,5 +36,10 @@ urlpatterns = [
     path('elaboracao_contrato/<int:solicitacao_id>/cadastrar/', views.cadastrar_contrato, name='cadastrar_contrato'),
     path('detalhes_contrato/<int:pk>/', views.detalhes_contrato, name='detalhes_contrato'),
 
+    path("solicitacoes/<int:pk>/inserir-minuta-bm/", views.inserir_minuta_bm, name="inserir_minuta_bm"),
+
+    path("bm/<int:pk>/detalhe/", views.detalhe_bm, name="detalhe_bm"),
+    path("bm/<int:pk>/aprovar/<str:papel>/", views.aprovar_bm, name="aprovar_bm"),
+    path("bm/<int:pk>/reprovar/<str:papel>/", views.reprovar_bm, name="reprovar_bm"),
 
 ]

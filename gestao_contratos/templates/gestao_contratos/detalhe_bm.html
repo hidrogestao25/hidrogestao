@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Minuta do Boletim de Medição</h2>
+
+    <p><strong>Contrato:</strong> {{ solicitacao.contrato }}</p>
+    <p><strong>Fornecedor:</strong> {{ solicitacao.fornecedor_escolhido }}</p>
+
+    {% if bm.minuta_boletim %}
+        <p><a href="{{ bm.minuta_boletim.url }}" target="_blank" class="btn btn-secondary">📄 Visualizar Minuta</a></p>
+    {% else %}
+        <p class="text-danger">Nenhuma minuta inserida.</p>
+    {% endif %}
+
+    <h4>Status das aprovações</h4>
+    <ul>
+        <li>Coordenador:
+            {% if bm.aprovado_coordenador == True %}
+                <span class="badge bg-success">Aprovado</span>
+            {% elif bm.aprovado_coordenador == False %}
+                <span class="badge bg-danger">Reprovado</span>
+            {% else %}
+                <span class="badge bg-secondary">Pendente</span>
+            {% endif %}
+        </li>
+        <li>Gerência:
+            {% if bm.aprovado_gerente == True %}
+                <span class="badge bg-success">Aprovado</span>
+            {% elif bm.aprovado_gerente == False %}
+                <span class="badge bg-danger">Reprovado</span>
+            {% else %}
+                <span class="badge bg-secondary">Pendente</span>
+            {% endif %}
+        </li>
+    </ul>
+
+    {% if request.user.grupo == "coordenador" and bm.aprovado_coordenador is None %}
+        <form method="post">
+            {% csrf_token %}
+            <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
+            <button name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+        </form>
+    {% endif %}
+
+    {% if request.user.grupo == "gerente" and bm.aprovado_gerente is None %}
+        <form method="post">
+            {% csrf_token %}
+            <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
+            <button name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+        </form>
+    {% endif %}
+</div>
+{% endblock %}

@@ -29,6 +29,9 @@
                                 <input type="radio" name="fornecedor_escolhido" value="{{ f.id }}"
                                     {% if solicitacao.fornecedor_escolhido == f %}checked{% endif %}>
                                 {% endif %}
+                                {% if request.user.grupo == "gerente" and solicitacao.fornecedor_escolhido == f %}
+                                    ✅ Escolhido pelo coordenador
+                                {% endif %}
                             </td>
                             <td>{{ f.nome }}</td>
                             <td>{{ f.setor_de_atuacao }}</td>
@@ -67,6 +70,19 @@
         </form>
     {% else %}
         <p>Nenhum fornecedor selecionado na triagem.</p>
+    {% endif %}
+
+    {# Botões de aprovação do gerente #}
+    {% if request.user.grupo == "gerente" and solicitacao.fornecedor_escolhido %}
+      <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
+          {% csrf_token %}
+          <button type="submit" name="acao" value="aprovar" class="btn btn-success">
+              Aprovar fornecedor
+          </button>
+          <button type="submit" name="acao" value="reprovar" class="btn btn-danger">
+              Reprovar fornecedor
+          </button>
+      </form>
     {% endif %}
 
     <div class="mt-4">

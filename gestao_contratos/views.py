@@ -8,8 +8,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm
 
 
 User = get_user_model()
@@ -194,7 +194,15 @@ def contrato_cliente_detalhe(request, pk):
 def contrato_fornecedor_detalhe(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
 
-    if request.user.grupo == "suprimento" or request.user.grupo == 'financeiro':
+    # Pega apenas a proposta do fornecedor selecionado
+    proposta_fornecedor = None
+    if contrato.prospeccao and contrato.prospeccao.fornecedor_escolhido:
+        proposta_fornecedor = contrato.prospeccao.propostas.filter(
+            fornecedor=contrato.prospeccao.fornecedor_escolhido
+        ).first()
+
+    # Se o usuário for suprimento ou financeiro, permite editar
+    if request.user.grupo in ["suprimento", "financeiro"]:
         if request.method == 'POST':
             form = ContratoFornecedorForm(request.POST, instance=contrato)
             if form.is_valid():
@@ -205,8 +213,10 @@ def contrato_fornecedor_detalhe(request, pk):
                 messages.error(request, "❌ Ocorreu um erro ao atualizar o contrato. Verifique os campos e tente novamente.")
         else:
             form = ContratoFornecedorForm(instance=contrato)
-        return render(request, 'contratos/contrato_fornecedor_detail_edit.html', {'form': form, 'contrato': contrato})
-    return render(request, 'contratos/contrato_fornecedor_detail.html', {'contrato': contrato})
+        return render(request, 'contratos/contrato_fornecedor_detail_edit.html', {'form': form, 'contrato': contrato, 'proposta_fornecedor': proposta_fornecedor})
+
+    return render(request, 'contratos/contrato_fornecedor_detail.html', {'contrato': contrato, 'proposta_fornecedor': proposta_fornecedor})
+
 
 
 @login_required
@@ -292,15 +302,15 @@ def nova_solicitacao_prospeccao(request):
 @login_required
 def lista_solicitacoes(request):
     if request.user.grupo == 'coordenador' or request.user.grupo == 'financeiro':
-        solicitacoes = SolicitacaoProspeccao.objects.filter(coordenador=request.user).order_by('-data_solicitacao')
+        solicitacoes = SolicitacaoProspeccao.objects.filter(coordenador=request.user).exclude(status="Finalizada").order_by('-data_solicitacao')
     elif request.user.grupo == 'suprimento':
-        solicitacoes = SolicitacaoProspeccao.objects.all().order_by('-data_solicitacao')
+        solicitacoes = SolicitacaoProspeccao.objects.all().exclude(status="Finalizada").order_by('-data_solicitacao')
     elif request.user.grupo == 'gerente':
         centros_do_gerente = request.user.centros.all()
         # filtra solicitações cujo solicitante tenha pelo menos um centro em comum
         solicitacoes = SolicitacaoProspeccao.objects.filter(
             coordenador__centros__in=centros_do_gerente
-        ).distinct().order_by('-data_solicitacao')
+        ).exclude(status="Finalizada").distinct().order_by('-data_solicitacao')
 
 
     paginator = Paginator(solicitacoes, 10)
@@ -319,8 +329,10 @@ def aprovar_solicitacao(request, pk, acao):
 
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
     if acao == "aprovar":
+        solicitacao.status = "Aprovada pelo suprimento"
         solicitacao.aprovado = True
     elif acao == "reprovar":
+        solicitacao.status = "Reprovada pelo suprimento"
         solicitacao.aprovado = False
     solicitacao.data_aprovacao = timezone.now()
     solicitacao.aprovado_por = request.user
@@ -338,18 +350,17 @@ def triagem_fornecedores(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk, aprovado=True)
     fornecedores = EmpresaTerceira.objects.all().order_by('nome')
 
-    # Mapeia fornecedores para seus indicadores
-    fornecedores_indicadores = {}
-    for f in fornecedores:
-        indicadores = Indicadores.objects.filter(empresa_terceira=f)
-        fornecedores_indicadores[f.id] = indicadores if indicadores.exists() else None
+    # Mapeia fornecedores -> indicadores
+    fornecedores_indicadores = {
+        f.id: Indicadores.objects.filter(empresa_terceira=f) or None
+        for f in fornecedores
+    }
 
-    # Mapeia propostas de cada fornecedor da solicitação
+    # Mapeia propostas -> todos os fornecedores
     propostas_dict = {}
-    for f in solicitacao.fornecedores_selecionados.all():
+    for f in fornecedores:
         try:
-            prop = PropostaFornecedor.objects.get(solicitacao=solicitacao, fornecedor=f)
-            propostas_dict[f.id] = prop
+            propostas_dict[f.id] = PropostaFornecedor.objects.get(solicitacao=solicitacao, fornecedor=f)
         except PropostaFornecedor.DoesNotExist:
             propostas_dict[f.id] = None
 
@@ -372,7 +383,7 @@ def triagem_fornecedores(request, pk):
             solicitacao.nenhum_fornecedor_ideal = False
             solicitacao.save()
 
-            # Para cada fornecedor selecionado, salva valor e arquivo
+            # Para cada fornecedor selecionado, salva/atualiza proposta
             for f_id in fornecedores_ids:
                 fornecedor = get_object_or_404(EmpresaTerceira, pk=f_id)
                 valor = request.POST.get(f"valor_{f_id}")
@@ -380,16 +391,13 @@ def triagem_fornecedores(request, pk):
                 condicao = request.POST.get(f"condicao_{f_id}")
                 arquivo = request.FILES.get(f"arquivo_{f_id}")
 
-                # Só cria ou atualiza a proposta se tiver algum valor ou arquivo
                 if valor or arquivo or condicao or prazo_validade:
                     proposta_obj, _ = PropostaFornecedor.objects.get_or_create(
                         solicitacao=solicitacao,
                         fornecedor=fornecedor,
-
                     )
                     if valor:
                         try:
-                            # Converte para float
                             proposta_obj.valor_proposta = float(valor.replace(",", "."))
                         except ValueError:
                             messages.warning(request, f"Valor inválido para {fornecedor.nome}")
@@ -401,6 +409,7 @@ def triagem_fornecedores(request, pk):
                         proposta_obj.condicao_pagamento = condicao
                     proposta_obj.save()
 
+            # Notifica coordenador
             coordenador = solicitacao.coordenador
             assunto = "Triagem de fornecedores realizada"
             mensagem = (
@@ -418,6 +427,7 @@ def triagem_fornecedores(request, pk):
 
             messages.success(request, "Triagem e propostas salvas com sucesso!")
             return redirect("lista_solicitacoes")
+
         else:
             solicitacao.fornecedores_selecionados.clear()
             solicitacao.triagem_realizada = False
@@ -482,34 +492,35 @@ def detalhes_triagem_fornecedores(request, pk):
     for p in propostas:
         propostas_dict[p.fornecedor.id] = p
 
-    # Se coordenador estiver escolhendo o fornecedor
+    # Coordenador escolhe fornecedor
     if request.user == solicitacao.coordenador and request.method == "POST":
         escolhido_id = request.POST.get("fornecedor_escolhido")
         if escolhido_id:
             fornecedor = get_object_or_404(EmpresaTerceira, pk=escolhido_id)
             solicitacao.fornecedor_escolhido = fornecedor
             solicitacao.nenhum_fornecedor_ideal = False
-            solicitacao.status = 'Fornecedor Selecionado'
+            solicitacao.status = 'Aguardando Aprovação do Fornecedor pelo Gerente'
+            solicitacao.aprovacao_gerente = "pendente"
             solicitacao.save()
 
-            suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
-
-            if suprimentos:
-                assunto = f"Fornecedor escolhido pelo coordenador {solicitacao.coordenador.username}"
+            # notifica gerente
+            gerentes = list(User.objects.filter(grupo="gerente", centros__in=solicitacao.coordenador.centros.all()).distinct().values_list("email", flat=True))
+            if gerentes:
+                assunto = f"Aprovação necessária - Fornecedor escolhido para {solicitacao.contrato}"
                 mensagem = (
-                    f"Olá,\n\n"
-                    f"O coordenador {solicitacao.coordenador.username} selecionou o fornecedor {fornecedor.nome} da triagem como ideal./n"
-                    "Acesse o sistema HIDROGestão para mais informações.\n"
-                    "https://hidrogestao.pythonanywhere.com/"
+                    f"O coordenador {solicitacao.coordenador.username} selecionou o fornecedor {fornecedor.nome}.\n\n"
+                    f"É necessário que você aprove ou reprove essa escolha.\n"
+                    f"Acesse o sistema HIDROGestão para mais informações:\n"
+                    f"https://hidrogestao.pythonanywhere.com/"
                 )
                 send_mail(
                     assunto, mensagem,
                     "hidro.gestao25@gmail.com",
-                    list(suprimentos),
+                    gerentes,
                     fail_silently=False,
                 )
 
-            messages.success(request, f"Fornecedor do {solicitacao.contrato} escolhido: {fornecedor.nome}")
+            messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando aprovação do gerente.")
         return redirect('lista_solicitacoes')
 
     context = {
@@ -519,6 +530,41 @@ def detalhes_triagem_fornecedores(request, pk):
     }
     return render(request, "fornecedores/detalhes_triagem_fornecedores.html", context)
 
+
+@login_required
+def aprovar_fornecedor_gerente(request, pk):
+    solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+
+    if request.user.grupo != "gerente":
+        messages.error(request, "Você não tem permissão para aprovar.")
+        return redirect('home')
+
+    if not solicitacao.fornecedor_escolhido:
+        messages.warning(request, "Coordenador ainda não escolheu um fornecedor.")
+        return redirect('detalhes_triagem_fornecedores', pk=pk)
+
+    if request.method == "POST":
+        acao = request.POST.get("acao")
+        if acao == "aprovar":
+            solicitacao.status = "Fornecedor aprovado pela gerência"
+            solicitacao.aprovacao_fornecedor_gerente = "aprovado"
+            solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
+            messages.success(request, f"Fornecedor {solicitacao.fornecedor_escolhido.nome} aprovado pelo gerente.")
+        elif acao == "reprovar":
+            solicitacao.status = "Fornecedor reprovado pela gerência"
+            solicitacao.aprovacao_fornecedor_gerente = "reprovado"
+            solicitacao.fornecedor_escolhido = None
+            solicitacao.triagem_realizada = False
+            solicitacao.fornecedores_selecionados.clear()
+            messages.warning(request, "Fornecedor reprovado. Nova triagem necessária pelo suprimento.")
+        else:
+            messages.error(request, "Ação inválida.")
+            return redirect('detalhes_triagem_fornecedores', pk=pk)
+
+        solicitacao.save()
+        return redirect('lista_solicitacoes')
+
+    return redirect('detalhes_triagem_fornecedores', pk=pk)
 
 @login_required
 def detalhes_solicitacao(request, pk):
@@ -623,8 +669,8 @@ def cadastrar_propostas(request, pk):
 #@user_passes_test(is_financeiro)
 def elaboracao_contrato(request):
     solicitacoes = SolicitacaoProspeccao.objects.filter(
-        fornecedor_escolhido__isnull=False
-    ).select_related("fornecedor_escolhido")
+        fornecedor_escolhido__isnull=False, aprovacao_fornecedor_gerente="aprovado"
+    ).select_related("fornecedor_escolhido").exclude(status="Finalizada")
 
     lista_solicitacoes = []
     for s in solicitacoes:
@@ -769,7 +815,6 @@ def detalhes_contrato(request, pk):
                 request, f"Solicitação {solicitacao.id} aprovada com sucesso!"
             )
 
-
         elif acao == "reprovar":
             solicitacao.aprovacao_gerencia = False
             solicitacao.reprovacao_gerencia = True
@@ -880,3 +925,132 @@ def nova_prospeccao(request, pk):
         return redirect("detalhes_contrato", pk=nova_solicitacao.pk)
 
     return render(request, "nova_prospeccao.html", {"solicitacao": solicitacao})
+
+
+@login_required
+def inserir_minuta_bm(request, pk):
+    solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+
+    # Garante que só o suprimento pode acessar
+    if request.user.grupo != 'suprimento':
+        return redirect('home')
+
+    # Cria ou recupera a minuta ligada à solicitação
+    documento_bm, created = DocumentoBM.objects.get_or_create(solicitacao=solicitacao)
+
+    if request.method == "POST":
+        form = DocumentoBMForm(request.POST, request.FILES, instance=documento_bm)
+        if form.is_valid():
+            form.save()
+            solicitacao.status = "Minuta BM enviada para avaliação"
+            solicitacao.save()
+            messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
+            return redirect('lista_solicitacoes')
+    else:
+        form = DocumentoBMForm(instance=documento_bm)
+
+    return render(request, 'fornecedores/inserir_minuta_bm.html', {
+        'solicitacao': solicitacao,
+        'form': form,
+    })
+
+
+@login_required
+def detalhe_bm(request, pk):
+    bm = get_object_or_404(DocumentoBM, pk=pk)
+
+    solicitacao = bm.solicitacao
+
+    if request.method == "POST":
+        acao = request.POST.get("acao")
+        usuario = request.user
+
+        # Se coordenador avaliando
+        if usuario.grupo == "coordenador":
+            if acao == "aprovar":
+                bm.status_coordenador = "aprovado"
+                bm.data_aprovacao_coordenador = timezone.now()
+
+        # Se gerente avaliando
+        elif usuario.grupo == "gerente":
+            if acao == "aprovar":
+                bm.status_gerente = "aprovado"
+                bm.data_aprovacao_gerente = timezone.now()
+
+        bm.save()
+
+        try:
+            documento = DocumentoContratoTerceiro.objects.get(solicitacao=solicitacao)
+        except DocumentoContratoTerceiro.DoesNotExist:
+            documento = None
+        # Se ambos aprovaram → cria contrato e finaliza solicitação
+        if (bm.status_coordenador=="aprovado") and (bm.status_gerente=="aprovado"):
+            ContratoTerceiros.objects.get_or_create(
+                cod_projeto=solicitacao.contrato,
+                prospeccao=solicitacao,
+                empresa_terceira=solicitacao.fornecedor_escolhido,
+                coordenador=solicitacao.coordenador,
+                data_inicio=documento.prazo_inicio if documento else None,
+                data_fim=documento.prazo_fim if documento else None,
+                valor_total=documento.valor_total if documento else 0,
+                objeto=documento.objeto if documento else "",
+                status="Em execução",
+            )
+            solicitacao.status = "Finalizada"
+            solicitacao.save()
+
+        return redirect("lista_solicitacoes")
+
+    return render(request, "gestao_contratos/detalhe_bm.html", {"bm": bm, "solicitacao": solicitacao})
+
+
+@login_required
+def aprovar_bm(request, pk, papel):
+    bm = get_object_or_404(DocumentoBM, pk=pk)
+
+    if papel == "coordenador" and request.user.groups.filter(name="Coordenador de Contrato").exists():
+        bm.status_coordenador = "aprovado"
+    elif papel == "gerente" and request.user.groups.filter(name="Gerente de Contrato").exists():
+        bm.status_gerente = "aprovado"
+    else:
+        messages.error(request, "Você não tem permissão para aprovar este documento.")
+        return redirect("lista_solicitacoes")
+
+    bm.save()
+
+    """# Se ambos aprovaram → criar ContratoTerceiros
+    if bm.aprovado_por_ambos:
+        ContratoTerceiros.objects.get_or_create(
+            cod_projeto=bm.solicitacao.contrato,
+            prospeccao=bm.solicitacao,
+            empresa_terceira=bm.solicitacao.fornecedor,
+            coordenador=bm.solicitacao.coordenador,
+            data_inicio=date.today(),
+            data_fim=date.today() + timedelta(days=365),  # ajustar regra real
+            valor_total=Decimal("0.00"),  # ajustar conforme necessidade
+            objeto="Contrato aprovado a partir do BM",
+            status="aguardando_assinatura",
+        )"""
+
+    return redirect("detalhe_bm", pk=bm.pk)
+
+
+@login_required
+def reprovar_bm(request, pk, papel):
+    bm = get_object_or_404(DocumentoBM, pk=pk)
+
+    if papel == "coordenador" and request.user.groups.filter(name="Coordenador de Contrato").exists():
+        bm.status_coordenador = "reprovado"
+    elif papel == "gerente" and request.user.groups.filter(name="Gerente de Contrato").exists():
+        bm.status_gerente = "reprovado"
+    else:
+        messages.error(request, "Você não tem permissão para reprovar este documento.")
+        return redirect("lista_solicitacoes")
+
+    bm.save()
+
+    # Se alguém reprovou → exigir novo upload de minuta
+    if bm.reprovado_por_alguem:
+        messages.warning(request, "A minuta foi reprovada. Suprimentos deve reenviar um novo BM.")
+
+    return redirect("detalhe_bm", pk=bm.pk)
