@@ -18,7 +18,7 @@
             </thead>
             <tbody>
                 {% for item in lista_solicitacoes %}
-                    <tr style="cursor: pointer;" onclick="window.location='{% url 'detalhes_solicitacao' item.solicitacao.id %}'">
+                    <tr class="linha-hover" onclick="window.location='{% url 'detalhes_solicitacao' item.solicitacao.id %}'">
                         <td>{{ item.solicitacao.contrato }}</td>
                         <td>{{ item.fornecedor.nome }}</td>
                         <td>
