@@ -1,5 +1,5 @@
 from django import forms
-from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro
+from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM
 
 from decimal import Decimal, InvalidOperation
 import re
@@ -59,7 +59,7 @@ class ContratoForm(forms.ModelForm):
         self.fields['proposta'].queryset = (
             Proposta.objects.all()
         )
-        
+
     def clean_valor_total(self):
         valor = self.cleaned_data['valor_total']
         try:
@@ -124,10 +124,10 @@ class ContratoFornecedorForm(forms.ModelForm):
 
     class Meta:
         model = ContratoTerceiros
-        fields = ['cod_projeto', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta']
+        fields = ['cod_projeto', 'prospeccao', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto']
         widgets = {
             'cod_projeto': forms.Select(attrs={'class': 'form-select'}),
-            'proposta': forms.Select(attrs={'class': 'form-select'}),
+            'prospeccao': forms.Select(attrs={'class': 'form-select'}),
             'empresa_terceira': forms.Select(attrs={'class': 'form-select'}),
             'coordenador': forms.Select(attrs={'class': 'form-select'}),
             'valor_total': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_valor_total'}),
@@ -141,8 +141,8 @@ class ContratoFornecedorForm(forms.ModelForm):
         self.fields['coordenador'].queryset = (
             User.objects.filter(grupo='coordenador', is_active=True)
         )
-        self.fields['proposta'].queryset = (
-            Proposta.objects.all()
+        self.fields['prospeccao'].queryset = (
+            SolicitacaoProspeccao.objects.all().exclude(status='Finalizada')
         )
 
     def clean_valor_total(self):
@@ -164,7 +164,7 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
     )
     class Meta:
         model = SolicitacaoProspeccao
-        fields = ['contrato', 'descricao', 'requisitos','previsto_no_orcamento', 'valor_provisionado']
+        fields = ['contrato', 'descricao', 'requisitos','previsto_no_orcamento', 'valor_provisionado', 'cronograma']
         widgets = {
             'valor_provisionado': forms.TextInput(attrs ={
                 'class': 'form-control money',
@@ -219,3 +219,12 @@ class DocumentoContratoTerceiroForm(forms.ModelForm):
             except InvalidOperation:
                 raise forms.ValidationError("Informe um valor válido no formato 1.234,56")
         return None
+
+
+class DocumentoBMForm(forms.ModelForm):
+    class Meta:
+        model = DocumentoBM
+        fields = ['minuta_boletim', 'assinatura_fornecedor', 'assinatura_gerente']
+        widgets = {
+            'minuta_boletim': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+        }

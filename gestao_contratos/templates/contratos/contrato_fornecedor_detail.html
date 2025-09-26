@@ -7,17 +7,41 @@
     </div>
     <div class="card-body">
       <p><strong>Código do Projeto:</strong> {{ contrato.cod_projeto }}</p>
-      <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
+      <p><strong>Cliente:</strong> {{ contrato.cod_projeto.cliente }}</p>
       <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
       <p><strong>Data Início:</strong> {{ contrato.data_inicio|date:"d/m/Y" }}</p>
       <p><strong>Data Fim:</strong> {{ contrato.data_fim|date:"d/m/Y" }}</p>
       <p><strong>Valor Total:</strong> R$ {{ contrato.valor_total|floatformat:2 }}</p>
-      <p><strong>Status:</strong> {{ contrato.status }}</p>
+      <p><strong>Status:</strong> {{ contrato.get_status_display }}</p>
       <p><strong>Objeto:</strong> {{ contrato.objeto }}</p>
-      <p><strong>Proposta:</strong> {{ contrato.proposta }}</p>
+
+      <hr>
+
+      {# Bloco da proposta do fornecedor selecionado #}
+      {% if proposta_fornecedor %}
+        <div class="mt-3">
+          <h6>📄 Proposta do Fornecedor Selecionado</h6>
+          <p><strong>Fornecedor:</strong> {{ proposta_fornecedor.fornecedor }}</p>
+          <p><strong>Valor Proposta:</strong> R$ {{ proposta_fornecedor.valor_proposta|floatformat:2 }}</p>
+          <p><strong>Condição de Pagamento:</strong> {{ proposta_fornecedor.get_condicao_pagamento_display }}</p>
+          {% if proposta_fornecedor.prazo_validade %}
+            <p><strong>Prazo de Validade:</strong> {{ proposta_fornecedor.prazo_validade|date:"d/m/Y" }}</p>
+          {% endif %}
+          {% if proposta_fornecedor.arquivo_proposta %}
+            <p>
+              <a href="{{ proposta_fornecedor.arquivo_proposta.url }}" class="btn btn-sm btn-outline-primary">
+                📎 Baixar Proposta
+              </a>
+            </p>
+          {% endif %}
+        </div>
+      {% else %}
+        <p><em>Nenhuma proposta vinculada ao fornecedor selecionado.</em></p>
+      {% endif %}
     </div>
+
     <div class="card-footer text-end">
-      <a href="{% url 'lista_contratos_fornecedores' %}" class="btn btn-custom">← Voltar</a>
+      <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>
     </div>
   </div>
 </div>

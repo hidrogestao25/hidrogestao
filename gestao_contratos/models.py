@@ -158,6 +158,12 @@ class SolicitacaoProspeccao(models.Model):
         ('renegociar_prazo', 'Renegociar Prazo'),
         ('alterar_fornecedor', 'Selecionar outro Fornecedor'),
     ]
+    APROVACAO_CHOICES = [
+        ("pendente", "Pendente"),
+        ("aprovado", "Aprovado"),
+        ("reprovado", "Reprovado")
+    ]
+
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes')
     coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     descricao = models.TextField(blank=True, null=True)
@@ -166,6 +172,11 @@ class SolicitacaoProspeccao(models.Model):
     valor_provisionado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     data_solicitacao = models.DateTimeField(auto_now_add=True)
+    cronograma = models.FileField(
+        upload_to='cronograma/',
+        verbose_name='Inserir cronograma',
+        null=True, blank=True
+    )
 
     aprovado = models.BooleanField(null=True, blank=True)
     data_aprovacao = models.DateTimeField(null=True, blank=True)
@@ -173,7 +184,8 @@ class SolicitacaoProspeccao(models.Model):
 
     fornecedores_selecionados = models.ManyToManyField(EmpresaTerceira, blank=True)
     triagem_realizada = models.BooleanField(default=False)
-    #aprovacao_triagem = models.BooleanField(default=False)
+    aprovacao_fornecedor_gerente =  models.CharField(max_length=20, choices=APROVACAO_CHOICES, default="pendente")
+    aprocacao_fornecedor_gerente_em = models.DateTimeField(null=True, blank=True)
 
     nenhum_fornecedor_ideal = models.BooleanField(default=False)
 
@@ -184,6 +196,9 @@ class SolicitacaoProspeccao(models.Model):
     justificativa_diretoria = models.TextField(null=True, blank=True)
     acao_gerencia = models.CharField(max_length=100, null=True, blank=True, choices=ACAO_CHOICES)
     acao_diretoria = models.CharField(max_length=100, null=True, blank=True, choices=ACAO_CHOICES)
+
+    #boletim_flag = models.BooleanField(default=False)
+
 
     fornecedor_escolhido = models.ForeignKey(
         EmpresaTerceira,
@@ -321,7 +336,7 @@ class ContratoTerceiros(models.Model):
     ]
 
     cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE)
-    proposta = models.OneToOneField(SolicitacaoContratacaoTerceiro, on_delete=models.SET_NULL, null=True, blank=True)
+    prospeccao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.SET_NULL, null=True, blank=True)
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
     coordenador = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -502,6 +517,11 @@ class AditivoTerceiro(models.Model):
 # Documento BM
 # -------------
 class DocumentoBM(models.Model):
+    STATUS_CHOICES = [
+        ('pendente', 'Pendente'),
+        ('aprovado', 'Aprovado'),
+        ('reprovado', 'Reprovado'),
+    ]
     solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE)
     minuta_boletim = models.FileField(
         upload_to='Minuta boletim/',
@@ -518,13 +538,26 @@ class DocumentoBM(models.Model):
         blank=True,
         null=True
     )
+
+    status_coordenador = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    data_aprovacao_coordenador = models.DateTimeField()
+    status_gerente = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    data_aprovacao_gerente = models.DateTimeField()
+
+
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Boletim de Medição - {self.solicitacao.contrato.cod_projeto}"
 
+    @property
+    def aprovado_por_ambos(self):
+        return self.status_coordenador == "aprovado" and self.status_gerente == "aprovado"
 
+    @property
+    def reprovado_por_alguem(self):
+        return self.status_coordenador == "reprovado" or self.status_gerente == "reprovado"
 # ------
 # BM (Boletim de Medição) - contrato de terceiros
 # ------

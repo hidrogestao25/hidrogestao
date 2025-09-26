@@ -43,12 +43,12 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if request.user.grupo == 'gerente' %}
+                            {% if request.user.grupo == 'gerente' and item.contrato.arquivo_contrato %}
                                 <!-- Botão Avaliar para gerentes -->
                                 <a href="{% url 'detalhes_contrato' item.solicitacao.id %}" class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
                                     Avaliar
                                 </a>
-                            {% else %}
+                            {% elif request.user.grupo == 'suprimento' and item.solicitacao.status == "Fornecedor aprovado pela gerência" %}
                                 <!-- Cadastrar ou Revisar Contrato para outros usuários -->
                                 {% if item.contrato %}
                                     <a href="{% url 'cadastrar_contrato' item.solicitacao.id %}"
@@ -63,6 +63,14 @@
                                         Cadastrar Contrato
                                     </a>
                                 {% endif %}
+
+                            {% elif request.user.grupo == 'suprimento' and item.solicitacao.status == 'Aguardando boletim' %}
+                                <a href="{% url 'inserir_minuta_bm' item.solicitacao.id %}" class="btn btn-info btn-sm">
+                                    Inserir Minuta do BM
+                                </a>
+
+                            {% else %}
+                                -
                             {% endif %}
                         </td>
                     </tr>

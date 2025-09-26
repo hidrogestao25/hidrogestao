@@ -21,20 +21,14 @@
                     <th>Valor Provisionado</th>
                     <th>Status</th>
                     <th>Aprovação Gerente</th>
-                    {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+                    {% if request.user.grupo in 'suprimento,coordenador, gerente' %}
                         <th>Ações</th>
                     {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for solicitacao in page_obj %}
-                    <tr
-                        {% if solicitacao.fornecedor_escolhido %}
-                            onclick="window.location='{% url 'detalhes_solicitacao' solicitacao.id %}'" style="cursor:pointer;"
-                        {% elif request.user.grupo in 'coordenador,financeiro' and solicitacao.triagem_realizada %}
-                            onclick="window.location='{% url 'detalhes_triagem_fornecedores' solicitacao.id %}'" style="cursor:pointer;"
-                        {% endif %}
-                    >
+                    <tr>
                         <td>{{ solicitacao.contrato }}</td>
                         <td>{{ solicitacao.descricao }}</td>
                         <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>
@@ -54,33 +48,44 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if solicitacao.aprovacao_gerencia == True %}
+                            {% if solicitacao.status == "Fornecedor Selecionado" %}
+                                <span class="badge bg-warning">Aguardando aprovação</span>
+                            {% elif solicitacao.status == "Aprovado" %}
                                 <span class="badge bg-success">Aprovado</span>
-                            {% elif solicitacao.reprovacao_gerencia == True %}
+                            {% elif solicitacao.status == "Reprovado" %}
                                 <span class="badge bg-danger">Reprovado</span>
+                            {% elif solicitacao.status == "Finalizada" %}
+                                <span class="badge bg-secondary">Finalizada</span>
                             {% else %}
                                 <span class="badge bg-secondary">Pendente</span>
                             {% endif %}
                         </td>
 
-                        {% if request.user.grupo == 'suprimento' %}
                         <td>
-                            {% if solicitacao.aprovado == None %}
-                                <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success btn-sm">Aprovar</a>
-                                <a href="{% url 'aprovar_solicitacao' solicitacao.id 'reprovar' %}" class="btn btn-danger btn-sm">Reprovar</a>
-                            {% endif %}
+                        {% if request.user.grupo == 'suprimento' %}
 
-                            {% if solicitacao.aprovado %}
-                                {% if solicitacao.triagem_realizada %}
-                                    {% if not solicitacao.fornecedor_escolhido %}
-                                        <a href="{% url 'triagem_fornecedores' solicitacao.id %}" class="btn btn-success btn-sm">Refazer Triagem</a>
-                                    {% endif %}
-                                {% else %}
-                                    <a href="{% url 'triagem_fornecedores' solicitacao.id %}" class="btn btn-primary btn-sm">Fazer Triagem</a>
+                                {% if solicitacao.aprovado == None %}
+                                    <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success btn-sm">Aprovar</a>
+                                    <a href="{% url 'aprovar_solicitacao' solicitacao.id 'reprovar' %}" class="btn btn-danger btn-sm">Reprovar</a>
                                 {% endif %}
-                            {% endif %}
-                        </td>
+
+                                {% if solicitacao.aprovado %}
+                                    {% if solicitacao.triagem_realizada %}
+                                        {% if not solicitacao.fornecedor_escolhido %}
+                                            <a href="{% url 'triagem_fornecedores' solicitacao.id %}" class="btn btn-success btn-sm">Refazer Triagem</a>
+                                        {% endif %}
+                                    {% else %}
+                                        <a href="{% url 'triagem_fornecedores' solicitacao.id %}" class="btn btn-primary btn-sm">Fazer Triagem</a>
+                                    {% endif %}
+                                {% endif %}
+
+                        {% elif request.user.grupo == 'gerente' and solicitacao.status == "Aguardando Aprovação do Fornecedor pelo Gerente" %}
+                                <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Aprovar/Reprovar Fornecedor</a>
                         {% endif %}
+                        {% if solicitacao.documentobm %}
+                                <a href="{% url 'detalhe_bm' solicitacao.documentobm.id %}" class="btn btn-info btn-sm">Detalhes BM</a>
+                        {% endif %}
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>
