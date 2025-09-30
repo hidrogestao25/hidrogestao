@@ -1,5 +1,5 @@
 from django import forms
-from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM
+from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento
 
 from decimal import Decimal, InvalidOperation
 import re
@@ -227,4 +227,28 @@ class DocumentoBMForm(forms.ModelForm):
         fields = ['minuta_boletim', 'assinatura_fornecedor', 'assinatura_gerente']
         widgets = {
             'minuta_boletim': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+        }
+
+
+class EventoPrevisaoForm(forms.ModelForm):
+    class Meta:
+        model = Evento
+        fields = ["descricao", "data_prevista", "valor_previsto"]
+        widgets = {
+            "data_prevista": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "descricao" : forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "valor_previsto": forms.NumberInput(attrs={"class": "form-control"}),
+        }
+
+
+class EventoEntregaForm(forms.ModelForm):
+    class Meta:
+        model = Evento
+        fields = ["arquivo", "justificativa", "avaliacao", "data_entrega", "realizado", "com_atraso", "valor_pago"]
+        widgets = {
+            "arquivo": forms.ClearableFileInput(attrs={"class": "form-control"}),
+            "justificativa": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "avaliacao": forms.Select(attrs={"class": "form-select"}),
+            "data_entrega": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
         }

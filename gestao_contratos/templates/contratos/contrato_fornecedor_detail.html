@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+
 <div class="container mt-4">
   <div class="card shadow-sm">
     <div class="card-header card-header-custom text-white">
@@ -15,34 +16,87 @@
       <p><strong>Status:</strong> {{ contrato.get_status_display }}</p>
       <p><strong>Objeto:</strong> {{ contrato.objeto }}</p>
 
-      <hr>
 
-      {# Bloco da proposta do fornecedor selecionado #}
-      {% if proposta_fornecedor %}
-        <div class="mt-3">
-          <h6>📄 Proposta do Fornecedor Selecionado</h6>
-          <p><strong>Fornecedor:</strong> {{ proposta_fornecedor.fornecedor }}</p>
-          <p><strong>Valor Proposta:</strong> R$ {{ proposta_fornecedor.valor_proposta|floatformat:2 }}</p>
-          <p><strong>Condição de Pagamento:</strong> {{ proposta_fornecedor.get_condicao_pagamento_display }}</p>
-          {% if proposta_fornecedor.prazo_validade %}
-            <p><strong>Prazo de Validade:</strong> {{ proposta_fornecedor.prazo_validade|date:"d/m/Y" }}</p>
-          {% endif %}
-          {% if proposta_fornecedor.arquivo_proposta %}
-            <p>
-              <a href="{{ proposta_fornecedor.arquivo_proposta.url }}" class="btn btn-sm btn-outline-primary">
-                📎 Baixar Proposta
-              </a>
-            </p>
-          {% endif %}
-        </div>
-      {% else %}
-        <p><em>Nenhuma proposta vinculada ao fornecedor selecionado.</em></p>
+  <hr>
+
+  {# Bloco da proposta do fornecedor selecionado #}
+  {% if proposta_fornecedor %}
+    <div class="mt-3">
+      <h6>📄 Proposta do Fornecedor Selecionado</h6>
+      <p><strong>Fornecedor:</strong> {{ proposta_fornecedor.fornecedor }}</p>
+      <p><strong>Valor Proposta:</strong> R$ {{ proposta_fornecedor.valor_proposta|floatformat:2 }}</p>
+      <p><strong>Condição de Pagamento:</strong> {{ proposta_fornecedor.get_condicao_pagamento_display }}</p>
+      {% if proposta_fornecedor.prazo_validade %}
+        <p><strong>Prazo de Validade:</strong> {{ proposta_fornecedor.prazo_validade|date:"d/m/Y" }}</p>
+      {% endif %}
+      {% if proposta_fornecedor.arquivo_proposta %}
+        <p>
+          <a href="{{ proposta_fornecedor.arquivo_proposta.url }}" class="btn btn-sm btn-outline-primary">
+            📎 Baixar Proposta
+          </a>
+        </p>
       {% endif %}
     </div>
+  {% else %}
+    <p><em>Nenhuma proposta vinculada ao fornecedor selecionado.</em></p>
+  {% endif %}
 
-    <div class="card-footer text-end">
-      <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>
-    </div>
+  <hr>
+
+  {# Bloco de eventos vinculados ao contrato #}
+  <h6>📌 Eventos do Contrato</h6>
+  {% if eventos %}
+    <table class="table table-sm table-bordered align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Descrição</th>
+          <th>Data Prevista</th>
+          <th>Valor Previsto</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for evento in eventos %}
+          <tr>
+            <td>{{ evento.descricao }}</td>
+            <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
+            <td>R$ {{ evento.valor_previsto|floatformat:2 }}</td>
+            <td>
+              {% if evento.realizado %}
+                ✅ Realizado
+              {% else %}
+                ⏳ Pendente
+              {% endif %}
+            </td>
+            <td>
+              <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
+                Registrar Entrega
+              </a>
+              {% if request.user.grupo == 'suprimento' %}
+              <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
+              <a href="{% url 'excluir_evento' evento.id %}" class="btn btn-sm btn-danger"
+                 onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                 Apagar
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p><em>Nenhum evento cadastrado para este contrato.</em></p>
+  {% endif %}
+  {% if request.user.grupo == 'suprimento' %}
+      <a href="{% url 'cadastrar_evento_contrato' contrato.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+  {% endif %}
+</div>
+
+<div class="card-footer text-end">
+  <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>
+</div>
+
   </div>
 </div>
 {% endblock %}

@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="container mt-4">
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">Cadastrar Evento - Solicitação {{ solicitacao.id }}</h4>
+        </div>
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+
+
+            <div class="row">
+                <div class="col-md-12 mb-3">
+                    <label class="form-label"><strong>Descrição</strong></label>
+                    {{ form.descricao }}
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label"><strong>Data Prevista</strong></label>
+                    {{ form.data_prevista }}
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label"><strong>Valor Previsto</strong></label>
+                    {{ form.valor_previsto }}
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between">
+                <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-secondary">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-success">
+                    Salvar Evento
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+</div>
+
+{% endblock %}

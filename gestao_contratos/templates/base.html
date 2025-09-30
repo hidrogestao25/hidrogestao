@@ -80,11 +80,78 @@
         }
 
         .linha-hover:hover td {
-            background-color: #fff59d; 
+            background-color: #fff59d;
         }
 
         .table tbody tr.linha-hover:hover td {
             background-color: #fff59d;
+        }
+
+        .timeline {
+          position: relative;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin: 40px 0;
+        }
+
+        .timeline::before {
+          content: "";
+          position: absolute;
+          top: 50%;
+          left: 0;
+          height: 6px;
+          width: 100%;
+          background: #ccc;  /* fundo cinza */
+          z-index: 1;
+          border-radius: 3px;
+          transform: translateY(-50%);
+        }
+
+        .timeline-progress {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            height: 6px;
+            background: #28a745; /* verde */
+            z-index: 2; /* fica acima do cinza */
+            border-radius: 3px;
+            transform: translateY(-50%);
+            width: 0; /* começa vazio */
+            transition: width 1s ease-in-out; /* animação suave */
+        }
+
+        .step {
+          position: relative;
+          z-index: 3;
+          text-align: center;
+          flex: 1;
+        }
+
+        .step .circle {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          margin: 0 auto 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #ccc;
+          color: white;
+          font-weight: bold;
+          transition: background 0.3s ease;
+        }
+
+        .step.completed .circle {
+          background: #28a745; /* verde */
+        }
+
+        .step.active .circle {
+          background: #ffc107; /* amarelo */
+        }
+
+        .step span {
+          font-size: 13px;
         }
 
         main {
