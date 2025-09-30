@@ -344,8 +344,8 @@ class ContratoTerceiros(models.Model):
         related_name="contratos_coordenados",
         #limit_choices_to={'groups__name': 'Coordenador de Contrato'}
     )
-    data_inicio = models.DateField()
-    data_fim = models.DateField()
+    data_inicio = models.DateField(null=True, blank=True)
+    data_fim = models.DateField(null=True, blank=True)
     valor_total = models.DecimalField(max_digits=12, decimal_places=2)
     objeto = models.TextField()
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao')
@@ -357,22 +357,28 @@ class ContratoTerceiros(models.Model):
 # ---------------------------
 # Indicadores do fornecedor
 # ---------------------------
-class EntregaFornecedor(models.Model):
+class Evento(models.Model):
     AVALIACAO_CHOICES = [
         ('Aprovado', 'Aprovado'),
         ('Reprovado', 'Reprovado'),
     ]
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
-    contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE)
+    prospeccao = models.ForeignKey(SolicitacaoProspeccao, on_delete=models.CASCADE, null=True, blank=True)
+    contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, null=True, blank=True)
     arquivo = models.FileField(
         upload_to='produto_do_fornecedor/',
         verbose_name='Inserir arquivo para comprovação de entrega',
         null=True, blank=True
     )
+    descricao = models.TextField()
     justificativa = models.TextField(null=True, blank=True)
     avaliacao = models.CharField(max_length=30, choices=AVALIACAO_CHOICES, null=True, blank=True)
     data_prevista = models.DateField(null=True, blank=True)  # limite para entrega
-    data_entrega = models.DateField(auto_now_add=True)       # data real da entrega
+    data_entrega = models.DateField(null=True, blank=True)       # data real da entrega
+    realizado = models.BooleanField(default=False)
+    com_atraso = models.BooleanField(default=False)
+    valor_previsto = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    valor_pago = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -540,9 +546,9 @@ class DocumentoBM(models.Model):
     )
 
     status_coordenador = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
-    data_aprovacao_coordenador = models.DateTimeField()
+    data_aprovacao_coordenador = models.DateTimeField(null=True, blank=True)
     status_gerente = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
-    data_aprovacao_gerente = models.DateTimeField()
+    data_aprovacao_gerente = models.DateTimeField(null=True, blank=True)
 
 
     criado_em = models.DateTimeField(auto_now_add=True)

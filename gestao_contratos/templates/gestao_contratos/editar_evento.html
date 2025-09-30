@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class="container mt-4">
+    <h2>Editar Evento - Solicitação {{ evento.prospeccao.id }}</h2>
+
+<form method="post" enctype="multipart/form-data" class="mt-4">
+    {% csrf_token %}
+    <div class="card shadow-sm p-4">
+        {{ form.as_p }}
+    </div>
+
+    <div class="mt-3">
+        <button type="submit" class="btn btn-success">Salvar Alterações</button>
+        <a href="{% url 'detalhes_solicitacao' evento.prospeccao.id %}" class="btn btn-secondary">Cancelar</a>
+    </div>
+</form>
+
+</div>
+{% endblock %}

@@ -10,6 +10,7 @@ urlpatterns = [
     path('contratos_fornecedores', views.lista_contratos_fornecedor, name='lista_contratos_fornecedores'),
     path('contratos_fornecedores/novo', ContratoFornecedorCreateView.as_view(), name='novo_contrato_fornecedor'),
     path('contratos_fornecedores/<int:pk>/', views.contrato_fornecedor_detalhe, name='contrato_fornecedor_detalhe'),
+    path('contratos_fornecedores/<int:pk>/editar/', views.contrato_fornecedor_editar, name='contrato_fornecedor_editar'),
 
     path('clientes/', views.lista_clientes, name='lista_clientes'),
     path('clientes/novo/', ClienteCreateView.as_view(), name='novo_cliente'),
@@ -27,6 +28,8 @@ urlpatterns = [
     path('fornecedores/solicitacoes/<int:pk>', views.detalhes_triagem_fornecedores, name='detalhes_triagem_fornecedores'),
 
     path('solicitacoes/<int:pk>/detalhes/', views.detalhes_solicitacao, name='detalhes_solicitacao'),
+    path("solicitacao/<int:pk>/evento/novo/", views.cadastrar_evento, name="cadastrar_evento"),
+    path("contrato/<int:pk>/evento/novo/", views.cadastrar_evento_contrato, name="cadastrar_evento_contrato"),
     path('solicitacoes/<int:pk>/propostas/', views.propostas_fornecedores, name='propostas_fornecedores'),
     path("solicitacao/<int:pk>/renegociar-valor/", views.renegociar_valor, name="renegociar_valor"),
     path("solicitacao/<int:pk>/renegociar-prazo/", views.renegociar_prazo, name="renegociar_prazo"),
@@ -41,5 +44,9 @@ urlpatterns = [
     path("bm/<int:pk>/detalhe/", views.detalhe_bm, name="detalhe_bm"),
     path("bm/<int:pk>/aprovar/<str:papel>/", views.aprovar_bm, name="aprovar_bm"),
     path("bm/<int:pk>/reprovar/<str:papel>/", views.reprovar_bm, name="reprovar_bm"),
+
+    path("evento/<int:pk>/editar/", views.editar_evento, name="editar_evento"),
+    path("evento/<int:pk>/excluir/", views.excluir_evento, name="excluir_evento"),
+    path("evento/<int:pk>/registrar-entrega/", views.registrar_entrega, name="registrar_entrega"),
 
 ]

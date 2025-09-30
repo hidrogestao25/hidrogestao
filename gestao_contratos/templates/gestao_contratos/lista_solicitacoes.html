@@ -79,10 +79,14 @@
                                     {% endif %}
                                 {% endif %}
 
-                        {% elif request.user.grupo == 'gerente' and solicitacao.status == "Aguardando Aprovação do Fornecedor pelo Gerente" %}
+                                {% if solicitacao.aprovacao_fornecedor_gerente == 'aprovado' and solicitacao.aprovacao_gerencia == False %}
+                                    <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-primary btn-sm">Inserir Minuta do BM</a>
+                                {% endif %}
+
+                        {% elif request.user.grupo == 'gerente' and solicitacao.status == "Fornecedor selecionado" %}
                                 <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Aprovar/Reprovar Fornecedor</a>
                         {% endif %}
-                        {% if request.user.grupo == 'coordenador' and solicitacao.triagem_realizada %}
+                        {% if request.user.grupo == 'coordenador' and solicitacao.triagem_realizada and solicitacao.status == "Fornecedor selecionado" %}
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                         {% endif %}
                         {% if solicitacao.documentobm %}

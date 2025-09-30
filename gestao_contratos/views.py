@@ -8,8 +8,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm
 
 
 User = get_user_model()
@@ -194,29 +194,51 @@ def contrato_cliente_detalhe(request, pk):
 def contrato_fornecedor_detalhe(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
 
-    # Pega apenas a proposta do fornecedor selecionado
     proposta_fornecedor = None
     if contrato.prospeccao and contrato.prospeccao.fornecedor_escolhido:
         proposta_fornecedor = contrato.prospeccao.propostas.filter(
             fornecedor=contrato.prospeccao.fornecedor_escolhido
         ).first()
 
-    # Se o usuário for suprimento ou financeiro, permite editar
-    if request.user.grupo in ["suprimento", "financeiro"]:
-        if request.method == 'POST':
-            form = ContratoFornecedorForm(request.POST, instance=contrato)
-            if form.is_valid():
-                form.save()
-                messages.success(request, "Contrato do Fornecedor atualizado com sucesso!")
-                return redirect("lista_contratos_fornecedores")
-            else:
-                messages.error(request, "❌ Ocorreu um erro ao atualizar o contrato. Verifique os campos e tente novamente.")
+    eventos = Evento.objects.filter(contrato_terceiro=contrato)
+
+    return render(
+        request,
+        "contratos/contrato_fornecedor_detail.html",
+        {
+            "contrato": contrato,
+            "proposta_fornecedor": proposta_fornecedor,
+            "eventos": eventos,
+        },
+    )
+
+
+@login_required
+def contrato_fornecedor_editar(request, pk):
+    contrato = get_object_or_404(ContratoTerceiros, pk=pk)
+
+    if request.user.grupo not in ["suprimento", "financeiro"]:
+        messages.error(request, "❌ Você não tem permissão para editar contratos.")
+        return redirect("contrato_fornecedor_detalhe", pk=pk)
+
+    if request.method == "POST":
+        form = ContratoFornecedorForm(request.POST, instance=contrato)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Contrato atualizado com sucesso!")
+            return redirect("contrato_fornecedor_detalhe", pk=pk)
         else:
-            form = ContratoFornecedorForm(instance=contrato)
-        return render(request, 'contratos/contrato_fornecedor_detail_edit.html', {'form': form, 'contrato': contrato, 'proposta_fornecedor': proposta_fornecedor})
+            messages.error(
+                request, "❌ Ocorreu um erro ao atualizar o contrato. Verifique os campos."
+            )
+    else:
+        form = ContratoFornecedorForm(instance=contrato)
 
-    return render(request, 'contratos/contrato_fornecedor_detail.html', {'contrato': contrato, 'proposta_fornecedor': proposta_fornecedor})
-
+    return render(
+        request,
+        "contratos/contrato_fornecedor_detail_edit.html",
+        {"form": form, "contrato": contrato},
+    )
 
 
 @login_required
@@ -499,7 +521,7 @@ def detalhes_triagem_fornecedores(request, pk):
             fornecedor = get_object_or_404(EmpresaTerceira, pk=escolhido_id)
             solicitacao.fornecedor_escolhido = fornecedor
             solicitacao.nenhum_fornecedor_ideal = False
-            solicitacao.status = 'Aguardando Aprovação do Fornecedor pelo Gerente'
+            solicitacao.status = 'Fornecedor selecionado'
             solicitacao.aprovacao_gerente = "pendente"
             solicitacao.save()
 
@@ -546,7 +568,7 @@ def aprovar_fornecedor_gerente(request, pk):
     if request.method == "POST":
         acao = request.POST.get("acao")
         if acao == "aprovar":
-            solicitacao.status = "Fornecedor aprovado pela gerência"
+            solicitacao.status = "Fornecedor aprovado"
             solicitacao.aprovacao_fornecedor_gerente = "aprovado"
             solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
             messages.success(request, f"Fornecedor {solicitacao.fornecedor_escolhido.nome} aprovado pelo gerente.")
@@ -571,6 +593,17 @@ def detalhes_solicitacao(request, pk):
     # Busca a solicitação
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
+    status_order = [
+        "Solicitação de prospeccao",
+        "Aprovada pelo suprimento",
+        "Triagem realizada",
+        "Fornecedor selecionado",
+        "Fornecedor aprovado",
+        "Planejamento do BM",
+        "Aprovação do Planejamento",
+        "Finalizada",
+    ]
+
     fornecedor_escolhido = solicitacao.fornecedor_escolhido
     fornecedores_selecionados = solicitacao.fornecedores_selecionados.all()
 
@@ -589,12 +622,21 @@ def detalhes_solicitacao(request, pk):
             empresa_terceira=fornecedor_escolhido
         )
 
+    eventos = solicitacao.evento_set.all()
+
+    current_index = status_order.index(solicitacao.status)+1 if solicitacao.status in status_order else 0
+    progress_percent = "{:.2f}".format((current_index / (len(status_order))) * 100)
+
     context = {
         "solicitacao": solicitacao,
         "fornecedor_escolhido": fornecedor_escolhido,
         "proposta_escolhida": proposta_escolhida,
         "fornecedores_selecionados": fornecedores_selecionados,
         "indicadores": indicadores,
+        "status_order": status_order,
+        "current_index": current_index,
+        "progress_percent": progress_percent,
+        "eventos": eventos,
     }
 
     return render(request, "gestao_contratos/detalhes_solicitacao.html", context)
@@ -782,7 +824,7 @@ def detalhes_contrato(request, pk):
             solicitacao.aprovacao_gerencia = True
             solicitacao.reprovacao_gerencia = False
             solicitacao.justificativa_gerencia = ""
-            solicitacao.status = "Aguardando boletim"
+            solicitacao.status = "Planejamento do BM"
 
             coordenador = solicitacao.coordenador
             suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
@@ -942,7 +984,7 @@ def inserir_minuta_bm(request, pk):
         form = DocumentoBMForm(request.POST, request.FILES, instance=documento_bm)
         if form.is_valid():
             form.save()
-            solicitacao.status = "Minuta BM enviada para avaliação"
+            solicitacao.status = "Planejamento do BM"
             solicitacao.save()
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
             return redirect('lista_solicitacoes')
@@ -985,7 +1027,7 @@ def detalhe_bm(request, pk):
             documento = None
         # Se ambos aprovaram → cria contrato e finaliza solicitação
         if (bm.status_coordenador=="aprovado") and (bm.status_gerente=="aprovado"):
-            ContratoTerceiros.objects.get_or_create(
+            contrato, created = ContratoTerceiros.objects.get_or_create(
                 cod_projeto=solicitacao.contrato,
                 prospeccao=solicitacao,
                 empresa_terceira=solicitacao.fornecedor_escolhido,
@@ -996,6 +1038,7 @@ def detalhe_bm(request, pk):
                 objeto=documento.objeto if documento else "",
                 status="Em execução",
             )
+            Evento.objects.filter(prospeccao=solicitacao, contrato_terceiro__isnull=True).update(contrato_terceiro=contrato)
             solicitacao.status = "Finalizada"
             solicitacao.save()
 
@@ -1054,3 +1097,88 @@ def reprovar_bm(request, pk, papel):
         messages.warning(request, "A minuta foi reprovada. Suprimentos deve reenviar um novo BM.")
 
     return redirect("detalhe_bm", pk=bm.pk)
+
+@login_required
+def cadastrar_evento(request, pk):
+    solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+
+    if request.method == "POST":
+        form = EventoPrevisaoForm(request.POST)
+        if form.is_valid():
+            evento = form.save(commit=False)
+            evento.prospeccao = solicitacao
+            evento.empresa_terceira = solicitacao.fornecedor_escolhido  # ajuste se o campo for diferente
+            evento.save()
+            return redirect("detalhes_solicitacao", pk=pk)
+    else:
+        form = EventoPrevisaoForm()
+
+    return render(request, "gestao_contratos/cadastrar_evento.html", {
+        "form": form,
+        "solicitacao": solicitacao,
+    })
+
+@login_required
+def cadastrar_evento_contrato(request, pk):
+    contrato = get_object_or_404(ContratoTerceiros, pk=pk)
+    #solicitacao = contrato.prospeccao
+
+    if request.method == "POST":
+        form = EventoPrevisaoForm(request.POST)
+        if form.is_valid():
+            evento = form.save(commit=False)
+            #evento.prospeccao = solicitacao
+            evento.contrato_terceiro = contrato
+            evento.empresa_terceira = contrato.empresa_terceira
+            evento.save()
+            return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
+    else:
+        form = EventoPrevisaoForm()
+
+    return render(request, "gestao_contratos/cadastrar_evento_contrato.html", {
+        "form": form,
+        "contrato": contrato,
+        #"solicitacao": solicitacao,
+    })
+
+
+@login_required
+def editar_evento(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+    if request.method == "POST":
+        form = EventoPrevisaoForm(request.POST, request.FILES, instance=evento)
+        if form.is_valid():
+            form.save()
+            return redirect("detalhes_solicitacao", pk=evento.prospeccao.id)
+    else:
+        form = EventoPrevisaoForm(instance=evento)
+    return render(request, "gestao_contratos/editar_evento.html", {"form": form, "evento": evento})
+
+
+@login_required
+def excluir_evento(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+    if request.method == "POST":
+        solicitacao_id = evento.prospeccao.id
+        evento.delete()
+        return redirect("detalhes_solicitacao", pk=solicitacao_id)
+    return render(request, "gestao_contratos/excluir_evento.html", {"evento": evento})
+
+
+@login_required
+def registrar_entrega(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+
+    if request.method == "POST":
+        form = EventoEntregaForm(request.POST, request.FILES, instance=evento)
+        if form.is_valid():
+            form.save()
+            return redirect('contrato_fornecedor_detalhe', pk=evento.contrato_terceiro.pk)
+    else:
+        form = EventoEntregaForm(instance=evento)
+
+    return render(request, "eventos/registrar_entrega.html", {
+        "form": form,
+        "evento": evento,
+        "contrato": evento.contrato_terceiro,
+    })

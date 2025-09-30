@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 from .models import (
     User, Cliente, EmpresaTerceira, Proposta, Contrato, PropostaFornecedor,
-    SolicitacaoContratacaoTerceiro, ContratoTerceiros, EntregaFornecedor,
+    SolicitacaoContratacaoTerceiro, ContratoTerceiros, Evento,
     AvaliacaoFornecedor, Indicadores, ContratoTimeline, ContratoTimelineTerceiro,
     Aditivo, AditivoTerceiro, BM, DocumentoContrato, DocumentoContratoTerceiro,
     SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM
@@ -98,7 +98,7 @@ admin.site.register(User, CustomUserAdmin)
 
 MODELOS_PADRAO = [
     Cliente, EmpresaTerceira, Proposta, Contrato, PropostaFornecedor,
-    SolicitacaoContratacaoTerceiro, ContratoTerceiros, EntregaFornecedor,
+    SolicitacaoContratacaoTerceiro, ContratoTerceiros, Evento,
     AvaliacaoFornecedor, Indicadores, ContratoTimeline, ContratoTimelineTerceiro,
     Aditivo, AditivoTerceiro, BM, DocumentoContrato, DocumentoContratoTerceiro,
     SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM

@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class="container mt-4">
+    <h2>Excluir Evento</h2>
+
+
+<div class="alert alert-warning mt-3">
+    Tem certeza que deseja excluir o evento <strong>{{ evento.descricao }}</strong>?
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Sim, excluir</button>
+    <a href="{% url 'detalhes_solicitacao' evento.prospeccao.id %}" class="btn btn-secondary">Cancelar</a>
+</form>
+
+
+</div>
+{% endblock %}
