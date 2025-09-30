@@ -252,3 +252,10 @@ class EventoEntregaForm(forms.ModelForm):
             "data_entrega": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
             "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
         }
+
+
+class FiltroPrevisaoForm(forms.Form):
+    data_limite = forms.DateField(
+        label="Data limite",
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"})
+    )

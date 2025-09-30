@@ -4,12 +4,13 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
+from django.db.models import Sum
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm
 
 
 User = get_user_model()
@@ -1181,4 +1182,30 @@ def registrar_entrega(request, pk):
         "form": form,
         "evento": evento,
         "contrato": evento.contrato_terceiro,
+    })
+
+
+@login_required
+def previsao_pagamentos(request):
+    pagamentos = None
+    total = 0
+    form = FiltroPrevisaoForm(request.GET or None)
+
+    if form.is_valid():
+        data_limite = form.cleaned_data["data_limite"]
+
+        # Filtra todos eventos previstos até a data
+        pagamentos = (
+            Evento.objects.filter(data_prevista__lte=data_limite)
+            .values("contrato_terceiro__cod_projeto__cod_projeto","empresa_terceira__nome")
+            .annotate(total_pago=Sum("valor_previsto"))
+            .order_by("empresa_terceira__nome")
+        )
+
+        total = sum(p["total_pago"] for p in pagamentos)
+
+    return render(request, "gestao_contratos/previsao_pagamentos.html", {
+        "form": form,
+        "pagamentos": pagamentos,
+        "total": total,
     })

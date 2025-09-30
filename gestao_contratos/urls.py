@@ -49,4 +49,6 @@ urlpatterns = [
     path("evento/<int:pk>/excluir/", views.excluir_evento, name="excluir_evento"),
     path("evento/<int:pk>/registrar-entrega/", views.registrar_entrega, name="registrar_entrega"),
 
+    path("previsao-pagamentos/", views.previsao_pagamentos, name="previsao_pagamentos"),
+
 ]
