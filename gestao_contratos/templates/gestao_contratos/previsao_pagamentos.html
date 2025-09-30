@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Previsão de Pagamentos</h2>
+  <p>Selecione uma data para visualizar os pagamentos previstos até ela.</p>
+
+  <form method="get" class="mb-4">
+    <div class="row">
+      <div class="col-md-4">
+        {{ form.data_limite }}
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+      </div>
+    </div>
+  </form>
+
+  {% if pagamentos %}
+    <table class="table table-bordered table-striped">
+      <thead class="table-dark">
+        <tr>
+          <th>Projeto</th>
+          <th>Fornecedor</th>
+          <th>Total Previsto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in pagamentos %}
+        <tr>
+          <td>{{ item.contrato_terceiro__cod_projeto__cod_projeto }}</td>
+          <td>{{ item.empresa_terceira__nome }}</td>
+          <td>R$ {{ item.total_pago|floatformat:2 }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="fw-bold">
+          <td>Total Geral</td>
+          <td>R$ {{ total|floatformat:2 }}</td>
+        </tr>
+      </tbody>
+    </table>
+  {% elif form.is_bound %}
+    <div class="alert alert-warning">Nenhum pagamento previsto até esta data.</div>
+  {% endif %}
+</div>
+{% endblock %}

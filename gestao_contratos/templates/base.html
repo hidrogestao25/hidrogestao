@@ -229,6 +229,9 @@
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{% url 'lista_contratos' %}"><i class="bi bi-person-lines-fill"></i> Contratos com Clientes</a></li>
                             <li><a class="dropdown-item" href="{% url 'lista_contratos_fornecedores' %}"><i class="bi bi-people-fill"></i> Contratos com Terceiros</a></li>
+                            {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' %}
+                                <li><a class="dropdown-item" href="{% url 'previsao_pagamentos' %}"><i class="bi bi-cash-coin"></i> Previsão de Pagamentos</a></li>
+                            {% endif %}
                             <li><a class="dropdown-item" href="#"><i class="bi bi-pencil-square"></i> Aditivos</a></li>
                         </ul>
                     </li>
