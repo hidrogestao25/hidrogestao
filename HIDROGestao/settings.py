@@ -27,7 +27,7 @@ SECRET_KEY = "django-insecure-l0jbyg$9^n7-vf-yc(44h&*#p)d(sz$&!b^fj^!2$-sk*)a0!u
 DEBUG = True
 
 ALLOWED_HOSTS = []
-
+#ALLOWED_HOSTS = ["hidrogestao.pythonanywhere.com"]
 
 # Application definition
 
