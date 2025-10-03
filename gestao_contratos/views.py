@@ -1219,7 +1219,7 @@ def previsao_pagamentos(request):
 
         # Filtra todos eventos previstos até a data
         pagamentos = (
-            Evento.objects.filter(data_prevista__lte=data_limite)
+            Evento.objects.filter(data_pagamento__lte=data_limite)
             .values("contrato_terceiro__cod_projeto__cod_projeto","empresa_terceira__nome")
             .annotate(total_pago=Sum("valor_previsto"))
             .order_by("empresa_terceira__nome")

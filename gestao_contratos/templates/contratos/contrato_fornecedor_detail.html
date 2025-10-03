@@ -71,15 +71,17 @@
               {% endif %}
             </td>
             <td>
-              <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
-                Registrar Entrega
-              </a>
-              {% if request.user.grupo == 'suprimento' %}
-              <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
-              <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
-                 onclick="return confirm('Tem certeza que deseja excluir este evento?')">
-                 Apagar
-              </a>
+              {% if evento.valor_pago %}
+                  <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
+                    Registrar Entrega
+                  </a>
+                  {% if request.user.grupo == 'suprimento' %}
+                  <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
+                  <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
+                     onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                     Apagar
+                  </a>
+                  {% endif %}
               {% endif %}
             </td>
           </tr>
