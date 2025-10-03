@@ -12,6 +12,9 @@ from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento
 from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm
 
+import plotly.graph_objs as go
+import pandas as pd
+from plotly.offline import plot
 
 User = get_user_model()
 
@@ -203,6 +206,48 @@ def contrato_fornecedor_detalhe(request, pk):
 
     eventos = Evento.objects.filter(contrato_terceiro=contrato).order_by("data_prevista")
 
+    df = pd.DataFrame(list(eventos.values("data_prevista", "valor_previsto", "valor_pago", "data_entrega")))
+
+    plot_div = None
+    if not df.empty:
+        # Preencher valores nulos com 0
+        df["valor_previsto"] = df["valor_previsto"].fillna(0)
+        df["valor_pago"] = df["valor_pago"].fillna(0)
+
+        # Ordenar pelas datas
+        df = df.sort_values("data_prevista")
+
+        # Calcular valores acumulados
+        df["valor_previsto_acum"] = df["valor_previsto"].cumsum()
+        df["valor_pago_acum"] = df["valor_pago"].cumsum()
+
+        # Criar gráfico
+        trace_previsto = go.Scatter(
+            x=df["data_prevista"],
+            y=df["valor_previsto_acum"],
+            mode="lines+markers",
+            name="Previsto (Acumulado)",
+            line=dict(color="orange")
+        )
+
+        trace_pago = go.Scatter(
+            x=df["data_entrega"],
+            y=df["valor_pago_acum"],
+            mode="lines+markers",
+            name="Pago (Acumulado)",
+            line=dict(color="green")
+        )
+
+        layout = go.Layout(
+            title="Evolução Acumulada de Pagamentos",
+            xaxis=dict(title="Data"),
+            yaxis=dict(title="Valor (R$)"),
+            template="plotly_white"
+        )
+
+        fig = go.Figure(data=[trace_previsto, trace_pago], layout=layout)
+        plot_div = plot(fig, auto_open=False, output_type="div")
+
     return render(
         request,
         "contratos/contrato_fornecedor_detail.html",
@@ -210,6 +255,7 @@ def contrato_fornecedor_detalhe(request, pk):
             "contrato": contrato,
             "proposta_fornecedor": proposta_fornecedor,
             "eventos": eventos,
+            "plot_div": plot_div,
         },
     )
 

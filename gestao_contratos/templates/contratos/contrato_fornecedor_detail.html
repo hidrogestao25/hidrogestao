@@ -96,6 +96,18 @@
   {% endif %}
 </div>
 
+<hr>
+
+<!-- plotlyjs (carregar biblioteca só uma vez na base ou aqui) -->
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+<h6>📊 Gráfico de Pagamentos</h6>
+<div id="grafico-pagamentos">
+  {{ plot_div|safe }}
+</div>
+
+<hr>
+
 <div class="card-footer text-end">
   <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>
 </div>
