@@ -71,7 +71,7 @@
               {% endif %}
             </td>
             <td>
-              {% if evento.valor_pago %}
+              {% if not evento.valor_pago %}
                   <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
                     Registrar Entrega
                   </a>
