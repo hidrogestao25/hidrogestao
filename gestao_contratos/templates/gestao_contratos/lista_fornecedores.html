@@ -18,7 +18,7 @@
     </thead>
     <tbody>
         {% for fornecedor in page_obj %}
-        <tr onclick="window.location='{% url 'fornecedor_detalhe' fornecedor.pk %}'" style="cursor:pointer;">
+        <tr class="linha-hover" onclick="window.location='{% url 'fornecedor_detalhe' fornecedor.pk %}'">
             <td>{{ fornecedor.nome }}</td>
             <td>{{ fornecedor.cpf_cnpj }}</td>
             <td>{{ fornecedor.email }}</td>

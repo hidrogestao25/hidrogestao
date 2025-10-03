@@ -1,6 +1,6 @@
 from django import forms
 from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento
-
+from django.contrib import messages
 from decimal import Decimal, InvalidOperation
 import re
 
@@ -27,6 +27,7 @@ class ContratoForm(forms.ModelForm):
     )
 
     data_fim = forms.DateField(
+        required=False,
         widget=forms.DateInput(
             attrs={
                 'class': 'form-control datepicker',
@@ -60,11 +61,19 @@ class ContratoForm(forms.ModelForm):
             Proposta.objects.all()
         )
 
+
     def clean_valor_total(self):
-        valor = self.cleaned_data['valor_total']
+        valor = self.cleaned_data.get('valor_total')
+        if valor in [None, ""]:
+            return None
+
+        # Converte para string e remove "R$"
+        valor_str = str(valor).replace("R$", "").strip()
+
+
         try:
-            return Decimal(valor)
-        except:
+            return Decimal(valor_str)
+        except InvalidOperation:
             raise forms.ValidationError("Informe um valor válido no formato R$ 0,00.")
 
 
@@ -101,6 +110,7 @@ class FornecedorForm(forms.ModelForm):
 
 class ContratoFornecedorForm(forms.ModelForm):
     data_inicio = forms.DateField(
+        required=False,
         widget=forms.DateInput(
             attrs={
                 'class': 'form-control datepicker',
@@ -112,6 +122,7 @@ class ContratoFornecedorForm(forms.ModelForm):
     )
 
     data_fim = forms.DateField(
+        required=False,
         widget=forms.DateInput(
             attrs={
                 'class': 'form-control datepicker',
@@ -145,12 +156,19 @@ class ContratoFornecedorForm(forms.ModelForm):
             SolicitacaoProspeccao.objects.all().exclude(status='Finalizada')
         )
 
+
     def clean_valor_total(self):
-        valor = self.cleaned_data['valor_total']
+        valor = self.cleaned_data.get('valor_total')
+        if valor in [None, ""]:
+            return None
+
+        # Remove prefixo R$ e espaços
+        valor_str = str(valor).replace("R$", "").strip()
+
         try:
-            return Decimal(valor)
-        except:
-            raise forms.ValidationError("Informe um valor válido no formato R$ 0,00.")
+            return Decimal(valor_str)
+        except InvalidOperation:
+            raise forms.ValidationError(f"{valor_str} Informe um valor válido no formato R$ 0,00.")
 
 
 class SolicitacaoProspeccaoForm(forms.ModelForm):

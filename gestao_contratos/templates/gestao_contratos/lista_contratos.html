@@ -19,7 +19,7 @@
     </thead>
     <tbody>
         {% for contrato in page_obj %}
-          <tr onclick="window.location='{% url 'contrato_cliente_detalhe' contrato.pk %}'" style="cursor:pointer;">
+          <tr class="linha-hover" onclick="window.location='{% url 'contrato_cliente_detalhe' contrato.pk %}'">
             <td>{{ contrato.cod_projeto }}</td>
             <td>{{ contrato.coordenador }}</td>
             <td>{{ contrato.cliente.nome }}</td>
