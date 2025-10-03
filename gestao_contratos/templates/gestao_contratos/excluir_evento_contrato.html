@@ -13,7 +13,7 @@
 <form method="post">
     {% csrf_token %}
     <button type="submit" class="btn btn-danger">Sim, excluir</button>
-    <a href="{% url 'detalhes_solicitacao' evento.contrato_terceiro.pk %}" class="btn btn-secondary">Cancelar</a>
+    <a href="{% url 'contrato_fornecedor_detalhe' evento.contrato_terceiro.pk %}" class="btn btn-secondary">Cancelar</a>
 </form>
 
 
