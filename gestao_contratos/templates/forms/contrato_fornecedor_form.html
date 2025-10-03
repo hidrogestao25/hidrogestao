@@ -90,12 +90,10 @@
   $(document).ready(function(){
     $('#id_valor_total').inputmask('currency', {
       prefix: "R$ ",
-      radixPoint: ",",
       groupSeparator: ".",
-      digits: 2,
       autoGroup: true,
       rightAlign: false,
-      removeMaskOnSubmit: true   // 🔑 envia apenas o número limpo para o Django
+      removeMaskOnSubmit: true
     });
   });
 </script>

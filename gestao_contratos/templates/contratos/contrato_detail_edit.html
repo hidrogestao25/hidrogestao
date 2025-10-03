@@ -7,6 +7,17 @@
       <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>
     </div>
     <div class="card-body">
+      {% if form.errors %}
+    <div class="alert alert-danger">
+        <ul>
+        {% for field, errors in form.errors.items %}
+            {% for error in errors %}
+                <li><strong>{{ field|capfirst }}:</strong> {{ error }}</li>
+            {% endfor %}
+        {% endfor %}
+        </ul>
+    </div>
+{% endif %}
       <form method="post">
         {% csrf_token %}
         {{ form.non_field_errors }}
@@ -76,9 +87,7 @@
   $(document).ready(function(){
     $('#id_valor_total').inputmask('currency', {
       prefix: "R$ ",
-      radixPoint: ",",
       groupSeparator: ".",
-      digits: 2,
       autoGroup: true,
       rightAlign: false,
       removeMaskOnSubmit: true

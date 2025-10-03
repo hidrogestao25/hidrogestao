@@ -4,12 +4,13 @@
 <div class="container mt-4">
   <div class="card shadow-sm">
     <div class="card-header card-header-custom text-white">
-      <h5>Detalhes do Contrato</h5>
+      <h5>Detalhes do Contrato com Fornecedor</h5>
     </div>
     <div class="card-body">
       <p><strong>Código do Projeto:</strong> {{ contrato.cod_projeto }}</p>
       <p><strong>Cliente:</strong> {{ contrato.cod_projeto.cliente }}</p>
       <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
+      <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
       <p><strong>Data Início:</strong> {{ contrato.data_inicio|date:"d/m/Y" }}</p>
       <p><strong>Data Fim:</strong> {{ contrato.data_fim|date:"d/m/Y" }}</p>
       <p><strong>Valor Total:</strong> R$ {{ contrato.valor_total|floatformat:2 }}</p>
@@ -74,8 +75,8 @@
                 Registrar Entrega
               </a>
               {% if request.user.grupo == 'suprimento' %}
-              <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
-              <a href="{% url 'excluir_evento' evento.id %}" class="btn btn-sm btn-danger"
+              <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
+              <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
                  onclick="return confirm('Tem certeza que deseja excluir este evento?')">
                  Apagar
               </a>

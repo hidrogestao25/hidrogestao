@@ -201,7 +201,7 @@ def contrato_fornecedor_detalhe(request, pk):
             fornecedor=contrato.prospeccao.fornecedor_escolhido
         ).first()
 
-    eventos = Evento.objects.filter(contrato_terceiro=contrato)
+    eventos = Evento.objects.filter(contrato_terceiro=contrato).order_by("data_prevista")
 
     return render(
         request,
@@ -1157,6 +1157,19 @@ def editar_evento(request, pk):
 
 
 @login_required
+def editar_evento_contrato(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+    if request.method == "POST":
+        form = EventoPrevisaoForm(request.POST, request.FILES, instance=evento)
+        if form.is_valid():
+            form.save()
+            return redirect("contrato_fornecedor_detalhe", pk=evento.contrato_terceiro.pk)
+    else:
+        form = EventoPrevisaoForm(instance=evento)
+    return render(request, "gestao_contratos/editar_evento_contrato.html", {"form": form, "evento": evento})
+
+
+@login_required
 def excluir_evento(request, pk):
     evento = get_object_or_404(Evento, pk=pk)
     if request.method == "POST":
@@ -1164,6 +1177,16 @@ def excluir_evento(request, pk):
         evento.delete()
         return redirect("detalhes_solicitacao", pk=solicitacao_id)
     return render(request, "gestao_contratos/excluir_evento.html", {"evento": evento})
+
+
+@login_required
+def excluir_evento_contrato(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+    if request.method == "POST":
+        contrato_id = evento.contrato_terceiro.pk
+        evento.delete()
+        return redirect("contrato_fornecedor_detalhe", pk=contrato_id)
+    return render(request, "gestao_contratos/excluir_evento_contrato.html", {"evento": evento})
 
 
 @login_required
