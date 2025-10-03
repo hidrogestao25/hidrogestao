@@ -379,6 +379,7 @@ class Evento(models.Model):
     com_atraso = models.BooleanField(default=False)
     valor_previsto = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    data_prevista_pagamento = models.DateField(null=True, blank=True)
     data_pagamento = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

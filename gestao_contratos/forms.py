@@ -251,12 +251,12 @@ class DocumentoBMForm(forms.ModelForm):
 class EventoPrevisaoForm(forms.ModelForm):
     class Meta:
         model = Evento
-        fields = ["descricao", "data_prevista", "valor_previsto", "data_pagamento"]
+        fields = ["descricao", "data_prevista", "valor_previsto", "data_prevista_pagamento"]
         widgets = {
             "data_prevista": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
             "descricao" : forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "valor_previsto": forms.NumberInput(attrs={"class": "form-control"}),
-            "data_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "data_prevista_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
         }
 
 
