@@ -206,7 +206,7 @@ def contrato_fornecedor_detalhe(request, pk):
 
     eventos = Evento.objects.filter(contrato_terceiro=contrato).order_by("data_prevista")
 
-    df = pd.DataFrame(list(eventos.values("data_prevista", "valor_previsto", "valor_pago", "data_entrega")))
+    df = pd.DataFrame(list(eventos.values("data_prevista_pagamento", "valor_previsto", "valor_pago", "data_entrega")))
 
     plot_div = None
     if not df.empty:
@@ -215,7 +215,7 @@ def contrato_fornecedor_detalhe(request, pk):
         df["valor_pago"] = df["valor_pago"].fillna(0)
 
         # Ordenar pelas datas
-        df = df.sort_values("data_prevista")
+        df = df.sort_values("data_prevista_pagamento")
 
         # Calcular valores acumulados
         df["valor_previsto_acum"] = df["valor_previsto"].cumsum()
@@ -223,7 +223,7 @@ def contrato_fornecedor_detalhe(request, pk):
 
         # Criar gráfico
         trace_previsto = go.Scatter(
-            x=df["data_prevista"],
+            x=df["data_prevista_pagamento"],
             y=df["valor_previsto_acum"],
             mode="lines+markers",
             name="Previsto (Acumulado)",
