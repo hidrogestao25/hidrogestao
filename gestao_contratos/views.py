@@ -4,7 +4,9 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
-from django.db.models import Sum
+from django.db.models import Sum, Q, DecimalField
+from decimal import Decimal
+from django.db.models.functions import Coalesce, TruncMonth
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -206,7 +208,7 @@ def contrato_fornecedor_detalhe(request, pk):
 
     eventos = Evento.objects.filter(contrato_terceiro=contrato).order_by("data_prevista")
 
-    df = pd.DataFrame(list(eventos.values("data_prevista_pagamento", "valor_previsto", "valor_pago", "data_entrega")))
+    df = pd.DataFrame(list(eventos.values("data_prevista_pagamento", "valor_previsto", "valor_pago", "data_pagamento")))
 
     plot_div = None
     if not df.empty:
@@ -231,7 +233,7 @@ def contrato_fornecedor_detalhe(request, pk):
         )
 
         trace_pago = go.Scatter(
-            x=df["data_entrega"],
+            x=df["data_pagamento"],
             y=df["valor_pago_acum"],
             mode="lines+markers",
             name="Pago (Acumulado)",
@@ -1256,25 +1258,167 @@ def registrar_entrega(request, pk):
 
 @login_required
 def previsao_pagamentos(request):
-    pagamentos = None
-    total = 0
     form = FiltroPrevisaoForm(request.GET or None)
+    pagamentos = []
+    total_previsto = 0
+    total_pago = 0
+    grafico_html = None
+    grafico_barra = None  # 🔹 Garante que a variável exista
 
     if form.is_valid():
         data_limite = form.cleaned_data["data_limite"]
+        hoje = timezone.now().date()
 
-        # Filtra todos eventos previstos até a data
-        pagamentos = (
-            Evento.objects.filter(data_pagamento__lte=data_limite)
-            .values("contrato_terceiro__cod_projeto__cod_projeto","empresa_terceira__nome")
-            .annotate(total_pago=Sum("valor_previsto"))
-            .order_by("empresa_terceira__nome")
+        # Lista de eventos até a data limite
+        eventos = Evento.objects.filter(
+            Q(data_prevista_pagamento__range=[hoje, data_limite]) |
+            Q(data_pagamento__range=[hoje, data_limite])
+        ).order_by('data_prevista_pagamento', 'data_pagamento')
+
+        # Tabela destrinchada
+        pagamentos = eventos.values(
+            'contrato_terceiro__cod_projeto__cod_projeto',
+            'empresa_terceira__nome',
+            'contrato_terceiro__coordenador__username',
+            'data_prevista_pagamento',
+            'valor_previsto',
+            'data_pagamento',
+            'valor_pago'
         )
 
-        total = sum(p["total_pago"] for p in pagamentos)
+        total_previsto = sum(item['valor_previsto'] or 0 for item in pagamentos)
+        total_pago = sum(item['valor_pago'] or 0 for item in pagamentos)
+
+        # ==== GRÁFICO 1: LINHA ACUMULADA (Previsto x Pago) ====
+        eventos_previstos = eventos.filter(data_prevista_pagamento__isnull=False) \
+            .annotate(valor=Coalesce('valor_previsto', 0, output_field=DecimalField())) \
+            .order_by('data_prevista_pagamento')
+
+        pagamentos_por_data_prevista = eventos_previstos.values('data_prevista_pagamento') \
+            .annotate(total=Sum('valor')) \
+            .order_by('data_prevista_pagamento')
+
+        datas_prevista = []
+        acumulado_previsto = []
+        total_acumulado = 0
+        for item in pagamentos_por_data_prevista:
+            datas_prevista.append(item['data_prevista_pagamento'])
+            total_acumulado += item['total']
+            acumulado_previsto.append(total_acumulado)
+
+        eventos_pagos = eventos.filter(data_pagamento__isnull=False) \
+            .annotate(valor=Coalesce('valor_pago', 0, output_field=DecimalField())) \
+            .order_by('data_pagamento')
+
+        pagamentos_por_data_pago = eventos_pagos.values('data_pagamento') \
+            .annotate(total=Sum('valor')) \
+            .order_by('data_pagamento')
+
+        datas_pago = []
+        acumulado_pago = []
+        total_acumulado_pago = 0
+        for item in pagamentos_por_data_pago:
+            datas_pago.append(item['data_pagamento'])
+            total_acumulado_pago += item['total']
+            acumulado_pago.append(total_acumulado_pago)
+
+        if datas_prevista or datas_pago:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=datas_prevista,
+                y=acumulado_previsto,
+                mode='lines+markers',
+                name='Previsto',
+                line=dict(color='blue', width=3),
+                marker=dict(size=6)
+            ))
+            fig.add_trace(go.Scatter(
+                x=datas_pago,
+                y=acumulado_pago,
+                mode='lines+markers',
+                name='Pago',
+                line=dict(color='green', width=3),
+                marker=dict(size=6)
+            ))
+
+            fig.update_layout(
+                title='Previsão x Pagamentos Acumulados',
+                xaxis_title='Data',
+                yaxis_title='Valor Acumulado (R$)',
+                xaxis_tickformat='%d/%m/%Y',
+                hovermode='x unified'
+            )
+            grafico_html = plot(fig, auto_open=False, output_type='div')
+
+        # ==== GRÁFICO 2: BARRA MENSAL (±1 ANO) ====
+        inicio_periodo = hoje.replace(year=hoje.year - 1)
+        fim_periodo = hoje.replace(year=hoje.year + 1)
+
+        eventos_periodo = Evento.objects.filter(
+            Q(data_prevista_pagamento__range=[inicio_periodo, fim_periodo]) |
+            Q(data_pagamento__range=[inicio_periodo, fim_periodo])
+        )
+
+        # 🔹 Define o output_field em todos os cálculos
+        previstos_mensal = (
+            eventos_periodo.filter(data_prevista_pagamento__isnull=False)
+            .annotate(mes=TruncMonth('data_prevista_pagamento'))
+            .values('mes')
+            .annotate(
+                total=Coalesce(
+                    Sum('valor_previsto', output_field=DecimalField(max_digits=15, decimal_places=2)),
+                    Decimal(0),
+                    output_field=DecimalField(max_digits=15, decimal_places=2)
+                )
+            )
+            .order_by('mes')
+        )
+
+        pagos_mensal = (
+            eventos_periodo.filter(data_pagamento__isnull=False)
+            .annotate(mes=TruncMonth('data_pagamento'))
+            .values('mes')
+            .annotate(
+                total=Coalesce(
+                    Sum('valor_pago', output_field=DecimalField(max_digits=15, decimal_places=2)),
+                    Decimal(0),
+                    output_field=DecimalField(max_digits=15, decimal_places=2)
+                )
+            )
+            .order_by('mes')
+        )
+
+        # 🔹 Converte os meses para string (formato MÊS/ANO)
+        meses = sorted({p['mes'] for p in list(previstos_mensal) + list(pagos_mensal) if p['mes']})
+        meses_str = [m.strftime("%m/%Y") for m in meses]
+
+        valores_previstos = {p['mes']: float(p['total']) for p in previstos_mensal if p['mes']}
+        valores_pagos = {p['mes']: float(p['total']) for p in pagos_mensal if p['mes']}
+
+        y_previstos = [valores_previstos.get(m, 0) for m in meses]
+        y_pagos = [valores_pagos.get(m, 0) for m in meses]
+
+        fig_barra = go.Figure(data=[
+            go.Bar(name='Previsto', x=meses_str, y=y_previstos, marker_color='orange'),
+            go.Bar(name='Pago', x=meses_str, y=y_pagos, marker_color='green')
+        ])
+
+        fig_barra.update_layout(
+            barmode='group',
+            title="Pagamentos Previsto x Pago (±1 ano)",
+            xaxis_title="Mês/Ano",
+            yaxis_title="Valor (R$)",
+            template="plotly_white",
+            height=500
+        )
+
+        grafico_barra = plot(fig_barra, output_type='div')
 
     return render(request, "gestao_contratos/previsao_pagamentos.html", {
         "form": form,
         "pagamentos": pagamentos,
-        "total": total,
+        "total_previsto": total_previsto,
+        "total_pago": total_pago,
+        "grafico_html": grafico_html,
+        "grafico_barra": grafico_barra,
     })

@@ -2,8 +2,21 @@ from django import forms
 from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento
 from django.contrib import messages
 from decimal import Decimal, InvalidOperation
+from datetime import date, datetime
 import re
 
+class ISODateInput(forms.DateInput):
+    input_type = 'date'  # garante que seja um <input type="date">
+
+    def format_value(self, value):
+        if value is None:
+            return ''
+        if isinstance(value, str):
+            return ''
+        if isinstance(value, (date, datetime)):
+            return value.strftime('%Y-%m-%d')
+        # Para outros tipos, converte para string
+        return str(value)
 
 class PropostaFornecedorForm(forms.ModelForm):
     class Meta:
@@ -253,11 +266,27 @@ class EventoPrevisaoForm(forms.ModelForm):
         model = Evento
         fields = ["descricao", "data_prevista", "valor_previsto", "data_prevista_pagamento"]
         widgets = {
-            "data_prevista": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
-            "descricao" : forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "descricao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "valor_previsto": forms.NumberInput(attrs={"class": "form-control"}),
-            "data_prevista_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "data_prevista": ISODateInput(attrs={ "class": "form-control"}),
+            "data_prevista_pagamento": ISODateInput(attrs={"class": "form-control"}),
         }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        data_prevista = cleaned_data.get("data_prevista")
+        valor_previsto = cleaned_data.get("valor_previsto")
+        data_prevista_pagamento = cleaned_data.get("data_prevista_pagamento")
+
+        # Se a data prevista foi preenchida, mas a de pagamento não
+        if data_prevista and valor_previsto and not data_prevista_pagamento:
+            self.add_error(
+                "data_prevista_pagamento",
+                "Informe a Data Prevista para o Pagamento quando o Valor previsto e a Data Prevista de Entrega for preenchida."
+            )
+
+        return cleaned_data
+
 
 
 class EventoEntregaForm(forms.ModelForm):

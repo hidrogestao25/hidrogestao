@@ -51,8 +51,10 @@
       <thead class="table-light">
         <tr>
           <th>Descrição</th>
-          <th>Data Prevista</th>
+          <th>Data Prevista de entrega</th>
           <th>Valor Previsto</th>
+          <th>Valor Pago</th>
+          <th>Data do Pagamento</th>
           <th>Status</th>
           <th>Ações</th>
         </tr>
@@ -63,6 +65,13 @@
             <td>{{ evento.descricao }}</td>
             <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
             <td>R$ {{ evento.valor_previsto|floatformat:2 }}</td>
+            {% if evento.valor_pago %}
+              <td>R$ {{ evento.valor_pago|floatformat:2 }}</td>
+              <td>{{ evento.data_pagamento|date:"d/m/Y" }}</td>
+            {% else %}
+              <td> - </td>
+              <td> - </td>
+            {% endif %}
             <td>
               {% if evento.realizado %}
                 ✅ Realizado
@@ -71,7 +80,7 @@
               {% endif %}
             </td>
             <td>
-              {% if not evento.valor_pago %}
+
                   <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
                     Registrar Entrega
                   </a>
@@ -82,7 +91,7 @@
                      Apagar
                   </a>
                   {% endif %}
-              {% endif %}
+
             </td>
           </tr>
         {% endfor %}
