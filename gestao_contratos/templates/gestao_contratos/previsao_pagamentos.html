@@ -20,27 +20,49 @@
       <thead class="table-dark">
         <tr>
           <th>Projeto</th>
+          <th>Projeto</th>
           <th>Fornecedor</th>
-          <th>Total Previsto</th>
+          <th>Data Prevista</th>
+          <th>Valor Previsto</th>
+          <th>Data Pagamento</th>
+          <th>Valor Pago</th>
         </tr>
       </thead>
       <tbody>
         {% for item in pagamentos %}
         <tr>
           <td>{{ item.contrato_terceiro__cod_projeto__cod_projeto }}</td>
+          <td>{{ item.contrato_terceiro__coordenador__username }}</td>
           <td>{{ item.empresa_terceira__nome }}</td>
-          <td>R$ {{ item.total_pago|floatformat:2 }}</td>
+          <td>{{ item.data_prevista_pagamento|date:"d/m/Y" }}</td>
+          <td>R$ {{ item.valor_previsto|floatformat:2 }}</td>
+          <td>{% if item.data_pagamento %}{{ item.data_pagamento|date:"d/m/Y" }}{% endif %}</td>
+          <td>R$ {{ item.valor_pago|floatformat:2 }}</td>
         </tr>
         {% endfor %}
         <tr class="fw-bold">
+          <td colspan="4">Total Geral</td>
+          <td>R$ {{ total_previsto|floatformat:2 }}</td>
           <td></td>
-          <td>Total Geral</td>
-          <td>R$ {{ total|floatformat:2 }}</td>
+          <td>R$ {{ total_pago|floatformat:2 }}</td>
         </tr>
       </tbody>
     </table>
+
+    {% if grafico_html %}
+      <h4 class="mt-5">Gráfico de Pagamentos Acumulados</h4>
+      {{ grafico_html|safe }}
+    {% endif %}
+
   {% elif form.is_bound %}
     <div class="alert alert-warning">Nenhum pagamento previsto até esta data.</div>
   {% endif %}
 </div>
+
+{% if grafico_barra %}
+  <div class="mt-5">
+    <h4>Pagamentos Previsto x Pago (Últimos 12 meses e Próximos 12 meses)</h4>
+    {{ grafico_barra|safe }}
+  </div>
+{% endif %}
 {% endblock %}
