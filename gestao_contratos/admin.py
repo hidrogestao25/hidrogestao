@@ -6,7 +6,7 @@ from .models import (
     SolicitacaoContratacaoTerceiro, ContratoTerceiros, Evento,
     AvaliacaoFornecedor, Indicadores, ContratoTimeline, ContratoTimelineTerceiro,
     Aditivo, AditivoTerceiro, BM, DocumentoContrato, DocumentoContratoTerceiro,
-    SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM
+    SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM, CalendarioPagamento
 )
 
 
@@ -101,7 +101,7 @@ MODELOS_PADRAO = [
     SolicitacaoContratacaoTerceiro, ContratoTerceiros, Evento,
     AvaliacaoFornecedor, Indicadores, ContratoTimeline, ContratoTimelineTerceiro,
     Aditivo, AditivoTerceiro, BM, DocumentoContrato, DocumentoContratoTerceiro,
-    SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM
+    SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM, CalendarioPagamento
 ]
 
 for modelo in MODELOS_PADRAO:

@@ -6,12 +6,12 @@ from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from django.db.models import Sum, Q, DecimalField
 from decimal import Decimal
-from django.db.models.functions import Coalesce, TruncMonth
+from django.db.models.functions import Coalesce
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento
 from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm
 
 import plotly.graph_objs as go
@@ -1263,7 +1263,7 @@ def previsao_pagamentos(request):
     total_previsto = 0
     total_pago = 0
     grafico_html = None
-    grafico_barra = None  # 🔹 Garante que a variável exista
+    grafico_barra = None
 
     if form.is_valid():
         data_limite = form.cleaned_data["data_limite"]
@@ -1289,7 +1289,7 @@ def previsao_pagamentos(request):
         total_previsto = sum(item['valor_previsto'] or 0 for item in pagamentos)
         total_pago = sum(item['valor_pago'] or 0 for item in pagamentos)
 
-        # ==== GRÁFICO 1: LINHA ACUMULADA (Previsto x Pago) ====
+        # ==== GRÁFICO 1: LINHA ACUMULADA ====
         eventos_previstos = eventos.filter(data_prevista_pagamento__isnull=False) \
             .annotate(valor=Coalesce('valor_previsto', 0, output_field=DecimalField())) \
             .order_by('data_prevista_pagamento')
@@ -1340,7 +1340,6 @@ def previsao_pagamentos(request):
                 line=dict(color='green', width=3),
                 marker=dict(size=6)
             ))
-
             fig.update_layout(
                 title='Previsão x Pagamentos Acumulados',
                 xaxis_title='Data',
@@ -1350,63 +1349,49 @@ def previsao_pagamentos(request):
             )
             grafico_html = plot(fig, auto_open=False, output_type='div')
 
-        # ==== GRÁFICO 2: BARRA MENSAL (±1 ANO) ====
-        inicio_periodo = hoje.replace(year=hoje.year - 1)
-        fim_periodo = hoje.replace(year=hoje.year + 1)
+        # ==== GRÁFICO 2: BARRA PELO CALENDÁRIO ====
+        # Pega as datas do calendário do banco
+        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento').values_list('data_pagamento', flat=True))
 
-        eventos_periodo = Evento.objects.filter(
-            Q(data_prevista_pagamento__range=[inicio_periodo, fim_periodo]) |
-            Q(data_pagamento__range=[inicio_periodo, fim_periodo])
-        )
+        y_previstos = []
+        y_pagos = []
+        data_inicio = None
 
-        # 🔹 Define o output_field em todos os cálculos
-        previstos_mensal = (
-            eventos_periodo.filter(data_prevista_pagamento__isnull=False)
-            .annotate(mes=TruncMonth('data_prevista_pagamento'))
-            .values('mes')
-            .annotate(
-                total=Coalesce(
-                    Sum('valor_previsto', output_field=DecimalField(max_digits=15, decimal_places=2)),
-                    Decimal(0),
-                    output_field=DecimalField(max_digits=15, decimal_places=2)
+        for data_fim in calendario:
+            if data_inicio is None:
+                eventos_previsto = Evento.objects.filter(data_prevista_pagamento__lte=data_fim)
+                eventos_pago = Evento.objects.filter(data_pagamento__lte=data_fim)
+            else:
+                eventos_previsto = Evento.objects.filter(
+                    data_prevista_pagamento__gt=data_inicio,
+                    data_prevista_pagamento__lte=data_fim
                 )
-            )
-            .order_by('mes')
-        )
-
-        pagos_mensal = (
-            eventos_periodo.filter(data_pagamento__isnull=False)
-            .annotate(mes=TruncMonth('data_pagamento'))
-            .values('mes')
-            .annotate(
-                total=Coalesce(
-                    Sum('valor_pago', output_field=DecimalField(max_digits=15, decimal_places=2)),
-                    Decimal(0),
-                    output_field=DecimalField(max_digits=15, decimal_places=2)
+                eventos_pago = Evento.objects.filter(
+                    data_pagamento__gt=data_inicio,
+                    data_pagamento__lte=data_fim
                 )
-            )
-            .order_by('mes')
-        )
 
-        # 🔹 Converte os meses para string (formato MÊS/ANO)
-        meses = sorted({p['mes'] for p in list(previstos_mensal) + list(pagos_mensal) if p['mes']})
-        meses_str = [m.strftime("%m/%Y") for m in meses]
+            total_previsto_periodo = eventos_previsto.aggregate(
+                total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
+            )['total']
 
-        valores_previstos = {p['mes']: float(p['total']) for p in previstos_mensal if p['mes']}
-        valores_pagos = {p['mes']: float(p['total']) for p in pagos_mensal if p['mes']}
+            total_pago_periodo = eventos_pago.aggregate(
+                total=Coalesce(Sum('valor_pago'), Decimal('0.00'))
+            )['total']
 
-        y_previstos = [valores_previstos.get(m, 0) for m in meses]
-        y_pagos = [valores_pagos.get(m, 0) for m in meses]
+            y_previstos.append(total_previsto_periodo)
+            y_pagos.append(total_pago_periodo)
+            data_inicio = data_fim
 
         fig_barra = go.Figure(data=[
-            go.Bar(name='Previsto', x=meses_str, y=y_previstos, marker_color='orange'),
-            go.Bar(name='Pago', x=meses_str, y=y_pagos, marker_color='green')
+            go.Bar(name='Previsto', x=calendario, y=y_previstos, marker_color='orange'),
+            go.Bar(name='Pago', x=calendario, y=y_pagos, marker_color='green')
         ])
 
         fig_barra.update_layout(
             barmode='group',
-            title="Pagamentos Previsto x Pago (±1 ano)",
-            xaxis_title="Mês/Ano",
+            title="Pagamentos Previsto x Pago (Calendário)",
+            xaxis_title="Data",
             yaxis_title="Valor (R$)",
             template="plotly_white",
             height=500
