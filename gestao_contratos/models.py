@@ -631,3 +631,10 @@ class DocumentoContratoTerceiro(models.Model):
 
     def __str__(self):
         return f"Contrato {self.numero_contrato} - {self.solicitacao.contrato}"
+
+
+class CalendarioPagamento(models.Model):
+    data_pagamento = models.DateField(unique=True)
+
+    def __str__(self):
+        return self.data_pagamento.strftime('%d/%m/%Y')
