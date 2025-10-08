@@ -304,7 +304,20 @@ class EventoEntregaForm(forms.ModelForm):
 
 
 class FiltroPrevisaoForm(forms.Form):
+    data_inicial = forms.DateField(
+        label="Data inicial (opcional)",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"})
+    )
+
     data_limite = forms.DateField(
         label="Data limite",
         widget=forms.DateInput(attrs={"type": "date", "class": "form-control"})
+    )
+
+    coordenador = forms.ModelChoiceField(
+        label="Coordenador (opcional)",
+        queryset=User.objects.filter(grupo="coordenador").order_by("username"),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select"})
     )

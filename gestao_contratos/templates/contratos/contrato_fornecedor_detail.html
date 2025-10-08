@@ -51,7 +51,8 @@
       <thead class="table-light">
         <tr>
           <th>Descrição</th>
-          <th>Data Prevista de entrega</th>
+          <th>Data prevista de entrega</th>
+          <th>Data prevista para pagamento</th>
           <th>Valor Previsto</th>
           <th>Valor Pago</th>
           <th>Data do Pagamento</th>
@@ -64,6 +65,7 @@
           <tr>
             <td>{{ evento.descricao }}</td>
             <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
+            <td>{{ evento.data_prevista_pagamento|date:"d/m/Y" }}</td>
             <td>R$ {{ evento.valor_previsto|floatformat:2 }}</td>
             {% if evento.valor_pago %}
               <td>R$ {{ evento.valor_pago|floatformat:2 }}</td>
