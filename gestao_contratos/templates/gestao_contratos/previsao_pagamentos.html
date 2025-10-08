@@ -5,15 +5,42 @@
   <p>Selecione uma data para visualizar os pagamentos previstos até ela.</p>
 
   <form method="get" class="mb-4">
-    <div class="row">
-      <div class="col-md-4">
+    <div class="row align-items-end">
+
+      <!-- Campo de Data Inicial -->
+      <div class="col-md-3">
+        <label for="{{ form.data_inicial.id_for_label }}" class="form-label">
+          Data Inicial
+          <i class="bi bi-info-circle" title="Data a partir da qual os pagamentos serão considerados. Se não preencher, será usada a data de hoje."></i>
+        </label>
+        {{ form.data_inicial }}
+      </div>
+
+      <!-- Campo de Data Limite -->
+      <div class="col-md-3">
+        <label for="{{ form.data_limite.id_for_label }}" class="form-label">
+          Data Limite
+          <i class="bi bi-info-circle" title="Última data a considerar nos filtros de previsão e pagamento."></i>
+        </label>
         {{ form.data_limite }}
       </div>
+
+      <!-- Campo de Coordenador -->
+      <div class="col-md-4">
+        <label for="{{ form.coordenador.id_for_label }}" class="form-label">
+          Coordenador
+          <i class="bi bi-info-circle" title="Filtra apenas os contratos associados ao coordenador selecionado. Deixe em branco para incluir todos."></i>
+        </label>
+        {{ form.coordenador }}
+      </div>
+
+      <!-- Botão de Filtrar -->
       <div class="col-md-2">
-        <button type="submit" class="btn btn-primary">Filtrar</button>
+        <button type="submit" class="btn btn-primary w-100 mt-2">Filtrar</button>
       </div>
     </div>
   </form>
+
 
   {% if pagamentos %}
     <table class="table table-bordered table-striped">

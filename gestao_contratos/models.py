@@ -349,6 +349,7 @@ class ContratoTerceiros(models.Model):
     valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     objeto = models.TextField()
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao')
+    #observacao = models.TextField()
 
     def __str__(self):
         return f"Contrato {self.cod_projeto} - {self.empresa_terceira}"

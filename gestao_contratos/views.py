@@ -1267,13 +1267,38 @@ def previsao_pagamentos(request):
 
     if form.is_valid():
         data_limite = form.cleaned_data["data_limite"]
-        hoje = timezone.now().date()
+        data_inicial = form.cleaned_data.get("data_inicial")
+        coordenador = form.cleaned_data.get("coordenador")
 
-        # Lista de eventos até a data limite
-        eventos = Evento.objects.filter(
-            Q(data_prevista_pagamento__range=[hoje, data_limite]) |
-            Q(data_pagamento__range=[hoje, data_limite])
-        ).order_by('data_prevista_pagamento', 'data_pagamento')
+        hoje = timezone.now().date()
+        usuario = request.user
+
+        data_inicio_filtro = data_inicial or hoje
+
+        filtros_base = Q(
+            Q(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]) |
+            Q(data_pagamento__range=[data_inicio_filtro, data_limite])
+        )
+
+        # === SUPRIMENTO ===
+        if usuario.grupo == "suprimento":
+            eventos = Evento.objects.filter(filtros_base)
+
+        # === GERENTE ===
+        elif usuario.grupo == "gerente":
+            eventos = Evento.objects.filter(
+                filtros_base,
+                contrato_terceiro__coordenador__centros__in=usuario.centros.all()
+            )
+
+        else:
+            return redirect('home')
+
+        # Aplica o filtro do coordenador se foi selecionado
+        if coordenador:
+            eventos = eventos.filter(contrato_terceiro__coordenador=coordenador)
+
+        eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
 
         # Tabela destrinchada
         pagamentos = eventos.values(
@@ -1390,7 +1415,7 @@ def previsao_pagamentos(request):
 
         fig_barra.update_layout(
             barmode='group',
-            title="Pagamentos Previsto x Pago (Calendário)",
+            title="Pagamentos Previsto x Pago (Calendário de pagamento)",
             xaxis_title="Data",
             yaxis_title="Valor (R$)",
             template="plotly_white",
