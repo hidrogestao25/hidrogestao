@@ -292,7 +292,7 @@ class EventoPrevisaoForm(forms.ModelForm):
 class EventoEntregaForm(forms.ModelForm):
     class Meta:
         model = Evento
-        fields = ["arquivo", "justificativa", "avaliacao", "data_entrega", "realizado", "com_atraso", "valor_pago", "data_pagamento"]
+        fields = ["observacao", "arquivo", "justificativa", "avaliacao", "data_entrega", "realizado", "com_atraso", "valor_pago", "data_pagamento"]
         widgets = {
             "arquivo": forms.ClearableFileInput(attrs={"class": "form-control"}),
             "justificativa": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
@@ -300,6 +300,7 @@ class EventoEntregaForm(forms.ModelForm):
             "data_entrega": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
             "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
             "data_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
 
 
