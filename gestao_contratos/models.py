@@ -349,7 +349,7 @@ class ContratoTerceiros(models.Model):
     valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     objeto = models.TextField()
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao')
-    #observacao = models.TextField()
+    observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"Contrato {self.cod_projeto} - {self.empresa_terceira}"
@@ -382,6 +382,7 @@ class Evento(models.Model):
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     data_prevista_pagamento = models.DateField(null=True, blank=True)
     data_pagamento = models.DateField(null=True, blank=True)
+    observacao = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -459,7 +460,7 @@ class Indicadores(models.Model):
         media = soma_notas / total_avaliacoes
         return (media / 5) * 100  # % da nota máxima
 
-
+"""
 # ---------------------------
 # Linha do tempo do contrato (cliente)
 # ---------------------------
@@ -490,7 +491,7 @@ class ContratoTimelineTerceiro(models.Model):
 
     def __str__(self):
         return f"{self.etapa} - {self.contrato}"
-
+"""
 
 # ---------------------
 # Aditivos contratuais (cliente)
