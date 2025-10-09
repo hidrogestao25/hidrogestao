@@ -148,7 +148,7 @@ class ContratoFornecedorForm(forms.ModelForm):
 
     class Meta:
         model = ContratoTerceiros
-        fields = ['cod_projeto', 'prospeccao', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto']
+        fields = ['observacao', 'cod_projeto', 'prospeccao', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto']
         widgets = {
             'cod_projeto': forms.Select(attrs={'class': 'form-select'}),
             'prospeccao': forms.Select(attrs={'class': 'form-select'}),
@@ -157,6 +157,7 @@ class ContratoFornecedorForm(forms.ModelForm):
             'valor_total': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_valor_total'}),
             'objeto':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'status': forms.Select(attrs={'class': 'form-select'}),
+            'observacao':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
 
     def __init__(self, *args, **kwargs):

@@ -7,12 +7,17 @@
     {% endif %}
 </div>
 
+<form method="get" class="mb-3 d-flex">
+    <input type="text" name="search" value="{{ request.GET.search }}" class="form-control me-2" placeholder="Buscar fornecedores...">
+    <button type="submit" class="btn btn-primary">Buscar</button>
+</form>
+
 <table id="tabela-fornecedores" class="table table-striped">
     <thead>
         <tr>
-            <th>Nome<br><input type="text" class="filtro-coluna" data-col="0" placeholder="Filtrar..."></th>
-            <th>CPF/CNPJ<br><input type="text" class="filtro-coluna" data-col="1" placeholder="Filtrar..."></th>
-            <th>E-mail<br><input type="text" class="filtro-coluna" data-col="4" placeholder="Filtrar..."></th>
+            <th>Nome</th>
+            <th>CPF/CNPJ</th>
+            <th>E-mail</th>
 
        </tr>
     </thead>
@@ -60,22 +65,5 @@
   </ul>
 </nav>
 
-<script>
-document.querySelectorAll('.filtro-coluna').forEach(input => {
-    input.addEventListener('keyup', function () {
-        const tabela = document.getElementById('tabela-fornecedores');
-        const filtro = this.value.toLowerCase();
-        const colIndex = parseInt(this.getAttribute('data-col'));
-        const linhas = tabela.tBodies[0].rows;
 
-        for (let i = 0; i < linhas.length; i++) {
-            const celula = linhas[i].cells[colIndex];
-            if (celula) {
-                const texto = celula.textContent.toLowerCase();
-                linhas[i].style.display = texto.includes(filtro) ? '' : 'none';
-            }
-        }
-    });
-});
-</script>
 {% endblock %}

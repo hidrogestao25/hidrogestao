@@ -95,84 +95,147 @@ def logout(request):
 
 @login_required
 def lista_contratos(request):
-    if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro':
-        contratos = Contrato.objects.all().order_by('-data_inicio')
-
+    if request.user.grupo in ['suprimento', 'financeiro']:
+        contratos = Contrato.objects.all()
     elif request.user.grupo == 'coordenador':
-        contratos = Contrato.objects.filter(coordenador=request.user).order_by('-data_inicio')
-
-    elif request.user.grupo =='gerente':
-        contratos = Contrato.objects.filter(coordenador__centros__in=request.user.centros.all()).order_by('-data_inicio')
-
+        contratos = Contrato.objects.filter(coordenador=request.user)
+    elif request.user.grupo == 'gerente':
+        contratos = Contrato.objects.filter(coordenador__centros__in=request.user.centros.all())
     else:
         return redirect('home')
+
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        contratos = contratos.filter(
+            Q(cod_projeto__icontains=search_query) |
+            Q(coordenador__username__icontains=search_query) |
+            Q(cliente__nome__icontains=search_query) |
+            Q(status__icontains=search_query)
+        )
+
+    contratos = contratos.order_by('-data_inicio')
 
     paginator = Paginator(contratos, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    context = {'page_obj': page_obj}
 
+    context = {'page_obj': page_obj, 'search_query': search_query}
     return render(request, 'gestao_contratos/lista_contratos.html', context)
+
 
 
 @login_required
 def lista_clientes(request):
-    if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro':
-        clientes = Cliente.objects.all().order_by('nome')
+    # Filtro inicial por grupo
+    if request.user.grupo in ['suprimento', 'financeiro']:
+        clientes = Cliente.objects.all()
     elif request.user.grupo == 'coordenador':
-        clientes = Cliente.objects.filter(contrato__coordenador=request.user).distinct().order_by('nome')
-
+        clientes = Cliente.objects.filter(contrato__coordenador=request.user).distinct()
     elif request.user.grupo == 'gerente':
-        clientes = Cliente.objects.filter(contrato__coordenador__centros__in=request.user.centros.all()).distinct().order_by('nome')
-
+        clientes = Cliente.objects.filter(
+            contrato__coordenador__centros__in=request.user.centros.all()
+        ).distinct()
     else:
         return redirect('home')
+
+    # 🔍 Campo de busca
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        clientes = clientes.filter(
+            Q(nome__icontains=search_query) |
+            Q(cpf_cnpj__icontains=search_query) |
+            Q(endereco__icontains=search_query)
+        )
+
+    # Ordenação e paginação
+    clientes = clientes.order_by('nome')
     paginator = Paginator(clientes, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    context = {'page_obj': page_obj}
 
+    context = {
+        'page_obj': page_obj,
+        'search_query': search_query,
+    }
     return render(request, 'gestao_contratos/lista_clientes.html', context)
 
 
 @login_required
 def lista_contratos_fornecedor(request):
-
-    if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro':
-        contratos = ContratoTerceiros.objects.all().order_by('-data_inicio')
-
+    # Filtragem base por grupo de usuário
+    if request.user.grupo in ['suprimento', 'financeiro']:
+        contratos = ContratoTerceiros.objects.all()
     elif request.user.grupo == 'coordenador':
-        contratos = ContratoTerceiros.objects.filter(coordenador=request.user).order_by('-data_inicio')
-
+        contratos = ContratoTerceiros.objects.filter(coordenador=request.user)
     elif request.user.grupo == 'gerente':
-        contratos = ContratoTerceiros.objects.filter(coordenador__centros__in=request.user.centros.all()).order_by('-data_inicio')
-
-
+        contratos = ContratoTerceiros.objects.filter(
+            coordenador__centros__in=request.user.centros.all()
+        )
     else:
         return redirect('home')
+
+    # 🔍 Campo de busca
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        contratos = contratos.filter(
+            Q(cod_projeto__cod_projeto__icontains=search_query) |
+            Q(empresa_terceira__nome__icontains=search_query) |
+            Q(coordenador__username__icontains=search_query) |
+            Q(status__icontains=search_query) |
+            Q(valor_total__icontains=search_query)
+        )
+
+    # Ordenar e paginar
+    contratos = contratos.order_by('-data_inicio')
     paginator = Paginator(contratos, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    context = {'page_obj': page_obj}
+
+    context = {
+        'page_obj': page_obj,
+        'search_query': search_query,
+    }
 
     return render(request, 'gestao_contratos/lista_contratos_fornecedores.html', context)
 
 
 @login_required
 def lista_fornecedores(request):
-    if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro':
-        fornecedores = EmpresaTerceira.objects.all().order_by('nome')
+    # 🔹 Filtro base por grupo de usuário
+    if request.user.grupo in ['suprimento', 'financeiro']:
+        fornecedores = EmpresaTerceira.objects.all()
     elif request.user.grupo == 'coordenador':
-        fornecedores = EmpresaTerceira.objects.filter(contratoterceiros__coordenador=request.user).distinct().order_by('nome')
+        fornecedores = EmpresaTerceira.objects.filter(
+            contratoterceiros__coordenador=request.user
+        ).distinct()
     elif request.user.grupo == 'gerente':
-        fornecedores = EmpresaTerceira.objects.filter(contratoterceiros__coordenador__centros__in=request.user.centros.all()). distinct().order_by('nome')
+        fornecedores = EmpresaTerceira.objects.filter(
+            contratoterceiros__coordenador__centros__in=request.user.centros.all()
+        ).distinct()
     else:
         return redirect('home')
 
+    # 🔍 Campo de busca
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        fornecedores = fornecedores.filter(
+            Q(nome__icontains=search_query) |
+            Q(cpf_cnpj__icontains=search_query) |  # campo genérico para CPF ou CNPJ
+            Q(email__icontains=search_query) |
+            Q(municipio__icontains=search_query) |
+            Q(estado__icontains=search_query)
+        )
+
+    # 🔸 Ordenação e paginação
+    fornecedores = fornecedores.order_by('nome')
     paginator = Paginator(fornecedores, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    context = {'page_obj': page_obj}
+
+    context = {
+        'page_obj': page_obj,
+        'search_query': search_query,
+    }
 
     return render(request, 'gestao_contratos/lista_fornecedores.html', context)
 
@@ -373,15 +436,15 @@ def nova_solicitacao_prospeccao(request):
 @login_required
 def lista_solicitacoes(request):
     if request.user.grupo == 'coordenador' or request.user.grupo == 'financeiro':
-        solicitacoes = SolicitacaoProspeccao.objects.filter(coordenador=request.user).exclude(status="Finalizada").order_by('-data_solicitacao')
+        solicitacoes = SolicitacaoProspeccao.objects.filter(coordenador=request.user).exclude(status="Onboarding").order_by('-data_solicitacao')
     elif request.user.grupo == 'suprimento':
-        solicitacoes = SolicitacaoProspeccao.objects.all().exclude(status="Finalizada").order_by('-data_solicitacao')
+        solicitacoes = SolicitacaoProspeccao.objects.all().exclude(status="Onboarding").order_by('-data_solicitacao')
     elif request.user.grupo == 'gerente':
         centros_do_gerente = request.user.centros.all()
         # filtra solicitações cujo solicitante tenha pelo menos um centro em comum
         solicitacoes = SolicitacaoProspeccao.objects.filter(
             coordenador__centros__in=centros_do_gerente
-        ).exclude(status="Finalizada").distinct().order_by('-data_solicitacao')
+        ).exclude(status="Onboarding").distinct().order_by('-data_solicitacao')
 
 
     paginator = Paginator(solicitacoes, 10)
@@ -648,9 +711,9 @@ def detalhes_solicitacao(request, pk):
         "Triagem realizada",
         "Fornecedor selecionado",
         "Fornecedor aprovado",
-        "Planejamento do BM",
+        "Planejamento do Contrato", #Planejamento do Contrato
         "Aprovação do Planejamento",
-        "Finalizada",
+        "Onboarding", #Onboarding
     ]
 
     fornecedor_escolhido = solicitacao.fornecedor_escolhido
@@ -761,7 +824,7 @@ def cadastrar_propostas(request, pk):
 def elaboracao_contrato(request):
     solicitacoes = SolicitacaoProspeccao.objects.filter(
         fornecedor_escolhido__isnull=False, aprovacao_fornecedor_gerente="aprovado"
-    ).select_related("fornecedor_escolhido").exclude(status="Finalizada")
+    ).select_related("fornecedor_escolhido").exclude(status="Onboarding")
 
     lista_solicitacoes = []
     for s in solicitacoes:
@@ -873,7 +936,7 @@ def detalhes_contrato(request, pk):
             solicitacao.aprovacao_gerencia = True
             solicitacao.reprovacao_gerencia = False
             solicitacao.justificativa_gerencia = ""
-            solicitacao.status = "Planejamento do BM"
+            solicitacao.status = "Planejamento do Contrato"
 
             coordenador = solicitacao.coordenador
             suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
@@ -1033,7 +1096,7 @@ def inserir_minuta_bm(request, pk):
         form = DocumentoBMForm(request.POST, request.FILES, instance=documento_bm)
         if form.is_valid():
             form.save()
-            solicitacao.status = "Planejamento do BM"
+            solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
             return redirect('lista_solicitacoes')
@@ -1088,7 +1151,7 @@ def detalhe_bm(request, pk):
                 status="Em execução",
             )
             Evento.objects.filter(prospeccao=solicitacao, contrato_terceiro__isnull=True).update(contrato_terceiro=contrato)
-            solicitacao.status = "Finalizada"
+            solicitacao.status = "Onboarding"
             solicitacao.save()
 
         return redirect("lista_solicitacoes")
