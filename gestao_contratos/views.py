@@ -1327,6 +1327,7 @@ def previsao_pagamentos(request):
     total_pago = 0
     grafico_html = None
     grafico_barra = None
+    grafico_barras = None
 
     if form.is_valid():
         data_limite = form.cleaned_data["data_limite"]
