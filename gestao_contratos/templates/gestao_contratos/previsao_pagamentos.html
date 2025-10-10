@@ -86,6 +86,13 @@
   {% endif %}
 </div>
 
+{% if grafico_barras %}
+  <div class="mt-5">
+    <h4>Pagamentos Previsto por Coordenadores</h4>
+    {{ grafico_barras|safe }}
+  </div>
+{% endif %}
+
 {% if grafico_barra %}
   <div class="mt-5">
     <h4>Pagamentos Previsto x Pago (Últimos 12 meses e Próximos 12 meses)</h4>
