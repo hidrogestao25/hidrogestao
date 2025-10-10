@@ -1437,7 +1437,62 @@ def previsao_pagamentos(request):
             )
             grafico_html = plot(fig, auto_open=False, output_type='div')
 
-        # ==== GRÁFICO 2: BARRA PELO CALENDÁRIO ====
+        # ==== GRÁFICO 2: BARRA PELO CALENDÁRIO (DIVIDIDO POR COORDENADOR) ====
+        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento').values_list('data_pagamento', flat=True))
+
+        # Obtém todos os coordenadores envolvidos nos eventos filtrados
+        coordenadores = list(set(
+            eventos.values_list('contrato_terceiro__coordenador__username', flat=True)
+        ))
+
+        fig_barra = go.Figure()
+        data_inicio = None
+
+        # Para cada coordenador, gera uma série de barras empilhadas
+        for coord in coordenadores:
+            y_previstos = []
+            data_inicio = None
+
+            for data_fim in calendario:
+                if data_inicio is None:
+                    eventos_previsto = Evento.objects.filter(
+                        data_prevista_pagamento__lte=data_fim,
+                        contrato_terceiro__coordenador__username=coord
+                    )
+                else:
+                    eventos_previsto = Evento.objects.filter(
+                        data_prevista_pagamento__gt=data_inicio,
+                        data_prevista_pagamento__lte=data_fim,
+                        contrato_terceiro__coordenador__username=coord
+                    )
+
+                total_previsto_periodo = eventos_previsto.aggregate(
+                    total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
+                )['total']
+
+                y_previstos.append(total_previsto_periodo)
+                data_inicio = data_fim
+
+            fig_barra.add_trace(go.Bar(
+                name=f"{coord or 'Sem Coordenador'}",
+                x=calendario,
+                y=y_previstos
+            ))
+
+        # Layout empilhado e estilizado
+        fig_barra.update_layout(
+            barmode='stack',
+            title="Pagamentos Previsto (por Coordenador, conforme calendário de pagamento)",
+            xaxis_title="Data do Calendário",
+            yaxis_title="Valor Previsto (R$)",
+            template="plotly_white",
+            height=500,
+            legend_title="Coordenador"
+        )
+
+        grafico_barras = plot(fig_barra, output_type='div')
+
+        # ==== GRÁFICO 3: BARRA PELO CALENDÁRIO ====
         # Pega as datas do calendário do banco
         calendario = list(CalendarioPagamento.objects.order_by('data_pagamento').values_list('data_pagamento', flat=True))
 
@@ -1493,5 +1548,6 @@ def previsao_pagamentos(request):
         "total_previsto": total_previsto,
         "total_pago": total_pago,
         "grafico_html": grafico_html,
+        "grafico_barras": grafico_barras,
         "grafico_barra": grafico_barra,
     })
