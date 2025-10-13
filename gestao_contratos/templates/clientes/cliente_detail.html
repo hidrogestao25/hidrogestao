@@ -12,6 +12,45 @@
       <p><strong>Telefone:</strong> {{ cliente.telefone }}</p>
       <p><strong>E-mail:</strong> {{ cliente.email }}</p>
     </div>
+
+    <hr>
+<h5>Contratos do Cliente</h5>
+
+{% if contratos %}
+  <table class="table table-striped mt-3">
+    <thead>
+      <tr>
+        <th>Número</th>
+        <th>Descrição</th>
+        <th>Data de Início</th>
+        <th>Data de Fim</th>
+        <th>Valor</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for contrato in contratos %}
+        <tr>
+          <td>{{ contrato.numero }}</td>
+          <td>{{ contrato.descricao }}</td>
+          <td>{{ contrato.data_inicio|date:"d/m/Y" }}</td>
+          <td>{{ contrato.data_fim|date:"d/m/Y" }}</td>
+          <td>R$ {{ contrato.valor|floatformat:2 }}</td>
+          <td>
+            <a href="{% url 'contrato_cliente_detalhe' contrato.pk %}" class="btn btn-sm btn-outline-primary">
+              Ver Detalhes
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="text-muted">Nenhum contrato cadastrado para este cliente.</p>
+{% endif %}
+
+
+
     <div class="card-footer text-end">
       <a href="{% url 'lista_clientes' %}" class="btn btn-custom">← Voltar</a>
     </div>

@@ -131,7 +131,7 @@ class Contrato(models.Model):
 
     cod_projeto = models.CharField(max_length=50, unique=True)
     proposta = models.OneToOneField(Proposta, on_delete=models.SET_NULL, null=True, blank=True)
-    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE)
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name="contratos")
     coordenador = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
