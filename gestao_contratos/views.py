@@ -356,8 +356,9 @@ def contrato_fornecedor_editar(request, pk):
 @login_required
 def cliente_detalhe(request, pk):
     cliente = get_object_or_404(Cliente, pk=pk)
+    contratos = cliente.contratos.all()  # pega todos os contratos do cliente
 
-    if request.user.grupo == "suprimento" or request.user.grupo == 'financeiro':
+    if request.user.grupo in ["suprimento", "financeiro"]:
         if request.method == "POST":
             form = ClienteForm(request.POST, instance=cliente)
             if form.is_valid():
@@ -368,8 +369,18 @@ def cliente_detalhe(request, pk):
                 messages.error(request, "❌ Ocorreu um erro ao atualizar o contrato. Verifique os campos e tente novamente.")
         else:
             form = ClienteForm(instance=cliente)
-        return render(request, 'clientes/cliente_detail_edit.html', {'form': form, 'cliente':cliente})
-    return render(request, 'clientes/cliente_detail.html', {'cliente': cliente})
+        return render(
+            request,
+            'clientes/cliente_detail_edit.html',
+            {'form': form, 'cliente': cliente, 'contratos': contratos}
+        )
+
+    return render(
+        request,
+        'clientes/cliente_detail.html',
+        {'cliente': cliente, 'contratos': contratos}
+    )
+
 
 
 @login_required
