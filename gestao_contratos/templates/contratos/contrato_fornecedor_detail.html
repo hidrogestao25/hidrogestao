@@ -16,7 +16,9 @@
       <p><strong>Valor Total:</strong> R$ {{ contrato.valor_total|floatformat:2 }}</p>
       <p><strong>Status:</strong> {{ contrato.get_status_display }}</p>
       <p><strong>Objeto:</strong> {{ contrato.objeto }}</p>
-
+      {% if contrato.observacao %}
+        <p><strong>observacao:</strong> {{ contrato.observacao }}</p>
+      {% endif %}
 
   <hr>
 

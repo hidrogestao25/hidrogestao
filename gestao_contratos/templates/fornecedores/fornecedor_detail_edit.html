@@ -67,6 +67,48 @@
           <button type="submit" class="btn btn-custom">Salvar alterações</button>
         </div>
       </form>
+
+      <hr>
+      <h5>Contratos Vinculados</h5>
+
+      {% if contratos %}
+        <table class="table table-striped mt-3">
+          <thead>
+            <tr>
+              <th>Contrato</th>
+              <th>Projeto</th>
+              <th>Coordenador</th>
+              <th>Data de Início</th>
+              <th>Data de Fim</th>
+              <th>Valor Total</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for contrato in contratos %}
+              <tr>
+                <td>{{ contrato.id }}</td>
+                <td>{{ contrato.cod_projeto }}</td>
+                <td>{{ contrato.coordenador }}</td>
+                <td>{{ contrato.data_inicio|date:"d/m/Y" }}</td>
+                <td>{{ contrato.data_fim|date:"d/m/Y" }}</td>
+                <td>R$ {{ contrato.valor_total|floatformat:2 }}</td>
+                <td>{{ contrato.get_status_display }}</td>
+                <td>
+                  <a href="{% url 'contrato_cliente_detalhe' contrato.pk %}" class="btn btn-sm btn-outline-primary">
+                    Ver Detalhes
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="text-muted">Nenhum contrato vinculado a este fornecedor.</p>
+      {% endif %}
+
+
     </div>
   </div>
 </div>
