@@ -133,7 +133,7 @@ def lista_clientes(request):
         clientes = Cliente.objects.filter(contrato__coordenador=request.user).distinct()
     elif request.user.grupo == 'gerente':
         clientes = Cliente.objects.filter(
-            contrato__coordenador__centros__in=request.user.centros.all()
+            contratos__coordenador__centros__in=request.user.centros.all()
         ).distinct()
     else:
         return redirect('home')
@@ -206,11 +206,11 @@ def lista_fornecedores(request):
         fornecedores = EmpresaTerceira.objects.all()
     elif request.user.grupo == 'coordenador':
         fornecedores = EmpresaTerceira.objects.filter(
-            contratoterceiros__coordenador=request.user
+            contratos__coordenador=request.user
         ).distinct()
     elif request.user.grupo == 'gerente':
         fornecedores = EmpresaTerceira.objects.filter(
-            contratoterceiros__coordenador__centros__in=request.user.centros.all()
+            contratos__coordenador__centros__in=request.user.centros.all()
         ).distinct()
     else:
         return redirect('home')
@@ -386,8 +386,14 @@ def cliente_detalhe(request, pk):
 @login_required
 def fornecedor_detalhe(request, pk):
     fornecedor = get_object_or_404(EmpresaTerceira, pk=pk)
+    if request.user.grupo in ["suprimento", "financeiro"]:
+        contratos = fornecedor.contratos.all()  # busca todos os contratos vinculados a este fornecedor
+    elif request.user.grupo == "coordenador":
+        contratos = fornecedor.contratos.filter(coordenador=request.user)
+    else:
+        contratos = fornecedor.contratos.filter(coordenador__centros__in=request.user.centros.all())
 
-    if request.user.grupo == "suprimento" or request.user.grupo == 'financeiro':
+    if request.user.grupo in ["suprimento", "financeiro"]:
         if request.method == "POST":
             form = FornecedorForm(request.POST, instance=fornecedor)
             if form.is_valid():
@@ -398,8 +404,17 @@ def fornecedor_detalhe(request, pk):
                 messages.error(request, "❌ Ocorreu um erro ao atualizar os dados do Fornecedor. Verifique os campos e tente novamente.")
         else:
             form = FornecedorForm(instance=fornecedor)
-        return render(request, 'fornecedores/fornecedor_detail_edit.html', {'form': form, 'fornecedor':fornecedor})
-    return render(request, 'fornecedores/fornecedor_detail.html', {'fornecedor': fornecedor})
+        return render(
+            request,
+            'fornecedores/fornecedor_detail_edit.html',
+            {'form': form, 'fornecedor': fornecedor, 'contratos': contratos}
+        )
+
+    return render(
+        request,
+        'fornecedores/fornecedor_detail.html',
+        {'fornecedor': fornecedor, 'contratos': contratos}
+    )
 
 
 @login_required

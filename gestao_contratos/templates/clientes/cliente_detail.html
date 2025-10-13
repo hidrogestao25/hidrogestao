@@ -21,21 +21,27 @@
     <thead>
       <tr>
         <th>Número</th>
-        <th>Descrição</th>
+        <th>Coordenador</th>
         <th>Data de Início</th>
         <th>Data de Fim</th>
         <th>Valor</th>
+        <th>Status</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {% for contrato in contratos %}
         <tr>
-          <td>{{ contrato.numero }}</td>
-          <td>{{ contrato.descricao }}</td>
+          <td>{{ contrato.cod_projeto }}</td>
+          <td>{{ contrato.coordenador }}</td>
           <td>{{ contrato.data_inicio|date:"d/m/Y" }}</td>
           <td>{{ contrato.data_fim|date:"d/m/Y" }}</td>
-          <td>R$ {{ contrato.valor|floatformat:2 }}</td>
+          <td>R$ {{ contrato.valor_total|floatformat:2 }}</td>
+          {% if contrato.status == "ativo" %}
+            <td>Em execução</td>
+          {% else %}
+            <td>{{ contrato.status }}</td>
+          {% endif %}
           <td>
             <a href="{% url 'contrato_cliente_detalhe' contrato.pk %}" class="btn btn-sm btn-outline-primary">
               Ver Detalhes

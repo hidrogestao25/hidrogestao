@@ -337,7 +337,7 @@ class ContratoTerceiros(models.Model):
 
     cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE)
     prospeccao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.SET_NULL, null=True, blank=True)
-    empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
+    empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE, related_name='contratos')
     coordenador = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL, null=True,
