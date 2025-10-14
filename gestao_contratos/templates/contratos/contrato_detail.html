@@ -15,6 +15,9 @@
       <p><strong>Status:</strong> {{ contrato.status }}</p>
       <p><strong>Objeto:</strong> {{ contrato.objeto }}</p>
       <p><strong>Proposta:</strong> {{ contrato.proposta }}</p>
+      {% if contrato.observacao %}
+        <p><strong>Observações do Contrato:</strong> {{ contrato.observacao }}</p>
+      {% endif %}
     </div>
     <div class="card-footer text-end">
       <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>

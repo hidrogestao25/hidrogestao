@@ -38,6 +38,8 @@ class CentroDeTrabalho(models.Model):
     codigo = models.CharField(max_length=10, unique=True)
     nome = models.CharField(max_length=100)
 
+    observacao = models.TextField(null=True, blank=True)
+
     def __str__(self):
         return f"{self.nome} ({self.codigo})"
 
@@ -51,6 +53,16 @@ class Cliente(models.Model):
     endereco = models.TextField(blank=True, null=True)
     telefone = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
+
+    ponto_focal = models.CharField(max_length=200, null=True, blank=True)
+    email_focal = models.EmailField(blank=True, null=True)
+    telefone_focal =models.CharField(max_length=20, blank=True, null=True)
+
+    """ponto_focal2 = models.CharField(max_length=200, null=True, blank=True)
+    email_focal2 = models.EmailField(blank=True, null=True)
+    telefone_focal2 =models.CharField(max_length=20, blank=True, null=True)"""
+
+    observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return self.nome
@@ -77,6 +89,12 @@ class EmpresaTerceira(models.Model):
     ponto_focal = models.CharField(max_length=200, null=True, blank=True)
     email_focal = models.EmailField(blank=True, null=True)
     telefone_focal =models.CharField(max_length=20, blank=True, null=True)
+
+    ponto_focal2 = models.CharField(max_length=200, null=True, blank=True)
+    email_focal2 = models.EmailField(blank=True, null=True)
+    telefone_focal2 =models.CharField(max_length=20, blank=True, null=True)
+
+    observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return self.nome
@@ -112,6 +130,7 @@ class Proposta(models.Model):
     data_envio = models.DateField(default=timezone.now)
     prazo_validade = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='analise')
+    observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"Proposta {self.numero} - {self.cliente}"
@@ -144,6 +163,7 @@ class Contrato(models.Model):
     valor_total = models.DecimalField(max_digits=12, decimal_places=2)
     objeto = models.TextField()
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao')
+    observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"Contrato {self.cod_projeto} - {self.cliente}"
@@ -198,7 +218,7 @@ class SolicitacaoProspeccao(models.Model):
     acao_diretoria = models.CharField(max_length=100, null=True, blank=True, choices=ACAO_CHOICES)
 
     #boletim_flag = models.BooleanField(default=False)
-
+    observacao = models.TextField(null=True, blank=True)
 
     fornecedor_escolhido = models.ForeignKey(
         EmpresaTerceira,
@@ -237,6 +257,7 @@ class PropostaFornecedor(models.Model):
         verbose_name='Inserir Orçamento PDF',
         null=True, blank=True
     )
+    observacao = models.TextField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     class Meta:
         unique_together = ("solicitacao", "fornecedor")
@@ -460,38 +481,6 @@ class Indicadores(models.Model):
         media = soma_notas / total_avaliacoes
         return (media / 5) * 100  # % da nota máxima
 
-"""
-# ---------------------------
-# Linha do tempo do contrato (cliente)
-# ---------------------------
-class ContratoTimeline(models.Model):
-    contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name="timeline")
-    etapa = models.CharField(max_length=100)  # Ex: Envio, Assinatura, Execução
-    descricao = models.TextField(blank=True, null=True)
-    data = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        ordering = ['data']
-
-    def __str__(self):
-        return f"{self.etapa} - {self.contrato}"
-
-
-# ---------------------------
-# Linha do tempo do contrato de terceiros
-# ---------------------------
-class ContratoTimelineTerceiro(models.Model):
-    contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="timeline")
-    etapa = models.CharField(max_length=100)  # Ex: Envio, Assinatura, Execução
-    descricao = models.TextField(blank=True, null=True)
-    data = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        ordering = ['data']
-
-    def __str__(self):
-        return f"{self.etapa} - {self.contrato}"
-"""
 
 # ---------------------
 # Aditivos contratuais (cliente)
@@ -554,7 +543,7 @@ class DocumentoBM(models.Model):
     status_gerente = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
     data_aprovacao_gerente = models.DateTimeField(null=True, blank=True)
 
-
+    observacao = models.TextField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -582,6 +571,7 @@ class BM(models.Model):
         verbose_name='Inserir arquivo do Boletim de Medição',
         null=True, blank=True
     )
+    observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"Parcela {self.parcela_paga} - {self.valor_pago}"
@@ -637,6 +627,7 @@ class DocumentoContratoTerceiro(models.Model):
 
 class CalendarioPagamento(models.Model):
     data_pagamento = models.DateField(unique=True)
+    observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return self.data_pagamento.strftime('%d/%m/%Y')

@@ -11,6 +11,16 @@
       <p><strong>Endereço:</strong> {{ cliente.endereco }}</p>
       <p><strong>Telefone:</strong> {{ cliente.telefone }}</p>
       <p><strong>E-mail:</strong> {{ cliente.email }}</p>
+
+      {% if cliente.ponto_focal %}
+        <p><strong>Nome do Ponto Focal:</strong> {{ cliente.ponto_focal }}</p>
+        <p><strong>E-mail do Ponto Focal:</strong> {{ cliente.email_focal }}</p>
+        <p><strong>Telefone do Ponto Focal:</strong> {{ cliente.telefone_focal }}</p>
+      {% endif %}
+
+      {% if cliente.observacao %}
+        <p><strong>Observações:</strong> {{ cliente.observacao }}</p>
+      {% endif %}
     </div>
 
     <hr>
