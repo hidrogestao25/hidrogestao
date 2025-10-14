@@ -61,6 +61,11 @@
             <label class="form-label" for="{{ form.telefone_focal.id_for_label }}">Telefone do ponto Focal</label>
             {{ form.telefone_focal }}
           </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.observacao.id_for_label }}">Observações do Fornecedor</label>
+            {{ form.observacao }}
+          </div>
         </div>
 
         <div class="text-end">
@@ -75,7 +80,6 @@
         <table class="table table-striped mt-3">
           <thead>
             <tr>
-              <th>Contrato</th>
               <th>Projeto</th>
               <th>Coordenador</th>
               <th>Data de Início</th>
@@ -88,7 +92,6 @@
           <tbody>
             {% for contrato in contratos %}
               <tr>
-                <td>{{ contrato.id }}</td>
                 <td>{{ contrato.cod_projeto }}</td>
                 <td>{{ contrato.coordenador }}</td>
                 <td>{{ contrato.data_inicio|date:"d/m/Y" }}</td>

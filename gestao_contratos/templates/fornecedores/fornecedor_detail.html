@@ -16,6 +16,9 @@
       <p><strong>Ponto Focal:</strong> {{ fornecedor.ponto_focal }}</p>
       <p><strong>E-mail do Ponto Focal:</strong> {{ fornecedor.email_focal }}</p>
       <p><strong>Telefone do Ponto Focal:</strong> {{ fornecedor.telefone_focal }}</p>
+      {% if fornecedor.observacao %}
+        <p><strong>Observações do Fornecedor:</strong> {{ fornecedor.observacao }}</p>
+      {% endif %}
     </div>
 
     <hr>

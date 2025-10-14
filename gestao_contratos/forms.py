@@ -53,7 +53,7 @@ class ContratoForm(forms.ModelForm):
 
     class Meta:
         model = Contrato
-        fields = ['cod_projeto', 'cliente', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta']
+        fields = ['observacao', 'cod_projeto', 'cliente', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta']
         widgets = {
             'cod_projeto': forms.TextInput(attrs={'class': 'form-control'}),
             'proposta': forms.Select(attrs={'class': 'form-select'}),
@@ -62,6 +62,7 @@ class ContratoForm(forms.ModelForm):
             'valor_total': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_valor_total'}),
             'objeto':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'status': forms.Select(attrs={'class': 'form-select'}),
+            'observacao':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -100,6 +101,11 @@ class ClienteForm(forms.ModelForm):
             'endereco': forms.Textarea(attrs={'class': 'form-control', 'row': 3}),
             'telefone': forms.TextInput(attrs={'class': 'form-control'}),
             'email':  forms.TextInput(attrs={'class': 'form-control'}),
+
+            'ponto_focal':  forms.TextInput(attrs={'class': 'form-control'}),
+            'email_focal':  forms.TextInput(attrs={'class': 'form-control'}),
+            'telefone_focal':  forms.TextInput(attrs={'class': 'form-control'}),
+            'observacao': forms.Textarea(attrs={'class': 'form-control', 'row': 3}),
         }
 
 
@@ -118,6 +124,10 @@ class FornecedorForm(forms.ModelForm):
             'ponto_focal': forms.TextInput(attrs={'class': 'form-control'}),
             'email_focal':  forms.TextInput(attrs={'class': 'form-control'}),
             'telefone_focal': forms.TextInput(attrs={'class': 'form-control'}),
+            'ponto_focal2': forms.TextInput(attrs={'class': 'form-control'}),
+            'email_focal2':  forms.TextInput(attrs={'class': 'form-control'}),
+            'telefone_focal2': forms.TextInput(attrs={'class': 'form-control'}),
+            'observacao': forms.Textarea(attrs={'class': 'form-control', 'row': 3}),
         }
 
 
@@ -265,12 +275,13 @@ class DocumentoBMForm(forms.ModelForm):
 class EventoPrevisaoForm(forms.ModelForm):
     class Meta:
         model = Evento
-        fields = ["descricao", "data_prevista", "valor_previsto", "data_prevista_pagamento"]
+        fields = ["descricao", "data_prevista", "valor_previsto", "data_prevista_pagamento", "observacao"]
         widgets = {
             "descricao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "valor_previsto": forms.NumberInput(attrs={"class": "form-control"}),
             "data_prevista": ISODateInput(attrs={ "class": "form-control"}),
             "data_prevista_pagamento": ISODateInput(attrs={"class": "form-control"}),
+            "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
 
     def clean(self):
