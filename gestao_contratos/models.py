@@ -162,7 +162,7 @@ class Contrato(models.Model):
     data_fim = models.DateField(null=True, blank=True)
     valor_total = models.DecimalField(max_digits=12, decimal_places=2)
     objeto = models.TextField()
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Em elaboracao')
     observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
@@ -357,6 +357,7 @@ class ContratoTerceiros(models.Model):
     ]
 
     cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE)
+    num_contrato = models.CharField(max_length=30, null=True, blank=True)
     prospeccao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.SET_NULL, null=True, blank=True)
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE, related_name='contratos')
     coordenador = models.ForeignKey(
@@ -369,8 +370,14 @@ class ContratoTerceiros(models.Model):
     data_fim = models.DateField(null=True, blank=True)
     valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     objeto = models.TextField()
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Em elaboracao')
     observacao = models.TextField(null=True, blank=True)
+
+    num_contrato_arquivo = models.FileField(
+        upload_to='contrato_do_fornecedor/',
+        verbose_name='Inserir arquivo do contrato com fornecedor',
+        null=True, blank=True
+    )
 
     def __str__(self):
         return f"Contrato {self.cod_projeto} - {self.empresa_terceira}"

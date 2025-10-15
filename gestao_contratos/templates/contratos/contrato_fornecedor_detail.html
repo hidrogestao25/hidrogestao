@@ -17,7 +17,7 @@
       <p><strong>Status:</strong> {{ contrato.get_status_display }}</p>
       <p><strong>Objeto:</strong> {{ contrato.objeto }}</p>
       {% if contrato.observacao %}
-        <p><strong>observacao:</strong> {{ contrato.observacao }}</p>
+        <p><strong>Observações:</strong> {{ contrato.observacao }}</p>
       {% endif %}
 
   <hr>
@@ -64,9 +64,17 @@
       </thead>
       <tbody>
         {% for evento in eventos %}
-          <tr>
+        {% now "Y-m-d" as hoje %}
+          <tr class="{% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
+                linha-atrasada
+            {% endif %}">
             <td>{{ evento.descricao }}</td>
-            <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
+            <td>
+              {% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
+                ⚠️
+              {% endif %}
+              {{ evento.data_prevista|date:"d/m/Y" }}
+            </td>
             <td>{{ evento.data_prevista_pagamento|date:"d/m/Y" }}</td>
             <td>R$ {{ evento.valor_previsto|floatformat:2 }}</td>
             {% if evento.valor_pago %}
@@ -119,6 +127,11 @@
     {{ plot_div|safe }}
   </div>
 
+  <hr>
+  <h6>📈 Comparativo Financeiro</h6>
+  <div id="grafico-comparativo">
+    {{ comparativo_div|safe }}
+  </div>
 </div>
 <div class="card-footer text-end">
   <a href="{% url 'lista_contratos_fornecedores' %}" class="btn btn-custom">← Voltar</a>

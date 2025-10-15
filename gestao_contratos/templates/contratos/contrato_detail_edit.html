@@ -78,6 +78,20 @@
           <button type="submit" class="btn btn-custom">Salvar alterações</button>
         </div>
       </form>
+
+      <div class="mt-4">
+        <h5>Resumo Financeiro</h5>
+
+        <p>
+          <strong>Pago:</strong> {{ resumo_percentual.pago }}% do valor total<br>
+          <strong>Previsto:</strong> {{ resumo_percentual.previsto }}% do valor total<br>
+          <strong>Restante:</strong> {{ resumo_percentual.restante }}% 
+        </p>
+
+        <div>
+          {{ grafico_contrato|safe }}
+        </div>
+      </div>
     </div>
   </div>
 </div>
