@@ -158,9 +158,10 @@ class ContratoFornecedorForm(forms.ModelForm):
 
     class Meta:
         model = ContratoTerceiros
-        fields = ['observacao', 'cod_projeto', 'prospeccao', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto']
+        fields = ['num_contrato_arquivo', 'num_contrato', 'observacao', 'cod_projeto', 'prospeccao', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto']
         widgets = {
             'cod_projeto': forms.Select(attrs={'class': 'form-select'}),
+            'num_contrato': forms.TextInput(attrs={'class': 'form-control'}),
             'prospeccao': forms.Select(attrs={'class': 'form-select'}),
             'empresa_terceira': forms.Select(attrs={'class': 'form-select'}),
             'coordenador': forms.Select(attrs={'class': 'form-select'}),
@@ -168,6 +169,7 @@ class ContratoFornecedorForm(forms.ModelForm):
             'objeto':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'observacao':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'num_contrato_arquivo': forms.ClearableFileInput(attrs={"class": "form-control"}),
         }
 
     def __init__(self, *args, **kwargs):

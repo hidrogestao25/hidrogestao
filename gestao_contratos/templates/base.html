@@ -164,6 +164,20 @@
             padding: 20px 0;
             margin-top: 40px;
         }
+
+        @keyframes piscar-vermelho {
+          0% { background-color: #ffcccc; }
+          50% { background-color: #ff0000; color: #fff; }
+          100% { background-color: #ffcccc; }
+        }
+
+        .linha-atrasada {
+          animation: piscar-vermelho 1.5s infinite;
+        }
+
+        table.table tr.linha-atrasada > td {
+          background-color: inherit !important;
+        }
     </style>
 </head>
 <body>
@@ -228,7 +242,7 @@
                         </a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{% url 'lista_contratos' %}"><i class="bi bi-person-lines-fill"></i> Contratos com Clientes</a></li>
-                            <li><a class="dropdown-item" href="{% url 'lista_contratos_fornecedores' %}"><i class="bi bi-people-fill"></i> Contratos com Terceiros</a></li>
+                            <li><a class="dropdown-item" href="{% url 'lista_contratos_fornecedores' %}"><i class="bi bi-people-fill"></i> Contratos com Fornecedores</a></li>
                             {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' %}
                                 <li><a class="dropdown-item" href="{% url 'previsao_pagamentos' %}"><i class="bi bi-cash-coin"></i> Previsão de Pagamentos</a></li>
                             {% endif %}

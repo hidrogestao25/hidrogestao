@@ -23,6 +23,11 @@
           </div>
 
           <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.num_contrato.id_for_label }}">Número do Contrato do Fornecedor</label>
+            {{ form.num_contrato }}
+          </div>
+
+          <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.coordenador.id_for_label }}">Fiscal do Contrato</label>
             {{ form.coordenador }}
           </div>
@@ -42,14 +47,16 @@
             {{ form.valor_total }}
           </div>
 
-          <div class="col-md-6 mb-3">
-            <label class="form-label" for="{{ form.proposta.id_for_label }}">Proposta</label>
-            {{ form.proposta }}
-          </div>
+          
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.status.id_for_label }}">Status</label>
             {{ form.status }}
+          </div>
+
+          <div class="col-12 mb-3">
+            <label class="form-label" for="{{ form.num_contrato_arquivo.id_for_label }}">Arquivo do Contrato com Fornecedor</label>
+            {{ form.num_contrato_arquivo }}
           </div>
 
           <div class="col-12 mb-3">

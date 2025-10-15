@@ -244,7 +244,72 @@ def lista_fornecedores(request):
 def contrato_cliente_detalhe(request, pk):
     contrato = get_object_or_404(Contrato, pk=pk)
 
-    if request.user.grupo == "suprimento" or request.user.grupo == 'financeiro':
+    # ---- Buscar eventos ligados a esse contrato ----
+    eventos = Evento.objects.filter(contrato_terceiro__cod_projeto=contrato)
+
+    total_contrato = contrato.valor_total or 0
+    total_previsto = eventos.aggregate(Sum('valor_previsto'))['valor_previsto__sum'] or 0
+    total_pago = eventos.aggregate(Sum('valor_pago'))['valor_pago__sum'] or 0
+
+    # ---- Calcular percentuais ----
+    if total_contrato > 0:
+        perc_previsto = (total_previsto / total_contrato) * 100
+        perc_pago = (total_pago / total_contrato) * 100
+        perc_restante = 100 - max(perc_previsto, perc_pago)
+    else:
+        perc_previsto = perc_pago = perc_restante = 0
+
+    # ---- Gráfico de barras ----
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=['Valor Total do Contrato'],
+        y=[total_contrato],
+        name='Total do Contrato',
+        text=[f"R$ {total_contrato:,.2f}<br>100%"],
+        textposition='inside',
+        marker_color='#007bff'
+    ))
+
+    fig.add_trace(go.Bar(
+        x=['Valor Previsto para Fornecedores'],
+        y=[total_previsto],
+        name='Previsto',
+        text=[f"R$ {total_previsto:,.2f}<br>{perc_previsto:.1f}%"],
+        textposition='inside',
+        marker_color='#ffc107'
+    ))
+
+    fig.add_trace(go.Bar(
+        x=['Valor Pago a Fornecedores'],
+        y=[total_pago],
+        name='Pago',
+        text=[f"R$ {total_pago:,.2f}<br>{perc_pago:.1f}%"],
+        textposition='inside',
+        marker_color='#28a745'
+    ))
+
+    fig.update_layout(
+        title=f'Resumo Financeiro do Contrato ({contrato.cod_projeto})',
+        yaxis_title='Valor (R$)',
+        xaxis_title='Categoria',
+        template='plotly_white',
+        barmode='group',
+        height=450,
+        legend=dict(orientation="h", y=-0.2, x=0.2)
+    )
+
+    grafico_contrato = fig.to_html(full_html=False)
+
+    # ---- Texto com resumo percentual ----
+    resumo_percentual = {
+        'pago': round(perc_pago, 1),
+        'previsto': round(perc_previsto, 1),
+        'restante': round(perc_restante, 1)
+    }
+
+    # ---- controle de edição ----
+    if request.user.grupo in ["suprimento", "financeiro"]:
         if request.method == 'POST':
             form = ContratoForm(request.POST, instance=contrato)
             if form.is_valid():
@@ -255,8 +320,18 @@ def contrato_cliente_detalhe(request, pk):
                 messages.error(request, "❌ Ocorreu um erro ao atualizar o contrato. Verifique os campos e tente novamente.")
         else:
             form = ContratoForm(instance=contrato)
-        return render(request, 'contratos/contrato_detail_edit.html', {'form': form, 'contrato': contrato})
-    return render(request, "contratos/contrato_detail.html", {'contrato': contrato})
+        return render(request, 'contratos/contrato_detail_edit.html', {
+            'form': form,
+            'contrato': contrato,
+            'grafico_contrato': grafico_contrato,
+            'resumo_percentual': resumo_percentual,
+        })
+
+    return render(request, "contratos/contrato_detail.html", {
+        'contrato': contrato,
+        'grafico_contrato': grafico_contrato,
+        'resumo_percentual': resumo_percentual,
+    })
 
 
 @login_required
@@ -313,6 +388,41 @@ def contrato_fornecedor_detalhe(request, pk):
         fig = go.Figure(data=[trace_previsto, trace_pago], layout=layout)
         plot_div = plot(fig, auto_open=False, output_type="div")
 
+    #  --- GRÁFICO DE COMPARAÇÃO GERAL ---
+    contrato_cliente = contrato.cod_projeto  # contrato com o cliente
+    valor_cliente = contrato_cliente.valor_total or 0
+
+    total_previsto = eventos.aggregate(Sum("valor_previsto"))["valor_previsto__sum"] or 0
+    total_pago = eventos.aggregate(Sum("valor_pago"))["valor_pago__sum"] or 0
+
+    # Percentuais
+    perc_previsto = (total_previsto / valor_cliente * 100) if valor_cliente else 0
+    perc_pago = (total_pago / valor_cliente * 100) if valor_cliente else 0
+
+    fig_comp = go.Figure()
+
+    fig_comp.add_trace(go.Bar(
+        x=["Valor Contrato Cliente", "Valor Previsto Fornecedor", "Valor Pago Fornecedor"],
+        y=[valor_cliente, total_previsto, total_pago],
+        text=[
+            f"R$ {valor_cliente:,.2f}<br>100%",
+            f"R$ {total_previsto:,.2f}<br>{perc_previsto:.1f}%",
+            f"R$ {total_pago:,.2f}<br>{perc_pago:.1f}%"
+        ],
+        textposition="auto",
+        marker_color=["#007bff", "#ffc107", "#28a745"]
+    ))
+
+    fig_comp.update_layout(
+        title="Comparativo Financeiro: Cliente × Fornecedor",
+        yaxis_title="Valor (R$)",
+        xaxis_title="Categoria",
+        template="plotly_white",
+        height=450
+    )
+
+    comparativo_div = plot(fig_comp, auto_open=False, output_type="div")
+
     return render(
         request,
         "contratos/contrato_fornecedor_detail.html",
@@ -321,6 +431,7 @@ def contrato_fornecedor_detalhe(request, pk):
             "proposta_fornecedor": proposta_fornecedor,
             "eventos": eventos,
             "plot_div": plot_div,
+            "comparativo_div": comparativo_div,
         },
     )
 
