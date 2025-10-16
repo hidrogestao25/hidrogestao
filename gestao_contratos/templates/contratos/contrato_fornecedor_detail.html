@@ -32,6 +32,13 @@
         {% endif %}
 
       </p>
+      {% if contrato.num_contrato_arquivo %}
+        <p>
+          <a href="{{ contrato.num_contrato_arquivo.url }}" class="btn btn-sm btn-outline-primary">
+            📎 Baixar Contrato com Fornecedor
+          </a>
+        </p>
+      {% endif %}
       <p><strong>Status:</strong> {{ contrato.get_status_display }}</p>
       <p><strong>Objeto:</strong> {{ contrato.objeto }}</p>
       {% if contrato.observacao %}

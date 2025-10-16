@@ -7,7 +7,7 @@
       <a href="{% url 'lista_contratos_fornecedores' %}" class="btn btn-custom">← Voltar</a>
     </div>
     <div class="card-body">
-      <form method="post">
+      <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
         {{ form.non_field_errors }}
 
@@ -47,7 +47,7 @@
             {{ form.valor_total }}
           </div>
 
-          
+
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.status.id_for_label }}">Status</label>
@@ -55,9 +55,14 @@
           </div>
 
           <div class="col-12 mb-3">
-            <label class="form-label" for="{{ form.num_contrato_arquivo.id_for_label }}">Arquivo do Contrato com Fornecedor</label>
-            {{ form.num_contrato_arquivo }}
+              <label class="form-label" for="{{ form.num_contrato_arquivo.id_for_label }}">Arquivo do Contrato</label>
+              {% if contrato.num_contrato_arquivo %}
+                  <p>Arquivo atual: <a href="{{ contrato.num_contrato_arquivo.url }}" target="_blank">Download</a></p>
+              {% endif %}
+              {{ form.num_contrato_arquivo }}
           </div>
+
+
 
           <div class="col-12 mb-3">
             <label class="form-label" for="{{ form.objeto.id_for_label }}">Objeto</label>
