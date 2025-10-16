@@ -7,21 +7,22 @@
       <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>
     </div>
     <div class="card-body">
-      <form method="post">
+      <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
+
         <!-- Exibir erros de validação -->
         {% if form.errors %}
         <div class="alert alert-danger">
-            <ul>
-                {% for field in form %}
-                    {% for error in field.errors %}
-                        <li>{{ field.label }}: {{ error }}</li>
-                    {% endfor %}
-                {% endfor %}
-                {% for error in form.non_field_errors %}
-                    <li>{{ error }}</li>
-                {% endfor %}
-            </ul>
+          <ul>
+            {% for field in form %}
+              {% for error in field.errors %}
+                <li>{{ field.label }}: {{ error }}</li>
+              {% endfor %}
+            {% endfor %}
+            {% for error in form.non_field_errors %}
+              <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
         </div>
         {% endif %}
 
@@ -32,23 +33,23 @@
           </div>
 
           <div class="col-md-6 mb-3">
-            <label class="form-label" for="{{ form.cliente.id_for_label }}">Fornecedor</label>
+            <label class="form-label" for="{{ form.empresa_terceira.id_for_label }}">Fornecedor</label>
             {{ form.empresa_terceira }}
           </div>
 
           <div class="col-md-6 mb-3">
-            <label class="form-label" for="{{ form.cliente.id_for_label }}">Fiscal do contrato</label>
+            <label class="form-label" for="{{ form.coordenador.id_for_label }}">Fiscal do contrato</label>
             {{ form.coordenador }}
           </div>
 
           <div class="col-md-6 mb-3">
-              <label class="form-label" for="{{ form.data_inicio.id_for_label }}">Data Início</label>
-              {{ form.data_inicio }}
+            <label class="form-label" for="{{ form.data_inicio.id_for_label }}">Data Início</label>
+            {{ form.data_inicio }}
           </div>
 
           <div class="col-md-6 mb-3">
-              <label class="form-label" for="{{ form.data_fim.id_for_label }}">Data Fim</label>
-              {{ form.data_fim }}
+            <label class="form-label" for="{{ form.data_fim.id_for_label }}">Data Fim</label>
+            {{ form.data_fim }}
           </div>
 
           <div class="col-md-6 mb-3">
@@ -57,7 +58,7 @@
           </div>
 
           <div class="col-md-6 mb-3">
-            <label class="form-label" for="{{ form.cliente.id_for_label }}">Solicitação</label>
+            <label class="form-label" for="{{ form.prospeccao.id_for_label }}">Solicitação</label>
             {{ form.prospeccao }}
           </div>
 
@@ -75,6 +76,11 @@
             <label class="form-label" for="{{ form.observacao.id_for_label }}">Observações</label>
             {{ form.observacao }}
           </div>
+
+          <div class="col-12 mb-3">
+            <label class="form-label" for="{{ form.num_contrato_arquivo.id_for_label }}">Arquivo do Contrato</label>
+            {{ form.num_contrato_arquivo }}
+          </div>
         </div>
 
         <div class="text-end">
@@ -85,20 +91,55 @@
   </div>
 </div>
 
-<!-- jQuery -->
+<!-- ====================== -->
+<!-- CSS e JS do Select2 -->
+<!-- ====================== -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <!-- Inputmask -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
 
+<style>
+  /* Ajustes visuais para o Select2 */
+  .select2-container--default .select2-selection--single {
+    height: 38px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 5px 10px;
+  }
+
+  .select2-selection__rendered {
+    line-height: 26px !important;
+  }
+
+  .select2-selection__arrow {
+    height: 34px !important;
+  }
+</style>
+
 <script>
-  $(document).ready(function(){
+  $(document).ready(function() {
+    // Máscara do campo de valor
     $('#id_valor_total').inputmask('currency', {
       prefix: "R$ ",
       groupSeparator: ".",
       autoGroup: true,
       rightAlign: false,
       removeMaskOnSubmit: true
+    });
+
+    // Ativar o Select2 nos campos de seleção
+    $('#id_cod_projeto, #id_empresa_terceira, #id_coordenador, #id_prospeccao, #id_status').select2({
+      width: '100%',
+      placeholder: 'Selecione ou digite para pesquisar...',
+      allowClear: true,
+      language: {
+        noResults: function() {
+          return "Nenhum resultado encontrado";
+        }
+      }
     });
   });
 </script>
