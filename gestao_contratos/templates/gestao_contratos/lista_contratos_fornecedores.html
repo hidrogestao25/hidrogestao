@@ -29,7 +29,18 @@
             <td>{{ fornecedor.cod_projeto }}</td>
             <td>{{ fornecedor.coordenador }}</td>
             <td>{{ fornecedor.empresa_terceira }}</td>
-            <td>{{ fornecedor.status }}</td>
+            <td>{% if fornecedor.status == 'em_elaboracao' %}
+                  Em elaboração
+                {% elif fornecedor.status == 'ativo' %}
+                  Ativo
+                {% elif fornecedor.status == 'suspenso' %}
+                  Suspenso
+                {% elif fornecedor.status == 'encerrado' %}
+                  Finalizado
+                {% elif fornecedor.status == 'aguardando_assinatura' %}
+                  Aguardando assinatura
+                {% endif %}
+            </td>
             <td>
                 <a href="{% url 'contrato_fornecedor_detalhe' fornecedor.pk %}" class="btn btn-sm btn-outline-primary">
                     Detalhes

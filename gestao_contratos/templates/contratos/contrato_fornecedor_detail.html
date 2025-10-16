@@ -12,8 +12,26 @@
       <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
       <p><strong>Data Início:</strong> {{ contrato.data_inicio|date:"d/m/Y" }}</p>
-      <p><strong>Data Fim:</strong> {{ contrato.data_fim|date:"d/m/Y" }}</p>
-      <p><strong>Valor Total:</strong> R$ {{ contrato.valor_total|floatformat:2 }}</p>
+      {% now "Y-m-d" as hoje %}
+      <p class="
+        {% if contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
+          linha-atrasada
+        {% endif %}">
+        <strong>Data Fim:</strong> {{ contrato.data_fim|date:"d/m/Y" }}
+        {% if contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
+             |  ⚠️  O contrato com fornecedor ultrapassou a data final
+        {% endif %}
+      </p>
+
+      <p>
+        <strong>Valor Total:</strong>
+        {% if contrato.valor_total %}
+          R$ {{ contrato.valor_total|floatformat:2 }}
+        {% else %}
+          Valor total do contrato não informado
+        {% endif %}
+
+      </p>
       <p><strong>Status:</strong> {{ contrato.get_status_display }}</p>
       <p><strong>Objeto:</strong> {{ contrato.objeto }}</p>
       {% if contrato.observacao %}
