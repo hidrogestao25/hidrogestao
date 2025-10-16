@@ -80,6 +80,19 @@ class ContratoFornecedorCreateView(LoginRequiredMixin, UserPassesTestMixin, Crea
         # Redireciona para a home
         return redirect('home')
 
+    def form_valid(self, form):
+        print("==== DEBUG FORM_VALID ====")
+        print("Arquivos recebidos:", self.request.FILES)
+        print("Campos POST:", self.request.POST)
+
+        response = super().form_valid(form)
+
+        print("Objeto salvo:", self.object)
+        print("Arquivo salvo:", self.object.num_contrato_arquivo)
+        print("==========================")
+
+        return response
+
 
 def is_financeiro(user):
     return user.is_authenticated and getattr(user, "grupo", None) == "financeiro"
@@ -179,9 +192,11 @@ def lista_contratos_fornecedor(request):
     if search_query:
         contratos = contratos.filter(
             Q(cod_projeto__cod_projeto__icontains=search_query) |
+            Q(cod_projeto__cliente__nome__icontains=search_query) |
             Q(empresa_terceira__nome__icontains=search_query) |
             Q(coordenador__username__icontains=search_query) |
             Q(status__icontains=search_query) |
+            Q(num_contrato__icontains=search_query) |
             Q(valor_total__icontains=search_query)
         )
 
@@ -440,13 +455,18 @@ def contrato_fornecedor_detalhe(request, pk):
 def contrato_fornecedor_editar(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
 
+    # Permissões
     if request.user.grupo not in ["suprimento", "financeiro"]:
         messages.error(request, "❌ Você não tem permissão para editar contratos.")
         return redirect("contrato_fornecedor_detalhe", pk=pk)
 
     if request.method == "POST":
-        form = ContratoFornecedorForm(request.POST, instance=contrato)
+        # ⚠️ Incluímos request.FILES para que o arquivo seja capturado
+        form = ContratoFornecedorForm(request.POST, request.FILES, instance=contrato)
+        print("POST:", request.POST)
+        print("FILES:", request.FILES)
         if form.is_valid():
+            # Salva o formulário e o arquivo enviado
             form.save()
             messages.success(request, "Contrato atualizado com sucesso!")
             return redirect("contrato_fornecedor_detalhe", pk=pk)
