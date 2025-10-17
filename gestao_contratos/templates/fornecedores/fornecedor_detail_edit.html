@@ -99,7 +99,7 @@
                 <td>R$ {{ contrato.valor_total|floatformat:2 }}</td>
                 <td>{{ contrato.get_status_display }}</td>
                 <td>
-                  <a href="{% url 'contrato_cliente_detalhe' contrato.pk %}" class="btn btn-sm btn-outline-primary">
+                  <a href="{% url 'contrato_fornecedor_detalhe' contrato.pk %}" class="btn btn-sm btn-outline-primary">
                     Ver Detalhes
                   </a>
                 </td>

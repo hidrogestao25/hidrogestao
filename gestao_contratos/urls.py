@@ -52,5 +52,5 @@ urlpatterns = [
     path("evento/<int:pk>/registrar-entrega/", views.registrar_entrega, name="registrar_entrega"),
 
     path("previsao-pagamentos/", views.previsao_pagamentos, name="previsao_pagamentos"),
-
+    path('previsao-pagamentos/exportar/', views.exportar_previsao_pagamentos_excel, name='exportar_previsao_pagamentos_excel'),
 ]
