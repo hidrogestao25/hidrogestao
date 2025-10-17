@@ -96,9 +96,10 @@
             <td>{{ evento.descricao }}</td>
             <td>
               {% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
-                ⚠️
+                ⚠️ {{ evento.data_prevista|date:"d/m/Y" }} <br>Entrega Atrasada!!!
+              {% else %}
+                {{ evento.data_prevista|date:"d/m/Y" }}
               {% endif %}
-              {{ evento.data_prevista|date:"d/m/Y" }}
             </td>
             <td>{{ evento.data_prevista_pagamento|date:"d/m/Y" }}</td>
             <td>R$ {{ evento.valor_previsto|floatformat:2 }}</td>

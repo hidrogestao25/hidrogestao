@@ -17,6 +17,16 @@ from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedor
 import plotly.graph_objs as go
 import pandas as pd
 from plotly.offline import plot
+import plotly.colors as pc
+
+import openpyxl
+from django.http import HttpResponse
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.chart import BarChart, Reference, LineChart
+from openpyxl.styles import Font
+from io import BytesIO
+from datetime import datetime
 
 User = get_user_model()
 
@@ -257,14 +267,31 @@ def lista_fornecedores(request):
 
 @login_required
 def contrato_cliente_detalhe(request, pk):
+    import plotly.graph_objects as go
+    import pandas as pd
+
     contrato = get_object_or_404(Contrato, pk=pk)
 
     # ---- Buscar eventos ligados a esse contrato ----
     eventos = Evento.objects.filter(contrato_terceiro__cod_projeto=contrato)
 
     total_contrato = contrato.valor_total or 0
-    total_previsto = eventos.aggregate(Sum('valor_previsto'))['valor_previsto__sum'] or 0
-    total_pago = eventos.aggregate(Sum('valor_pago'))['valor_pago__sum'] or 0
+
+    # --- Criar DataFrame para segmentação por fornecedor ---
+    df = pd.DataFrame(list(eventos.values(
+        'empresa_terceira__nome',
+        'valor_previsto',
+        'valor_pago'
+    )))
+
+    if df.empty:
+        resumo = pd.DataFrame(columns=['empresa_terceira__nome', 'valor_previsto', 'valor_pago'])
+        total_previsto = total_pago = 0
+    else:
+        df = df.fillna(0)
+        resumo = df.groupby('empresa_terceira__nome')[['valor_previsto', 'valor_pago']].sum().reset_index()
+        total_previsto = resumo['valor_previsto'].sum()
+        total_pago = resumo['valor_pago'].sum()
 
     # ---- Calcular percentuais ----
     if total_contrato > 0:
@@ -274,44 +301,75 @@ def contrato_cliente_detalhe(request, pk):
     else:
         perc_previsto = perc_pago = perc_restante = 0
 
+    # ---- Cores diferentes para cada fornecedor ----
+    import plotly.express as px
+    fornecedores = resumo['empresa_terceira__nome'].tolist()
+    cores = px.colors.qualitative.Plotly * (len(fornecedores) // 10 + 1)
+
     # ---- Gráfico de barras ----
     fig = go.Figure()
 
+    # Barra 1: Valor total do contrato
     fig.add_trace(go.Bar(
         x=['Valor Total do Contrato'],
         y=[total_contrato],
         name='Total do Contrato',
-        text=[f"R$ {total_contrato:,.2f}<br>100%"],
+        text=[f"R$ {total_contrato:,.2f}"],
         textposition='inside',
         marker_color='#007bff'
     ))
 
-    fig.add_trace(go.Bar(
-        x=['Valor Previsto para Fornecedores'],
-        y=[total_previsto],
-        name='Previsto',
-        text=[f"R$ {total_previsto:,.2f}<br>{perc_previsto:.1f}%"],
-        textposition='inside',
-        marker_color='#ffc107'
-    ))
+    # Barras empilhadas: Valor Previsto por fornecedor
+    for i, row in enumerate(resumo.itertuples()):
+        fig.add_trace(go.Bar(
+            x=['Valor Previsto para Fornecedores'],
+            y=[row.valor_previsto],
+            name=f"{row.empresa_terceira__nome}",
+            text=[f"R$ {row.valor_previsto:,.2f}"],
+            textposition='inside',
+            hovertemplate=f"<b>{row.empresa_terceira__nome}</b><br>Previsto: R$ %{{y:,.2f}}<extra></extra>",
+            marker_color=cores[i]
+        ))
 
-    fig.add_trace(go.Bar(
-        x=['Valor Pago a Fornecedores'],
-        y=[total_pago],
-        name='Pago',
-        text=[f"R$ {total_pago:,.2f}<br>{perc_pago:.1f}%"],
-        textposition='inside',
-        marker_color='#28a745'
-    ))
+    # Barras empilhadas: Valor Pago por fornecedor
+    for i, row in enumerate(resumo.itertuples()):
+        fig.add_trace(go.Bar(
+            x=['Valor Pago a Fornecedores'],
+            y=[row.valor_pago],
+            name=f"PAGO - {row.empresa_terceira__nome}",
+            text=[f"R$ {row.valor_pago:,.2f}"],
+            textposition='inside',
+            hovertemplate=f"<b>{row.empresa_terceira__nome}</b><br>Pago: R$ %{{y:,.2f}}<extra></extra>",
+            marker_color=cores[i]
+        ))
+
+    # ---- Adicionar valor total no topo das barras empilhadas ----
+    if not resumo.empty:
+        fig.add_annotation(
+            x='Valor Previsto para Fornecedores',
+            y=total_previsto,
+            text=f"R$ {total_previsto:,.2f}",
+            showarrow=False,
+            yshift=10,
+            font=dict(size=12, color='black')
+        )
+        fig.add_annotation(
+            x='Valor Pago a Fornecedores',
+            y=total_pago,
+            text=f"R$ {total_pago:,.2f}",
+            showarrow=False,
+            yshift=10,
+            font=dict(size=12, color='black')
+        )
 
     fig.update_layout(
         title=f'Resumo Financeiro do Contrato ({contrato.cod_projeto})',
         yaxis_title='Valor (R$)',
         xaxis_title='Categoria',
         template='plotly_white',
-        barmode='group',
-        height=450,
-        legend=dict(orientation="h", y=-0.2, x=0.2)
+        barmode='stack',
+        height=500,
+        legend=dict(orientation="h", y=-0.3, x=0)
     )
 
     grafico_contrato = fig.to_html(full_html=False)
@@ -323,7 +381,7 @@ def contrato_cliente_detalhe(request, pk):
         'restante': round(perc_restante, 1)
     }
 
-    # ---- controle de edição ----
+    # ---- Controle de edição ----
     if request.user.grupo in ["suprimento", "financeiro"]:
         if request.method == 'POST':
             form = ContratoForm(request.POST, instance=contrato)
@@ -347,6 +405,7 @@ def contrato_cliente_detalhe(request, pk):
         'grafico_contrato': grafico_contrato,
         'resumo_percentual': resumo_percentual,
     })
+
 
 
 @login_required
@@ -1485,6 +1544,7 @@ def previsao_pagamentos(request):
     grafico_html = None
     grafico_barra = None
     grafico_barras = None
+    grafico_barras_projeto = None
 
     if form.is_valid():
         data_limite = form.cleaned_data["data_limite"]
@@ -1650,6 +1710,61 @@ def previsao_pagamentos(request):
 
         grafico_barras = plot(fig_barra, output_type='div')
 
+        # ==== GRÁFICO 2.2: BARRA PELO CALENDÁRIO (DIVIDIDO POR PROJETO) ====
+        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento').values_list('data_pagamento', flat=True))
+
+        # Obtém todos os coordenadores envolvidos nos eventos filtrados
+        projetos = list(set(
+            eventos.values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True)
+        ))
+
+        fig_barra_proj = go.Figure()
+        data_inicio = None
+
+        # Para cada coordenador, gera uma série de barras empilhadas
+        for proj in projetos:
+            y_previstos = []
+            data_inicio = None
+
+            for data_fim in calendario:
+                if data_inicio is None:
+                    eventos_previsto = Evento.objects.filter(
+                        data_prevista_pagamento__lte=data_fim,
+                        contrato_terceiro__cod_projeto__cod_projeto=proj
+                    )
+                else:
+                    eventos_previsto = Evento.objects.filter(
+                        data_prevista_pagamento__gt=data_inicio,
+                        data_prevista_pagamento__lte=data_fim,
+                        contrato_terceiro__cod_projeto__cod_projeto=proj
+                    )
+
+                total_previsto_periodo = eventos_previsto.aggregate(
+                    total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
+                )['total']
+
+                y_previstos.append(total_previsto_periodo)
+                data_inicio = data_fim
+
+            fig_barra_proj.add_trace(go.Bar(
+                name=f"{proj or 'Sem Coordenador'}",
+                x=calendario,
+                y=y_previstos
+            ))
+
+        # Layout empilhado e estilizado
+        fig_barra_proj.update_layout(
+            barmode='stack',
+            title="Pagamentos Previsto (por Projeto, conforme calendário de pagamento)",
+            xaxis_title="Data do Calendário",
+            yaxis_title="Valor Previsto (R$)",
+            template="plotly_white",
+            height=500,
+            legend_title="Projeto"
+        )
+
+        grafico_barras_projeto = plot(fig_barra_proj, output_type='div')
+
         # ==== GRÁFICO 3: BARRA PELO CALENDÁRIO ====
         # Pega as datas do calendário do banco
         calendario = list(CalendarioPagamento.objects.order_by('data_pagamento').values_list('data_pagamento', flat=True))
@@ -1707,5 +1822,167 @@ def previsao_pagamentos(request):
         "total_pago": total_pago,
         "grafico_html": grafico_html,
         "grafico_barras": grafico_barras,
+        "grafico_barras_projeto": grafico_barras_projeto,
         "grafico_barra": grafico_barra,
     })
+
+
+@login_required
+def exportar_previsao_pagamentos_excel(request):
+    form = FiltroPrevisaoForm(request.GET or None)
+
+    if not form.is_valid():
+        messages.error(request, "Preencha os filtros corretamente antes de exportar.")
+        return redirect('previsao_pagamentos')
+
+    data_limite = form.cleaned_data["data_limite"]
+    data_inicial = form.cleaned_data.get("data_inicial")
+    coordenador = form.cleaned_data.get("coordenador")
+
+    hoje = timezone.now().date()
+    usuario = request.user
+    data_inicio_filtro = data_inicial or hoje
+
+    filtros_base = Q(
+        Q(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]) |
+        Q(data_pagamento__range=[data_inicio_filtro, data_limite])
+    )
+
+    # === SUPRIMENTO ===
+    if usuario.grupo == "suprimento":
+        eventos = Evento.objects.filter(filtros_base)
+
+    # === GERENTE ===
+    elif usuario.grupo == "gerente":
+        eventos = Evento.objects.filter(
+            filtros_base,
+            contrato_terceiro__coordenador__centros__in=usuario.centros.all()
+        )
+
+    else:
+        return redirect('home')
+
+    if coordenador:
+        eventos = eventos.filter(contrato_terceiro__coordenador=coordenador)
+
+    eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
+
+    # === Criar workbook ===
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Previsão de Pagamentos"
+
+    # Planilha 1 — Dados completos
+    headers = [
+        "Data Prevista", "Projeto", "Fornecedor", "Coordenador",
+        "Valor Previsto", "Data Pagamento", "Valor Pago"
+    ]
+    ws.append(headers)
+
+    for e in eventos:
+        ws.append([
+            e.data_prevista_pagamento.strftime("%d/%m/%Y") if e.data_prevista_pagamento else '',
+            e.contrato_terceiro.cod_projeto.cod_projeto if e.contrato_terceiro.cod_projeto else '',
+            e.empresa_terceira.nome if e.empresa_terceira else '',
+            e.contrato_terceiro.coordenador.username if e.contrato_terceiro.coordenador else '',
+            float(e.valor_previsto or 0),
+            e.data_pagamento.strftime("%d/%m/%Y") if e.data_pagamento else '',
+            float(e.valor_pago or 0)
+        ])
+
+    # === Planilha 2 — Por Coordenador (com datas) ===
+    ws2 = wb.create_sheet("Por Coordenador")
+    ws2.append(["Data Prevista"] + list(set(eventos.values_list("contrato_terceiro__coordenador__username", flat=True))))
+
+    datas = sorted(set(eventos.values_list("data_prevista_pagamento", flat=True)))
+    coordenadores = list(set(eventos.values_list("contrato_terceiro__coordenador__username", flat=True)))
+
+    for data in datas:
+        linha = [data.strftime("%d/%m/%Y") if data else ""]
+        for coord in coordenadores:
+            total = eventos.filter(
+                data_prevista_pagamento=data,
+                contrato_terceiro__coordenador__username=coord
+            ).aggregate(total=Sum("valor_previsto"))["total"] or Decimal("0")
+            linha.append(float(total))
+        ws2.append(linha)
+
+    # Gráfico
+    chart1 = BarChart()
+    chart1.title = "Valores Previsto por Coordenador (por Data)"
+    data = Reference(ws2, min_col=2, max_col=len(coordenadores) + 1, min_row=1, max_row=len(datas) + 1)
+    cats = Reference(ws2, min_col=1, min_row=2, max_row=len(datas) + 1)
+    chart1.add_data(data, titles_from_data=True)
+    chart1.set_categories(cats)
+    chart1.x_axis.title = "Data Prevista"
+    chart1.y_axis.title = "Valor (R$)"
+    chart1.height = 10
+    chart1.width = 20
+    ws2.add_chart(chart1, "H2")
+
+    # === Planilha 3 — Por Projeto (com datas) ===
+    ws3 = wb.create_sheet("Por Projeto")
+    ws3.append(["Data Prevista"] + list(set(eventos.values_list("contrato_terceiro__cod_projeto__cod_projeto", flat=True))))
+
+    projetos = list(set(eventos.values_list("contrato_terceiro__cod_projeto__cod_projeto", flat=True)))
+
+    for data in datas:
+        linha = [data.strftime("%d/%m/%Y") if data else ""]
+        for proj in projetos:
+            total = eventos.filter(
+                data_prevista_pagamento=data,
+                contrato_terceiro__cod_projeto__cod_projeto=proj
+            ).aggregate(total=Sum("valor_previsto"))["total"] or Decimal("0")
+            linha.append(float(total))
+        ws3.append(linha)
+
+    chart2 = BarChart()
+    chart2.title = "Valores Previsto por Projeto (por Data)"
+    data2 = Reference(ws3, min_col=2, max_col=len(projetos) + 1, min_row=1, max_row=len(datas) + 1)
+    cats2 = Reference(ws3, min_col=1, min_row=2, max_row=len(datas) + 1)
+    chart2.add_data(data2, titles_from_data=True)
+    chart2.set_categories(cats2)
+    chart2.x_axis.title = "Data Prevista"
+    chart2.y_axis.title = "Valor (R$)"
+    chart2.height = 10
+    chart2.width = 20
+    ws3.add_chart(chart2, "H2")
+
+    # === Planilha 4 — Acumulado (com datas) ===
+    ws4 = wb.create_sheet("Acumulado")
+    ws4.append(["Data Prevista", "Acumulado (R$)"])
+
+    acumulado = 0
+    for data in datas:
+        total = eventos.filter(
+            data_prevista_pagamento=data
+        ).aggregate(total=Sum("valor_previsto"))["total"] or Decimal("0")
+        acumulado += total
+        ws4.append([data.strftime("%d/%m/%Y"), float(acumulado)])
+
+    chart3 = LineChart()
+    chart3.title = "Acumulado por Data Prevista"
+    data3 = Reference(ws4, min_col=2, min_row=1, max_row=len(datas) + 1)
+    cats3 = Reference(ws4, min_col=1, min_row=2, max_row=len(datas) + 1)
+    chart3.add_data(data3, titles_from_data=True)
+    chart3.set_categories(cats3)
+    chart3.x_axis.title = "Data Prevista"
+    chart3.y_axis.title = "Valor Acumulado (R$)"
+    chart3.height = 10
+    chart3.width = 20
+    for serie in chart3.series:
+        serie.marker.symbol = "circle"
+        serie.marker.size = 6
+        serie.graphicalProperties.line.width = 20000
+
+    ws4.add_chart(chart3, "E2")
+
+    # === Exportar Excel ===
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="previsao_pagamentos_{datetime.now().strftime("%Y%m%d_%H%M")}.xlsx"'
+    )
+    wb.save(response)
+    return response

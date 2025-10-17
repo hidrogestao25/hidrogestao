@@ -43,6 +43,15 @@
 
 
   {% if pagamentos %}
+  <div class="d-flex justify-content-end mb-3">
+    <a href="{% url 'exportar_previsao_pagamentos_excel' %}?{{ request.GET.urlencode }}" 
+       class="btn btn-success">
+      <i class="bi bi-file-earmark-excel"></i> Baixar Excel
+    </a>
+    </div>
+
+
+
     <table class="table table-bordered table-striped">
       <thead class="table-dark">
         <tr>
@@ -90,6 +99,13 @@
   <div class="mt-5">
     <h4>Pagamentos Previsto por Coordenadores</h4>
     {{ grafico_barras|safe }}
+  </div>
+{% endif %}
+
+{% if grafico_barras_projeto %}
+  <div class="mt-5">
+    <h4>Pagamentos Previsto por Projetos</h4>
+    {{ grafico_barras_projeto|safe }}
   </div>
 {% endif %}
 
