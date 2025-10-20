@@ -1,5 +1,5 @@
 from django import forms
-from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento
+from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM
 from django.contrib import messages
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime
@@ -336,3 +336,12 @@ class FiltroPrevisaoForm(forms.Form):
         required=False,
         widget=forms.Select(attrs={"class": "form-select"})
     )
+
+
+class BMForm(forms.ModelForm):
+    class Meta:
+        model = BM
+        fields = ['numero_bm', 'parcela_paga', 'valor_pago', 'data_pagamento', 'arquivo_bm', 'observacao']
+        widgets = {
+            'data_pagamento': forms.DateInput(attrs={'type': 'date'}),
+        }

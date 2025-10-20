@@ -11,8 +11,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm
 
 import plotly.graph_objs as go
 import pandas as pd
@@ -20,7 +20,7 @@ from plotly.offline import plot
 import plotly.colors as pc
 
 import openpyxl
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, Reference, LineChart
@@ -1519,19 +1519,20 @@ def excluir_evento_contrato(request, pk):
 @login_required
 def registrar_entrega(request, pk):
     evento = get_object_or_404(Evento, pk=pk)
+    contrato = evento.contrato_terceiro
 
     if request.method == "POST":
         form = EventoEntregaForm(request.POST, request.FILES, instance=evento)
         if form.is_valid():
             form.save()
-            return redirect('contrato_fornecedor_detalhe', pk=evento.contrato_terceiro.pk)
+            return redirect('contrato_fornecedor_detalhe', pk=contrato.pk)
     else:
         form = EventoEntregaForm(instance=evento)
 
     return render(request, "eventos/registrar_entrega.html", {
         "form": form,
         "evento": evento,
-        "contrato": evento.contrato_terceiro,
+        "contrato": contrato,
     })
 
 
@@ -1986,3 +1987,86 @@ def exportar_previsao_pagamentos_excel(request):
     )
     wb.save(response)
     return response
+
+@login_required
+def ranking_fornecedores(request):
+    user = request.user
+    contratos_ativos = ContratoTerceiros.objects.filter(status='ativo')
+
+    if user.grupo == 'gerente':
+        # Pega os centros de trabalho do gerente
+        centros_gerente = user.centros.all()
+
+        # Filtra contratos cujos coordenadores tenham centros em comum
+        coordenadores_mesmos_centros = User.objects.filter(
+            grupo='coordenador',
+            centros__in=centros_gerente
+        ).distinct()
+
+        contratos_ativos = contratos_ativos.filter(
+            coordenador__in=coordenadores_mesmos_centros
+        )
+
+    elif user.grupo == 'suprimento':
+        # Suprimento vê todos os contratos ativos
+        pass
+
+    else:
+        # Outros grupos não visualizam nada
+        contratos_ativos = ContratoTerceiros.objects.none()
+
+    dados = []
+    fornecedores = EmpresaTerceira.objects.all()
+
+    for fornecedor in fornecedores:
+        contratos = contratos_ativos.filter(empresa_terceira=fornecedor)
+        eventos = Evento.objects.filter(empresa_terceira=fornecedor)
+
+        valor_total_contratos = contratos.aggregate(total=Sum('valor_total'))['total'] or 0
+        valor_previsto = eventos.aggregate(total=Sum('valor_previsto'))['total'] or 0
+        valor_pago = eventos.aggregate(total=Sum('valor_pago'))['total'] or 0
+
+        percentual_execucao = (valor_pago / valor_previsto * 100) if valor_previsto > 0 else 0
+
+        dados.append({
+            'id': fornecedor.id,  # 👈 Adiciona o ID
+            'fornecedor': fornecedor.nome,
+            'valor_total_contratos': valor_total_contratos,
+            'valor_previsto': valor_previsto,
+            'valor_pago': valor_pago,
+            'percentual_execucao': percentual_execucao,
+        })
+
+    # Ordenação hierárquica
+    dados = sorted(
+        dados,
+        key=lambda x: (
+            x['valor_total_contratos'],
+            x['valor_previsto'],
+            x['valor_pago']
+        ),
+        reverse=True
+    )
+
+    context = {'dados': dados}
+    return render(request, 'gestao_contratos/ranking_fornecedores.html', context)
+
+
+@login_required
+def cadastrar_bm(request, contrato_id):
+    contrato = get_object_or_404(ContratoTerceiros, id=contrato_id)
+
+    if request.method == "POST":
+        form = BMForm(request.POST, request.FILES)
+        if form.is_valid():
+            bm = form.save(commit=False)
+            bm.contrato = contrato
+            bm.save()
+            return JsonResponse({"success": True})
+        else:
+            # Retorna os erros de validação para o JS
+            return JsonResponse({"success": False, "errors": form.errors}, status=400)
+
+    else:
+        form = BMForm()
+        return render(request, "bm/cadastrar_bm_popup.html", {"form": form, "contrato": contrato})
