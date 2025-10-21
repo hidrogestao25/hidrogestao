@@ -306,16 +306,26 @@ class EventoPrevisaoForm(forms.ModelForm):
 class EventoEntregaForm(forms.ModelForm):
     class Meta:
         model = Evento
-        fields = ["observacao", "arquivo", "justificativa", "avaliacao", "data_entrega", "realizado", "com_atraso", "valor_pago", "data_pagamento"]
+        fields = [
+            "observacao", "arquivo", "justificativa", "avaliacao",
+            "data_entrega", "realizado", "com_atraso",
+            "valor_pago", "data_pagamento"
+        ]
         widgets = {
             "arquivo": forms.ClearableFileInput(attrs={"class": "form-control"}),
             "justificativa": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "avaliacao": forms.Select(attrs={"class": "form-select"}),
-            "data_entrega": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "data_entrega": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
-            "data_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "data_pagamento": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.data_pagamento:
+            self.initial['data_pagamento'] = self.instance.data_pagamento.strftime('%Y-%m-%d')
+
 
 
 class FiltroPrevisaoForm(forms.Form):
@@ -341,7 +351,17 @@ class FiltroPrevisaoForm(forms.Form):
 class BMForm(forms.ModelForm):
     class Meta:
         model = BM
-        fields = ['numero_bm', 'parcela_paga', 'valor_pago', 'data_pagamento', 'arquivo_bm', 'observacao']
+        fields = ["numero_bm", "parcela_paga", "valor_pago", "data_pagamento", "observacao", "arquivo_bm"]
         widgets = {
-            'data_pagamento': forms.DateInput(attrs={'type': 'date'}),
+            "numero_bm": forms.NumberInput(attrs={"class": "form-control"}),
+            "parcela_paga": forms.TextInput(attrs={"class": "form-control"}),
+            "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
+            "data_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "arquivo_bm": forms.ClearableFileInput(attrs={"class": "form-control"}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.data_pagamento:
+            self.initial['data_pagamento'] = self.instance.data_pagamento.strftime('%Y-%m-%d')

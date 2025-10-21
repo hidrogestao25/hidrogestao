@@ -569,6 +569,7 @@ class DocumentoBM(models.Model):
 # ------
 class BM(models.Model):
     contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="boletins_medicao")
+    evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='boletins_medicao', null=True, blank=True)
     numero_bm = models.PositiveIntegerField()
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     parcela_paga = models.PositiveIntegerField()

@@ -47,8 +47,8 @@
 
         <!-- Valor Previsto (somente leitura) -->
         <div class="mb-3">
-          <label class="form-label fw-bold" for="id_valor_previsto">Valor Previsto</label>
-          <input type="number" id="id_valor_previsto" value="{{ evento.valor_previsto }}" class="form-control" readonly>
+          <label class="form-label fw-bold">Valor Previsto</label>
+          <input type="text" class="form-control" value="{{ evento.valor_previsto }}" readonly>
         </div>
 
         <!-- Checkbox -->
@@ -77,16 +77,18 @@
           {{ form.observacao }}
         </div>
 
-        <button type="submit" class="btn btn-success">Salvar</button>
-        <a href="{% url 'contrato_fornecedor_detalhe' contrato.pk %}" class="btn btn-secondary">Cancelar</a>
+        <div class="d-flex justify-content-end gap-2">
+          <a href="{% url 'contrato_fornecedor_detalhe' contrato.pk %}" class="btn btn-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-success">Salvar</button>
+        </div>
       </form>
 
-      <!-- Lista de BMs cadastrados -->
+      <!-- Lista de Boletins de Medição -->
+      <hr>
       <div class="mb-4">
-        <h5>Boletins de Medição Cadastrados</h5>
-
-        {% if evento.contrato_terceiro.boletins_medicao.exists %}
-        <table class="table table-bordered table-striped">
+      <h5>Boletins de Medição Cadastrados</h5>
+      {% if boletins %}
+      <table class="table table-bordered table-striped">
         <thead class="table-light">
           <tr>
             <th>Nº BM</th>
@@ -97,8 +99,8 @@
             <th>Arquivo</th>
           </tr>
         </thead>
-        <tbody>
-          {% for bm in evento.contrato_terceiro.boletins_medicao.all %}
+        <tbody id="lista-bms">
+          {% for bm in evento.boletins_medicao.all %}
           <tr>
             <td>{{ bm.numero_bm }}</td>
             <td>{{ bm.parcela_paga }}</td>
@@ -117,13 +119,14 @@
           </tr>
           {% endfor %}
         </tbody>
-        </table>
-        {% else %}
-          <p class="text-muted">Nenhum boletim cadastrado para este contrato.</p>
-        {% endif %}
-      </div>
-      <!-- Botão para abrir o modal do BM -->
-      <hr>
+      </table>
+      {% else %}
+        <p class="text-muted">Nenhum boletim cadastrado para este evento.</p>
+      {% endif %}
+    </div>
+
+
+      <!-- Botão para abrir o modal -->
       <button type="button" class="btn btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#bmModal">
         Cadastrar BM
       </button>
@@ -142,80 +145,72 @@
           </div>
         </div>
       </div>
+
     </div>
   </div>
 </div>
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    const checkIgual = document.getElementById("check_valor_igual");
-    const inputPrevisto = document.getElementById("id_valor_previsto");
-    const inputPago = document.getElementById("id_valor_pago");
-    const inputJustificativa = document.getElementById("id_justificativa");
-    const camposDiv = document.getElementById("campos_valor_pago_justificativa");
-    const form = document.getElementById("entregaForm");
-    const dataPagamento = document.getElementById("id_data_pagamento");
+  // Checkbox Valor Pago
+  const checkIgual = document.getElementById("check_valor_igual");
+  const camposDiv = document.getElementById("campos_valor_pago_justificativa");
+  const inputJustificativa = document.getElementById("id_justificativa");
+  const inputValorPago = document.getElementById("id_valor_pago");
 
-    // Atualiza campos de Valor Pago / Justificativa
-    function atualizarCampos() {
-        if (checkIgual.checked) {
-            camposDiv.style.display = "none";
-            inputPago.value = inputPrevisto.value;
-            inputJustificativa.value = "";
-            inputJustificativa.required = false;
-        } else {
-            camposDiv.style.display = "block";
-            inputPago.value = inputPrevisto.value;
-            inputJustificativa.required = true;
-        }
+  function atualizarCampos() {
+    if (checkIgual.checked) {
+      camposDiv.style.display = "none";
+      if (inputValorPago) {
+        inputValorPago.value = {{ evento.valor_previsto|default:0 }};
+      }
+      if (inputJustificativa) inputJustificativa.required = false;
+    } else {
+      camposDiv.style.display = "block";
+      if (inputJustificativa) inputJustificativa.required = true;
     }
-    checkIgual.addEventListener("change", atualizarCampos);
-    atualizarCampos();
+  }
+  checkIgual.addEventListener("change", atualizarCampos);
+  atualizarCampos();
 
-    // Validação do formulário
-    form.addEventListener("submit", function(event) {
-        // Garante justificativa se checkbox desmarcado
-        if (!checkIgual.checked && !inputJustificativa.value.trim()) {
-            alert("Por favor, preencha a justificativa.");
-            inputJustificativa.focus();
-            event.preventDefault();
-            return;
-        }
+  // Carrega o conteúdo do popup do BM via fetch
+  const bmModal = document.getElementById("bmModal");
+  bmModal.addEventListener("show.bs.modal", function() {
+    fetch("{% url 'cadastrar_bm' contrato.id evento.id %}")
+      .then(response => response.text())
+      .then(html => {
+        document.getElementById("bmModalBody").innerHTML = html;
 
-        // Verifica se existem BMs cadastrados para este evento
-        const boletins = {{ evento.contrato_terceiro.boletins_medicao.count }};
-        if (boletins > 0 && !dataPagamento.value) {
-            alert("Por favor, preencha a Data de Pagamento, pois existem BMs cadastrados.");
-            dataPagamento.focus();
-            event.preventDefault();
-            return;
-        }
-    });
+        // Captura o form do modal e adiciona submit via Ajax
+        const bmForm = document.getElementById("bmForm");
+        bmForm.addEventListener("submit", function(e) {
+          e.preventDefault();
+          const formData = new FormData(bmForm);
+          const url = "{% url 'cadastrar_bm' contrato.id evento.id %}";
 
-    // Preencher BM Modal
-    const bmModal = document.getElementById("bmModal");
-    bmModal.addEventListener("show.bs.modal", function() {
-        fetch("{% url 'cadastrar_bm' contrato.id %}")
-            .then(response => response.text())
-            .then(html => {
-                document.getElementById("bmModalBody").innerHTML = html;
-
-                // Preenche automaticamente os campos no popup
-                const valorPago = document.getElementById("id_valor_pago");
-                const dataPagamentoMain = document.getElementById("id_data_pagamento");
-
-                const valorPagoModal = document.querySelector("#bmModalBody #id_valor_pago");
-                const dataPagamentoModal = document.querySelector("#bmModalBody #id_data_pagamento");
-
-                if (valorPago && valorPagoModal) {
-                    valorPagoModal.value = valorPago.value;
-                }
-                if (dataPagamentoMain && dataPagamentoModal) {
-                    dataPagamentoModal.value = dataPagamentoMain.value;
-                }
-            });
-    });
+          fetch(url, {
+            method: "POST",
+            body: formData,
+            headers: {"X-Requested-With": "XMLHttpRequest"}
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              const modalInstance = bootstrap.Modal.getInstance(bmModal);
+              modalInstance.hide();
+              location.reload();
+            } else {
+              let errors = "";
+              for (const [field, msgs] of Object.entries(data.errors)) {
+                errors += msgs.join("\n") + "\n";
+              }
+              alert("Erros:\n" + errors);
+            }
+          })
+          .catch(err => console.error(err));
+        });
+      });
+  });
 });
 </script>
-
 {% endblock %}
