@@ -105,9 +105,12 @@
             <td>R$ {{ evento.valor_previsto|floatformat:2 }}</td>
             {% if evento.valor_pago %}
               <td>R$ {{ evento.valor_pago|floatformat:2 }}</td>
-              <td>{{ evento.data_pagamento|date:"d/m/Y" }}</td>
             {% else %}
               <td> - </td>
+            {% endif %}
+            {% if evento.data_pagamento %}
+              <td>{{ evento.data_pagamento|date:"d/m/Y" }}</td>
+            {% else %}
               <td> - </td>
             {% endif %}
             <td>

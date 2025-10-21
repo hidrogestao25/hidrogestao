@@ -2083,11 +2083,15 @@ def cadastrar_bm(request, contrato_id, evento_id):
             bm.save()
             return JsonResponse({"success": True})
         else:
-            print(form.errors)  # 👈 Para debugar erros no console do servidor
+            print(form.errors)
             return JsonResponse({"success": False, "errors": form.errors}, status=400)
     else:
         form = BMForm(initial={
             "valor_pago": evento.valor_previsto,
-            "data_pagamento": evento.data_pagamento,
+            "data_pagamento": evento.data_pagamento.strftime('%Y-%m-%d') if evento.data_pagamento else None,
         })
-        return render(request, "bm/cadastrar_bm_popup.html", {"form": form, "contrato": contrato, "evento": evento})
+        return render(request, "bm/cadastrar_bm_popup.html", {
+            "form": form,
+            "contrato": contrato,
+            "evento": evento,
+        })
