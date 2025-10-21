@@ -50,7 +50,8 @@ urlpatterns = [
     path("evento/<int:pk>/excluir/", views.excluir_evento, name="excluir_evento"),
     path("evento_contrato/<int:pk>/excluir/", views.excluir_evento_contrato, name="excluir_evento_contrato"),
     path("evento/<int:pk>/registrar-entrega/", views.registrar_entrega, name="registrar_entrega"),
-    path('contrato/<int:contrato_id>/bm/novo/', views.cadastrar_bm, name='cadastrar_bm'),
+    path("contrato/<int:contrato_id>/evento/<int:evento_id>/bm/novo/", views.cadastrar_bm, name="cadastrar_bm"),
+
 
     path("previsao-pagamentos/", views.previsao_pagamentos, name="previsao_pagamentos"),
     path('previsao-pagamentos/exportar/', views.exportar_previsao_pagamentos_excel, name='exportar_previsao_pagamentos_excel'),

@@ -1,65 +1,11 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-  <meta charset="UTF-8">
-  <title>Cadastrar BM</title>
-  <link href="{% static 'css/bootstrap.min.css' %}" rel="stylesheet">
-  <script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
-  <script src="{% static 'js/jquery.min.js' %}"></script>
-</head>
-<body>
-  <div class="modal-header">
-    <h5 class="modal-title">Cadastrar BM</h5>
-    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+<form method="post" enctype="multipart/form-data" id="bmForm">
+  {% csrf_token %}
+
+  <!-- Usa todo o form do Django -->
+  {{ form.as_p }}
+
+  <div class="d-flex justify-content-end gap-2">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+    <button type="submit" class="btn btn-success">Salvar BM</button>
   </div>
-
-  <form id="bmForm" method="POST" enctype="multipart/form-data">
-    <div class="modal-body">
-      {% csrf_token %}
-      {{ form.as_p }}
-    </div>
-
-    <div class="modal-footer">
-      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-      <button type="submit" class="btn btn-primary">Salvar</button>
-    </div>
-  </form>
-
-  <script>
-    document.getElementById("bmForm").addEventListener("submit", function(e) {
-      e.preventDefault(); // Impede envio padrão
-
-      const form = e.target;
-      const formData = new FormData(form);
-
-      fetch("{% url 'cadastrar_bm' contrato.id %}", {
-        method: "POST",
-        body: formData,
-        headers: { "X-Requested-With": "XMLHttpRequest" }
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          // ✅ Fecha o modal
-          const modal = bootstrap.Modal.getInstance(document.querySelector('.modal.show'));
-          if (modal) modal.hide();
-
-          // ✅ (Opcional) mostra uma notificação rápida
-          alert("BM salvo com sucesso!");
-
-          // ❌ Não recarrega nem redireciona
-        } else if (data.errors) {
-          // Exibe erros de validação no console (pode melhorar isso depois)
-          console.error("Erros no formulário:", data.errors);
-          alert("Erro ao salvar BM. Verifique os campos obrigatórios.");
-        }
-      })
-      .catch(err => {
-        console.error("Erro ao enviar:", err);
-        alert("Erro ao salvar BM.");
-      });
-    });
-  </script>
-</body>
-</html>
+</form>

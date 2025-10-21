@@ -1520,12 +1520,24 @@ def excluir_evento_contrato(request, pk):
 def registrar_entrega(request, pk):
     evento = get_object_or_404(Evento, pk=pk)
     contrato = evento.contrato_terceiro
+    boletins = evento.boletins_medicao.all()
 
     if request.method == "POST":
         form = EventoEntregaForm(request.POST, request.FILES, instance=evento)
+
+        # Se checkbox de "valor igual" estiver marcado, sobrescreve valor_pago
+        valor_igual = request.POST.get("check_valor_igual") == "on"
+        if valor_igual:
+            form.data = form.data.copy()
+            form.data['valor_pago'] = str(evento.valor_previsto)
+
         if form.is_valid():
-            form.save()
-            return redirect('contrato_fornecedor_detalhe', pk=contrato.pk)
+            # Se houver BMs cadastrados, data_pagamento é obrigatório
+            if evento.contrato_terceiro.boletins_medicao.exists() and not form.cleaned_data['data_pagamento']:
+                form.add_error('data_pagamento', 'Preencha a Data de Pagamento, pois existem BMs cadastrados.')
+            else:
+                form.save()
+                return redirect('contrato_fornecedor_detalhe', pk=contrato.pk)
     else:
         form = EventoEntregaForm(instance=evento)
 
@@ -1533,7 +1545,10 @@ def registrar_entrega(request, pk):
         "form": form,
         "evento": evento,
         "contrato": contrato,
+        "boletins":boletins,
     })
+
+
 
 
 @login_required
@@ -2053,20 +2068,26 @@ def ranking_fornecedores(request):
 
 
 @login_required
-def cadastrar_bm(request, contrato_id):
+def cadastrar_bm(request, contrato_id, evento_id):
     contrato = get_object_or_404(ContratoTerceiros, id=contrato_id)
+    evento = get_object_or_404(Evento, id=evento_id)
 
     if request.method == "POST":
         form = BMForm(request.POST, request.FILES)
         if form.is_valid():
             bm = form.save(commit=False)
             bm.contrato = contrato
+            bm.evento = evento
+            if not bm.valor_pago:
+                bm.valor_pago = evento.valor_previsto
             bm.save()
             return JsonResponse({"success": True})
         else:
-            # Retorna os erros de validação para o JS
+            print(form.errors)  # 👈 Para debugar erros no console do servidor
             return JsonResponse({"success": False, "errors": form.errors}, status=400)
-
     else:
-        form = BMForm()
-        return render(request, "bm/cadastrar_bm_popup.html", {"form": form, "contrato": contrato})
+        form = BMForm(initial={
+            "valor_pago": evento.valor_previsto,
+            "data_pagamento": evento.data_pagamento,
+        })
+        return render(request, "bm/cadastrar_bm_popup.html", {"form": form, "contrato": contrato, "evento": evento})
