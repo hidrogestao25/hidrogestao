@@ -356,12 +356,16 @@ class BMForm(forms.ModelForm):
             "numero_bm": forms.NumberInput(attrs={"class": "form-control"}),
             "parcela_paga": forms.TextInput(attrs={"class": "form-control"}),
             "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
-            "data_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "data_pagamento": forms.DateInput(
+                format="%Y-%m-%d",
+                attrs={"type": "date", "class": "form-control"}
+            ),
             "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "arquivo_bm": forms.ClearableFileInput(attrs={"class": "form-control"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if self.instance and self.instance.data_pagamento:
-            self.initial['data_pagamento'] = self.instance.data_pagamento.strftime('%Y-%m-%d')
+        # garante que o valor inicial seja respeitado se já existir
+        if "initial" in kwargs and "data_pagamento" in kwargs["initial"]:
+            self.fields["data_pagamento"].initial = kwargs["initial"]["data_pagamento"]
