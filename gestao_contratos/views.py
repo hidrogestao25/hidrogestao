@@ -153,7 +153,7 @@ def lista_clientes(request):
     if request.user.grupo in ['suprimento', 'financeiro']:
         clientes = Cliente.objects.all()
     elif request.user.grupo == 'coordenador':
-        clientes = Cliente.objects.filter(contrato__coordenador=request.user).distinct()
+        clientes = Cliente.objects.filter(contratos__coordenador=request.user).distinct()
     elif request.user.grupo == 'gerente':
         clientes = Cliente.objects.filter(
             contratos__coordenador__centros__in=request.user.centros.all()
@@ -202,6 +202,7 @@ def lista_contratos_fornecedor(request):
     if search_query:
         contratos = contratos.filter(
             Q(cod_projeto__cod_projeto__icontains=search_query) |
+            Q(num_contrato__icontains=search_query) |
             Q(cod_projeto__cliente__nome__icontains=search_query) |
             Q(empresa_terceira__nome__icontains=search_query) |
             Q(coordenador__username__icontains=search_query) |
@@ -1353,6 +1354,11 @@ def detalhe_bm(request, pk):
             documento = DocumentoContratoTerceiro.objects.get(solicitacao=solicitacao)
         except DocumentoContratoTerceiro.DoesNotExist:
             documento = None
+
+        proposta = PropostaFornecedor.objects.filter(
+            solicitacao=solicitacao,
+            fornecedor=solicitacao.fornecedor_escolhido
+        ).first()
         # Se ambos aprovaram → cria contrato e finaliza solicitação
         if (bm.status_coordenador=="aprovado") and (bm.status_gerente=="aprovado"):
             contrato, created = ContratoTerceiros.objects.get_or_create(
@@ -1364,6 +1370,7 @@ def detalhe_bm(request, pk):
                 data_fim=documento.prazo_fim if documento else None,
                 valor_total=documento.valor_total if documento else 0,
                 objeto=documento.objeto if documento else "",
+                condicao_pagamento=proposta.condicao_pagamento if proposta else None,
                 status="Em execução",
             )
             Evento.objects.filter(prospeccao=solicitacao, contrato_terceiro__isnull=True).update(contrato_terceiro=contrato)
@@ -2095,3 +2102,14 @@ def cadastrar_bm(request, contrato_id, evento_id):
             "contrato": contrato,
             "evento": evento,
         })
+
+
+@login_required
+def detalhes_entrega(request, evento_id):
+    evento = get_object_or_404(Evento, id=evento_id)
+    bms = BM.objects.filter(evento=evento).order_by('-data_pagamento')
+
+    return render(request, 'contratos/detalhes_entrega.html', {
+        'evento': evento,
+        'bms': bms,
+    })

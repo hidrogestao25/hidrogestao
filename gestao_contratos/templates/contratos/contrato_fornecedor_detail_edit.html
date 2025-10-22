@@ -43,6 +43,11 @@
           </div>
 
           <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.condicao_pagamento.id_for_label }}">Forma de Pagamento</label>
+            {{ form.condicao_pagamento }}
+          </div>
+
+          <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.valor_total.id_for_label }}">Valor Total</label>
             {{ form.valor_total }}
           </div>
