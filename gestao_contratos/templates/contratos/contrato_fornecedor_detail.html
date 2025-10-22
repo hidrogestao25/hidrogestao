@@ -11,6 +11,7 @@
       <p><strong>Cliente:</strong> {{ contrato.cod_projeto.cliente }}</p>
       <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
+      <p><strong>Contrato com Fornecedor:</strong> {{ contrato.num_contrato }}</p>
       <p><strong>Data Início:</strong> {{ contrato.data_inicio|date:"d/m/Y" }}</p>
       {% now "Y-m-d" as hoje %}
       <p class="
@@ -22,7 +23,13 @@
              |  ⚠️  O contrato com fornecedor ultrapassou a data final
         {% endif %}
       </p>
-
+      <p><strong>Forma de Pagamento:</strong>
+        {% if contrato.condicao_pagamento %}
+          {{ contrato.condicao_pagamento }}
+        {% else %}
+          -
+        {% endif %}
+      </p>
       <p>
         <strong>Valor Total:</strong>
         {% if contrato.valor_total %}
@@ -89,10 +96,16 @@
       </thead>
       <tbody>
         {% for evento in eventos %}
-        {% now "Y-m-d" as hoje %}
-          <tr class="{% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
+          {% now "Y-m-d" as hoje %}
+          <tr
+            class="
+              {% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
                 linha-atrasada
-            {% endif %}">
+              {% elif evento.valor_pago and evento.valor_pago != evento.valor_previsto %}
+                linha-aviso
+              {% endif %}
+            "
+          >
             <td>{{ evento.descricao }}</td>
             <td>
               {% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
@@ -103,11 +116,18 @@
             </td>
             <td>{{ evento.data_prevista_pagamento|date:"d/m/Y" }}</td>
             <td>R$ {{ evento.valor_previsto|floatformat:2 }}</td>
+
             {% if evento.valor_pago %}
-              <td>R$ {{ evento.valor_pago|floatformat:2 }}</td>
+              <td>
+                R$ {{ evento.valor_pago|floatformat:2 }}
+                {% if evento.valor_pago != evento.valor_previsto %}
+                  <br>⚠️ Valor diferente do previsto!
+                {% endif %}
+              </td>
             {% else %}
               <td> - </td>
             {% endif %}
+
             {% if evento.data_pagamento %}
               <td>{{ evento.data_pagamento|date:"d/m/Y" }}</td>
             {% else %}
@@ -121,22 +141,26 @@
               {% endif %}
             </td>
             <td>
+              {% if request.user.grupo == 'coordenador' or request.user.grupo == 'gerente' %}
+              <a href="{% url 'detalhes_entrega' evento.id %}" class="btn btn-sm btn-outline-info">
+                Detalhes da Entrega
+              </a>
 
-                  <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
-                    Registrar Entrega
-                  </a>
-                  {% if request.user.grupo == 'suprimento' %}
-                  <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
-                  <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
-                     onclick="return confirm('Tem certeza que deseja excluir este evento?')">
-                     Apagar
-                  </a>
-                  {% endif %}
-
+              {% elif request.user.grupo == 'suprimento' %}
+              <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
+                Registrar Entrega
+              </a>
+              <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
+              <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
+                 onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                 Apagar
+              </a>
+              {% endif %}
             </td>
           </tr>
         {% endfor %}
       </tbody>
+
     </table>
   {% else %}
     <p><em>Nenhum evento cadastrado para este contrato.</em></p>

@@ -17,6 +17,7 @@
     <thead>
         <tr>
             <th>Código do Projeto</th>
+            <th>Código do Contrato</th>
             <th>Cliente</th>
             <th>Número do Contrato</th>
             <th>Coordenador</th>
@@ -29,6 +30,7 @@
         {% for fornecedor in page_obj %}
         <tr>
             <td>{{ fornecedor.cod_projeto.cod_projeto }}</td>
+            <td>{{ fornecedor.num_contrato }}</td>
             <td>{{ fornecedor.cod_projeto.cliente.nome }}</td>
             <td>{{ fornecedor.num_contrato }}</td>
             <td>{{ fornecedor.coordenador }}</td>

@@ -366,6 +366,7 @@ class ContratoTerceiros(models.Model):
         related_name="contratos_coordenados",
         #limit_choices_to={'groups__name': 'Coordenador de Contrato'}
     )
+    condicao_pagamento = models.CharField(max_length=80, null=True, blank=True)
     data_inicio = models.DateField(null=True, blank=True)
     data_fim = models.DateField(null=True, blank=True)
     valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
