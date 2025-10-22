@@ -48,6 +48,13 @@
           </div>
 
           <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.observacao.id_for_label }}">Observações do Fornecedor</label>
+            {{ form.observacao }}
+          </div>
+
+          <hr>
+
+          <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.ponto_focal.id_for_label }}">Nome do Ponto Focal</label>
             {{ form.ponto_focal }}
           </div>
@@ -62,10 +69,24 @@
             {{ form.telefone_focal }}
           </div>
 
+          <hr>
+
           <div class="col-md-6 mb-3">
-            <label class="form-label" for="{{ form.observacao.id_for_label }}">Observações do Fornecedor</label>
-            {{ form.observacao }}
+            <label class="form-label" for="{{ form.ponto_focal2.id_for_label }}">Nome do Segundo Ponto Focal</label>
+            {{ form.ponto_focal2 }}
           </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.email_focal2.id_for_label }}">E-mail do Segundo Ponto Focal</label>
+            {{ form.email_focal2 }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.telefone_focal2.id_for_label }}">Telefone do Segundo Ponto Focal</label>
+            {{ form.telefone_focal2 }}
+          </div>
+
+
         </div>
 
         <div class="text-end">
