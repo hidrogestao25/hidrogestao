@@ -8,7 +8,7 @@
     <p><strong>Fornecedor Selecionado:</strong> {{ fornecedor.nome }}</p>
 
     <form method="post" enctype="multipart/form-data" class="mt-3">
-      
+
         {% csrf_token %}
 
         <div class="mb-3">
@@ -44,6 +44,13 @@
             <input type="text" id="valor_total" name="valor_total"
                    value="{{ form.valor_total.value|default_if_none:'' }}"
                    class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="observacao" class="form-label">Observações</label>
+            <input type="text" id="observacao" name="observacao"
+                   value="{{ form.observacao.value|default_if_none:'' }}"
+                   class="form-control">
         </div>
 
         <div class="mb-3">

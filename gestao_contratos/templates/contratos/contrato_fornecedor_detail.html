@@ -101,7 +101,11 @@
             class="
               {% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
                 linha-atrasada
+
               {% elif evento.valor_pago and evento.valor_pago != evento.valor_previsto %}
+                linha-aviso
+
+              {% elif not evento.valor_pago and evento.valor_previsto and evento.realizado %}
                 linha-aviso
               {% endif %}
             "

@@ -48,7 +48,7 @@
                                 <a href="{% url 'detalhes_contrato' item.solicitacao.id %}" class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
                                     Avaliar
                                 </a>
-                            {% elif request.user.grupo == 'suprimento' and item.solicitacao.status == "Fornecedor aprovado pela gerência" %}
+                            {% elif request.user.grupo == 'suprimento' and item.solicitacao.status == "Fornecedor aprovado" %}
                                 <!-- Cadastrar ou Revisar Contrato para outros usuários -->
                                 {% if item.contrato %}
                                     <a href="{% url 'cadastrar_contrato' item.solicitacao.id %}"

@@ -632,6 +632,7 @@ class DocumentoContratoTerceiro(models.Model):
         verbose_name="Contrato em PDF",
         null=True, blank=True
     )
+    observacao = models.TextField()
     criado_em = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

@@ -251,7 +251,7 @@ class DocumentoContratoTerceiroForm(forms.ModelForm):
 
     class Meta:
         model = DocumentoContratoTerceiro
-        fields = ["numero_contrato", "objeto", "prazo_inicio", "prazo_fim", "valor_total", "arquivo_contrato"]
+        fields = ["numero_contrato", "objeto", "prazo_inicio", "prazo_fim", "valor_total", "arquivo_contrato", "observacao"]
 
     def clean_valor_total(self):
         valor = self.cleaned_data.get("valor_total")
