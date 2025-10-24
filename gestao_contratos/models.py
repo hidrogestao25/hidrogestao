@@ -575,6 +575,8 @@ class BM(models.Model):
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     parcela_paga = models.PositiveIntegerField()
     data_pagamento = models.DateField(default=timezone.now)
+    data_inicial_medicao  = models.DateTimeField(null=True, blank=True)
+    data_final_medicao = models.DateTimeField(null=True, blank=True)
     arquivo_bm = models.FileField(
         upload_to='BM/',
         verbose_name='Inserir arquivo do Boletim de Medição',

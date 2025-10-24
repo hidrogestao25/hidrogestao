@@ -574,7 +574,7 @@ def cliente_detalhe(request, pk):
 
 
 
-@login_required
+@login_required 
 def fornecedor_detalhe(request, pk):
     fornecedor = get_object_or_404(EmpresaTerceira, pk=pk)
     if request.user.grupo in ["suprimento", "financeiro"]:
