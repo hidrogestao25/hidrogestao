@@ -352,11 +352,19 @@ class FiltroPrevisaoForm(forms.Form):
 class BMForm(forms.ModelForm):
     class Meta:
         model = BM
-        fields = ["numero_bm", "parcela_paga", "valor_pago", "data_pagamento", "observacao", "arquivo_bm"]
+        fields = ["numero_bm", "parcela_paga", "valor_pago", "data_pagamento", "data_inicial_medicao", "data_final_medicao", "observacao", "arquivo_bm"]
         widgets = {
             "numero_bm": forms.NumberInput(attrs={"class": "form-control"}),
             "parcela_paga": forms.TextInput(attrs={"class": "form-control"}),
             "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
+            "data_inicial_medicao": forms.DateInput(
+                format="%Y-%m-%d",
+                attrs={"type": "date", "class": "form-control"}
+            ),
+            "data_final_medicao": forms.DateInput(
+                format="%Y-%m-%d",
+                attrs={"type": "date", "class": "form-control"}
+            ),
             "data_pagamento": forms.DateInput(
                 format="%Y-%m-%d",
                 attrs={"type": "date", "class": "form-control"}
