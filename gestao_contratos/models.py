@@ -272,7 +272,9 @@ class TriagemFornecedor(models.Model):
     solicitacao = models.ForeignKey(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="triagens")
     fornecedor = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
     selecionado = models.BooleanField(default=False)
-# --------------------------
+
+
+"""# --------------------------
 # Solicitação de Contratação
 # --------------------------
 class SolicitacaoContratacaoTerceiro(models.Model):
@@ -342,7 +344,7 @@ class SolicitacaoContratacaoTerceiro(models.Model):
 
     def __str__(self):
         return f"{self.solicitante_nome} -> {self.cod_projeto}"
-
+"""
 
 # --------------------------
 # Contrato com terceiro
@@ -490,7 +492,7 @@ class Indicadores(models.Model):
         return (media / 5) * 100  # % da nota máxima
 
 
-# ---------------------
+"""# ---------------------
 # Aditivos contratuais (cliente)
 # ---------------------
 class Aditivo(models.Model):
@@ -519,7 +521,7 @@ class AditivoTerceiro(models.Model):
     def __str__(self):
         return f"Aditivo - {self.contrato.cod_projeto} - {self.contrato.empresa_terceira}"
 
-
+"""
 # -------------
 # Documento BM
 # -------------
