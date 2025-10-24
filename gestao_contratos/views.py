@@ -574,7 +574,7 @@ def cliente_detalhe(request, pk):
 
 
 
-@login_required 
+@login_required
 def fornecedor_detalhe(request, pk):
     fornecedor = get_object_or_404(EmpresaTerceira, pk=pk)
     if request.user.grupo in ["suprimento", "financeiro"]:
@@ -1364,6 +1364,7 @@ def detalhe_bm(request, pk):
             contrato, created = ContratoTerceiros.objects.get_or_create(
                 cod_projeto=solicitacao.contrato,
                 prospeccao=solicitacao,
+                num_contrato=documento.numero_contrato if documento else None,
                 empresa_terceira=solicitacao.fornecedor_escolhido,
                 coordenador=solicitacao.coordenador,
                 data_inicio=documento.prazo_inicio if documento else None,
@@ -1371,7 +1372,8 @@ def detalhe_bm(request, pk):
                 valor_total=documento.valor_total if documento else 0,
                 objeto=documento.objeto if documento else "",
                 condicao_pagamento=proposta.condicao_pagamento if proposta else None,
-                status="Em execução",
+                status="Ativo",
+                observacao=documento.observacao if documento else None,
             )
             Evento.objects.filter(prospeccao=solicitacao, contrato_terceiro__isnull=True).update(contrato_terceiro=contrato)
             solicitacao.status = "Onboarding"

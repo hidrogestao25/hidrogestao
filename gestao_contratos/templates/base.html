@@ -253,7 +253,7 @@
                             {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' %}
                                 <li><a class="dropdown-item" href="{% url 'previsao_pagamentos' %}"><i class="bi bi-cash-coin"></i> Previsão de Pagamentos</a></li>
                             {% endif %}
-                            <li><a class="dropdown-item" href="#"><i class="bi bi-pencil-square"></i> Aditivos</a></li>
+                            <!-- <li><a class="dropdown-item" href="#"><i class="bi bi-pencil-square"></i> Aditivos</a></li> -->
                         </ul>
                     </li>
 
@@ -286,7 +286,7 @@
                             {% if request.user.grupo == 'coordenador' %}
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-search"></i> Solicitação de Prospecção</a></li>
                             {% endif %}
-                            <li><a class="dropdown-item" href="#"><i class="bi bi-star-fill"></i> Avaliações</a></li>
+                            <!-- <li><a class="dropdown-item" href="#"><i class="bi bi-star-fill"></i> Avaliações</a></li> -->
                         </ul>
                     </li>
 
