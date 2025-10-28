@@ -192,6 +192,7 @@ class SolicitacaoProspeccao(models.Model):
     valor_provisionado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     data_solicitacao = models.DateTimeField(auto_now_add=True)
+    guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
     cronograma = models.FileField(
         upload_to='cronograma/',
         verbose_name='Inserir cronograma',
@@ -368,6 +369,7 @@ class ContratoTerceiros(models.Model):
         related_name="contratos_coordenados",
         #limit_choices_to={'groups__name': 'Coordenador de Contrato'}
     )
+    guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
     condicao_pagamento = models.CharField(max_length=80, null=True, blank=True)
     data_inicio = models.DateField(null=True, blank=True)
     data_fim = models.DateField(null=True, blank=True)
@@ -632,7 +634,7 @@ class DocumentoContratoTerceiro(models.Model):
         verbose_name="Contrato em PDF",
         null=True, blank=True
     )
-    observacao = models.TextField()
+    observacao = models.TextField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
