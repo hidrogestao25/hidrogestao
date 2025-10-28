@@ -12,6 +12,12 @@
       <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
       <p><strong>Contrato com Fornecedor:</strong> {{ contrato.num_contrato }}</p>
+      {% if contrato.guarda_chuva == True %}
+        <p><strong>Contrato Guarda-chuva:</strong> Sim</p>
+      {% else %}
+        <p><strong>Contrato Guarda-chuva:</strong> Não</p>
+      {% endif %}
+
       <p><strong>Data Início:</strong> {{ contrato.data_inicio|date:"d/m/Y" }}</p>
       {% now "Y-m-d" as hoje %}
       <p class="

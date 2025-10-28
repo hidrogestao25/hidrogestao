@@ -156,7 +156,7 @@ document.addEventListener("DOMContentLoaded", function() {
 </div>
 
 <!-- Eventos -->
-{% if solicitacao.aprovacao_fornecedor_gerente == 'aprovado' %}
+
   <div class="card mb-3">
       <div class="card-header">Eventos da Solicitação</div>
       <div class="card-body">
@@ -198,12 +198,15 @@ document.addEventListener("DOMContentLoaded", function() {
           {% else %}
               <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
           {% endif %}
-          {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+          {% if request.user.grupo == 'suprimento' %}
+              <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+          {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de prospecção" %}
+              <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+          {% elif request.user.grupo == 'coordenador' and solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
           {% endif %}
       </div>
   </div>
-{% endif %}
 
 <hr>
   <h4>Histórico</h4>

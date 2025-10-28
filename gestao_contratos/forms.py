@@ -158,7 +158,7 @@ class ContratoFornecedorForm(forms.ModelForm):
 
     class Meta:
         model = ContratoTerceiros
-        fields = ['condicao_pagamento', 'num_contrato_arquivo', 'num_contrato', 'observacao', 'cod_projeto', 'prospeccao', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto']
+        fields = ['condicao_pagamento', 'num_contrato_arquivo', 'num_contrato', 'observacao', 'cod_projeto', 'prospeccao', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'guarda_chuva']
         widgets = {
             'cod_projeto': forms.Select(attrs={'class': 'form-select'}),
             'num_contrato': forms.TextInput(attrs={'class': 'form-control'}),
