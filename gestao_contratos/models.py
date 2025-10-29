@@ -419,7 +419,11 @@ class Evento(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Entrega {self.id} - {self.empresa_terceira}"
+        try:
+            empresa = self.empresa_terceira or "Sem empresa vinculada"
+        except Exception:
+            empresa = "Sem empresa vinculada"
+        return f"Entrega {self.id} - {self.contrato_terceiro} - {empresa}"
 
 
 class AvaliacaoFornecedor(models.Model):
@@ -573,6 +577,11 @@ class DocumentoBM(models.Model):
 # BM (Boletim de Medição) - contrato de terceiros
 # ------
 class BM(models.Model):
+    STATUS_CHOICES = [
+        ('pendente', 'Pendente'),
+        ('aprovado', 'Aprovado'),
+        ('reprovado', 'Reprovado'),
+    ]
     contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="boletins_medicao")
     evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='boletins_medicao', null=True, blank=True)
     numero_bm = models.PositiveIntegerField()
@@ -581,6 +590,12 @@ class BM(models.Model):
     data_pagamento = models.DateField(default=timezone.now)
     data_inicial_medicao  = models.DateTimeField(null=True, blank=True)
     data_final_medicao = models.DateTimeField(null=True, blank=True)
+
+    status_coordenador = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    data_aprovacao_coordenador = models.DateTimeField(null=True, blank=True)
+    status_gerente = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    data_aprovacao_gerente = models.DateTimeField(null=True, blank=True)
+
     arquivo_bm = models.FileField(
         upload_to='BM/',
         verbose_name='Inserir arquivo do Boletim de Medição',
@@ -599,6 +614,17 @@ class BM(models.Model):
             contrato=self.contrato
         ).aggregate(Sum('valor_pago'))['valor_pago__sum']
         return total or Decimal('0.00')
+
+    def save(self, *args, **kwargs):
+        """Se o arquivo for atualizado, reinicia as aprovações"""
+        if self.pk:
+            old = BM.objects.filter(pk=self.pk).first()
+            if old and old.arquivo_bm != self.arquivo_bm:
+                self.status_coordenador = 'pendente'
+                self.status_gerente = 'pendente'
+                self.data_aprovacao_coordenador = None
+                self.data_aprovacao_gerente = None
+        super().save(*args, **kwargs)
 
 
 # -----------

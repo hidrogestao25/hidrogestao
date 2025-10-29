@@ -8,7 +8,6 @@
     <div class="card-body">
       <form method="post" enctype="multipart/form-data" id="entregaForm">
         {% csrf_token %}
-
         <!-- Arquivo -->
         <div class="mb-3">
           <label class="form-label fw-bold" for="id_arquivo">Arquivo</label>
@@ -45,7 +44,7 @@
           {{ form.data_pagamento }}
         </div>
 
-        <!-- Valor Previsto (somente leitura) -->
+        <!-- Valor Previsto -->
         <div class="mb-3">
           <label class="form-label fw-bold">Valor Previsto</label>
           <input type="text" class="form-control" value="{{ evento.valor_previsto }}" readonly>
@@ -83,48 +82,65 @@
         </div>
       </form>
 
-      <!-- Lista de Boletins de Medição -->
+      <!-- Lista de Boletins -->
       <hr>
       <div class="mb-4">
-      <h5>Boletins de Medição Cadastrados</h5>
-      {% if boletins %}
-      <table class="table table-bordered table-striped">
-        <thead class="table-light">
-          <tr>
-            <th>Nº BM</th>
-            <th>Parcela</th>
-            <th>Valor Pago</th>
-            <th>Data Pagamento</th>
-            <th>Observação</th>
-            <th>Arquivo</th>
-          </tr>
-        </thead>
-        <tbody id="lista-bms">
-          {% for bm in evento.boletins_medicao.all %}
-          <tr>
-            <td>{{ bm.numero_bm }}</td>
-            <td>{{ bm.parcela_paga }}</td>
-            <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
-            <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
-            <td>{{ bm.observacao }}</td>
-            <td>
-              {% if bm.arquivo_bm %}
-                <a href="{{ bm.arquivo_bm.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
-                  Abrir/Download
-                </a>
-              {% else %}
-                <span class="text-muted">Sem arquivo</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-        <p class="text-muted">Nenhum boletim cadastrado para este evento.</p>
-      {% endif %}
-    </div>
-
+        <h5>Boletins de Medição Cadastrados</h5>
+          {% if boletins_detalhados %}
+          <table class="table table-bordered table-striped align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Nº BM</th>
+                <th>Parcela</th>
+                <th>Valor Pago</th>
+                <th>Data Pagamento</th>
+                <th>Status Coordenador</th>
+                <th>Status Gerente</th>
+                <th>Observação</th>
+                <th>Arquivo</th>
+                {% if request.user.grupo in "coordenador,gerente" %}
+                <th>Ações</th>
+                {% endif %}
+              </tr>
+            </thead>
+            <tbody id="lista-bms">
+              {% for item in boletins_detalhados %}
+                <tr class="{{ item.row_class }}">
+                  <td>{{ item.bm.numero_bm }}</td>
+                  <td>{{ item.bm.parcela_paga }}</td>
+                  <td>R$ {{ item.bm.valor_pago|floatformat:2 }}</td>
+                  <td>{{ item.bm.data_pagamento|date:"d/m/Y" }}</td>
+                  <td>{{ item.bm.status_coordenador|capfirst }}</td>
+                  <td>{{ item.bm.status_gerente|capfirst }}</td>
+                  <td>{{ item.bm.observacao }}</td>
+                  <td>
+                    {% if item.bm.arquivo_bm %}
+                      <a href="{{ item.bm.arquivo_bm.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                        Abrir/Download
+                      </a>
+                    {% else %}
+                      <span class="text-muted">Sem arquivo</span>
+                    {% endif %}
+                  </td>
+                  {% if request.user.grupo == "coordenador" or request.user.grupo == "gerente" %}
+                  <td>
+                    <form method="post" action="{% url 'avaliar_bm' item.bm.id %}">
+                      {% csrf_token %}
+                      <div class="btn-group">
+                        <button name="acao" value="aprovar" class="btn btn-success btn-sm">Aprovar</button>
+                        <button name="acao" value="reprovar" class="btn btn-danger btn-sm">Reprovar</button>
+                      </div>
+                    </form>
+                  </td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+            <p class="text-muted">Nenhum boletim cadastrado para este evento.</p>
+          {% endif %}
+      </div>
 
       <!-- Botão para abrir o modal -->
       <button type="button" class="btn btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#bmModal">
@@ -150,6 +166,7 @@
   </div>
 </div>
 
+<!-- JS -->
 <script>
 document.addEventListener("DOMContentLoaded", function() {
   // Checkbox Valor Pago
@@ -173,7 +190,7 @@ document.addEventListener("DOMContentLoaded", function() {
   checkIgual.addEventListener("change", atualizarCampos);
   atualizarCampos();
 
-  // Carrega o conteúdo do popup do BM via fetch
+  // Carregar popup do BM
   const bmModal = document.getElementById("bmModal");
   bmModal.addEventListener("show.bs.modal", function() {
     fetch("{% url 'cadastrar_bm' contrato.id evento.id %}")
@@ -181,7 +198,6 @@ document.addEventListener("DOMContentLoaded", function() {
       .then(html => {
         document.getElementById("bmModalBody").innerHTML = html;
 
-        // Captura o form do modal e adiciona submit via Ajax
         const bmForm = document.getElementById("bmForm");
         bmForm.addEventListener("submit", function(e) {
           e.preventDefault();
