@@ -634,12 +634,15 @@ def nova_solicitacao_prospeccao(request):
                         "Acesse o sistema HIDROGestão para mais informações.\n"
                         "https://hidrogestao.pythonanywhere.com/"
                     )
-                    send_mail(
-                        assunto, mensagem,
-                        "hidro.gestao25@gmail.com",
-                        list(suprimentos),
-                        fail_silently=False,
-                    )
+                    try:
+                        send_mail(
+                            assunto, mensagem,
+                            "hidro.gestao25@gmail.com",
+                            list(suprimentos),
+                            fail_silently=False,
+                        )
+                    except Exception as e:
+                        messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
                 messages.success(request, "Solicitação de prospecção criada com sucesso!")
                 return redirect('lista_solicitacoes')
             else:
@@ -769,13 +772,15 @@ def triagem_fornecedores(request, pk):
                 "Por favor, entre no sistema HIDROGestão para selecionar sua escolha.\n"
                 "https://hidrogestao.pythonanywhere.com/"
             )
-            send_mail(
-                assunto, mensagem,
-                "hidro.gestao25@gmail.com",
-                [coordenador.email],
-                fail_silently=False,
-            )
-
+            try:
+                send_mail(
+                    assunto, mensagem,
+                    "hidro.gestao25@gmail.com",
+                    [coordenador.email],
+                    fail_silently=False,
+                )
+            except Exception as e:
+                essages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
             messages.success(request, "Triagem e propostas salvas com sucesso!")
             return redirect("lista_solicitacoes")
 
@@ -819,13 +824,15 @@ def nenhum_fornecedor_ideal(request, pk):
                 "Acesse o sistema HIDROGestão para mais informações.\n"
                 "https://hidrogestao.pythonanywhere.com/"
             )
-            send_mail(
-                assunto, mensagem,
-                "hidro.gestao25@gmail.com",
-                list(suprimentos),
-                fail_silently=False,
-            )
-
+            try:
+                send_mail(
+                    assunto, mensagem,
+                    "hidro.gestao25@gmail.com",
+                    list(suprimentos),
+                    fail_silently=False,
+                )
+            except Exception as e:
+                essages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
         messages.success(request, "Solicitação atualizada: nenhum fornecedor é ideal.")
     return redirect("lista_solicitacoes")
 
@@ -864,13 +871,15 @@ def detalhes_triagem_fornecedores(request, pk):
                     f"Acesse o sistema HIDROGestão para mais informações:\n"
                     f"https://hidrogestao.pythonanywhere.com/"
                 )
-                send_mail(
-                    assunto, mensagem,
-                    "hidro.gestao25@gmail.com",
-                    gerentes,
-                    fail_silently=False,
-                )
-
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao25@gmail.com",
+                        gerentes,
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    essages.warning(request, f"Erro ao enviar e-mail para gerente: {e}")
             messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando aprovação do gerente.")
         return redirect('lista_solicitacoes')
 
@@ -975,7 +984,7 @@ def aprovar_fornecedor_gerente(request, pk):
                     fail_silently=False,
                 )
             except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail: {e}")
+                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
 
         return redirect('lista_solicitacoes')
 
@@ -1162,13 +1171,15 @@ def cadastrar_contrato(request, solicitacao_id):
                     "por favor, acesse o sistema HIDROGestão para avaliar a referente minuta.\n"
                     "https://hidrogestao.pythonanywhere.com/"
                 )
-                send_mail(
-                    assunto, mensagem,
-                    "hidro.gestao25@gmail.com",
-                    list(gerente),
-                    fail_silently=False,
-                )
-
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao25@gmail.com",
+                        list(gerente),
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para gerente: {e}")
             messages.success(request, "Contrato salvo com sucesso!")
             return redirect("elaboracao_contrato")
         else:
@@ -1228,24 +1239,32 @@ def detalhes_contrato(request, pk):
                 "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
                 "https://hidrogestao.pythonanywhere.com/"
             )
-            send_mail(
-                assunto, mensagem,
-                "hidro.gestao25@gmail.com",
-                list(suprimentos),
-                fail_silently=False,
-            )
+            try:
+                send_mail(
+                    assunto, mensagem,
+                    "hidro.gestao25@gmail.com",
+                    list(suprimentos),
+                    fail_silently=False,
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
             mensagem = (
                 f"Olá, {coordenador.username}\n\n"
                 f"A minuta de contrato de contratação de terceiro foi aprovada pela Gerência. \n\n"
                 "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
                 "https://hidrogestao.pythonanywhere.com/"
             )
-            send_mail(
-                assunto, mensagem,
-                "hidro.gestao25@gmail.com",
-                [coordenador.email],
-                fail_silently=False,
-            )
+            try:
+                send_mail(
+                    assunto, mensagem,
+                    "hidro.gestao25@gmail.com",
+                    [coordenador.email],
+                    fail_silently=False,
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
+
             messages.success(
                 request, f"Solicitação {solicitacao.id} aprovada com sucesso!"
             )
@@ -1265,24 +1284,32 @@ def detalhes_contrato(request, pk):
                 "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
                 "https://hidrogestao.pythonanywhere.com/"
             )
-            send_mail(
-                assunto, mensagem,
-                "hidro.gestao25@gmail.com",
-                list(suprimentos),
-                fail_silently=False,
-            )
+            try:
+                send_mail(
+                    assunto, mensagem,
+                    "hidro.gestao25@gmail.com",
+                    list(suprimentos),
+                    fail_silently=False,
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
             mensagem = (
                 f"Olá, {coordenador.username}\n\n"
                 f"A minuta de contrato para a contratação de terceiro foi reprovada pela Gerência e encaminhada para revisão. \n\n"
                 "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
                 "https://hidrogestao.pythonanywhere.com/"
             )
-            send_mail(
-                assunto, mensagem,
-                "hidro.gestao25@gmail.com",
-                [coordenador.email],
-                fail_silently=False,
-            )
+            try:
+                send_mail(
+                    assunto, mensagem,
+                    "hidro.gestao25@gmail.com",
+                    [coordenador.email],
+                    fail_silently=False,
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
+
             solicitacao.status = "Reprovado pela gerência"
             messages.warning(request, f"Solicitação {solicitacao.id} reprovada.")
         else:
@@ -1443,6 +1470,39 @@ def detalhe_bm(request, pk):
             solicitacao.status = "Onboarding"
             solicitacao.save()
 
+            # Envia e-mail para o grupo de suprimento
+            suprimentos = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email__exact="")
+
+            lista_emails = [u.email for u in suprimentos]
+            if lista_emails:
+                assunto = f"Contrato criado: {contrato.cod_projeto}"
+                mensagem = (
+                    f"Olá, equipe de Suprimentos!\n\n"
+                    f"O documento BM referente à solicitação '{solicitacao}' foi aprovado pelo Coordenador e pelo Gerente.\n\n"
+                    f"Um novo contrato com o fornecedor '{contrato.empresa_terceira}' foi criado no sistema.\n\n"
+                    f"📄 Código do Projeto: {contrato.cod_projeto}\n"
+                    f"🏢 Fornecedor: {contrato.empresa_terceira}\n"
+                    f"💰 Valor Total: R$ {contrato.valor_total:,.2f}\n"
+                    f"📅 Vigência: {contrato.data_inicio} a {contrato.data_fim}\n\n"
+                    f"⚠️ Recomendação:\n"
+                    f"Agendar o quanto antes a reunião de onboarding com o fornecedor, "
+                    f"para alinhamento inicial, apresentação das responsabilidades e integração às rotinas da contratante.\n\n"
+                    f"Atenciosamente,\n"
+                    f"Sistema de Gestão de Terceiros"
+                )
+
+                try:
+                    send_mail(
+                        assunto,
+                        mensagem,
+                        "hidro.gestao25@gmail.com",  # remetente
+                        lista_emails,
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
+
         return redirect("lista_solicitacoes")
 
     return render(request, "gestao_contratos/detalhe_bm.html", {"bm": bm, "solicitacao": solicitacao})
@@ -1461,21 +1521,6 @@ def aprovar_bm(request, pk, papel):
         return redirect("lista_solicitacoes")
 
     bm.save()
-
-    """# Se ambos aprovaram → criar ContratoTerceiros
-    if bm.aprovado_por_ambos:
-        ContratoTerceiros.objects.get_or_create(
-            cod_projeto=bm.solicitacao.contrato,
-            prospeccao=bm.solicitacao,
-            empresa_terceira=bm.solicitacao.fornecedor,
-            coordenador=bm.solicitacao.coordenador,
-            data_inicio=date.today(),
-            data_fim=date.today() + timedelta(days=365),  # ajustar regra real
-            valor_total=Decimal("0.00"),  # ajustar conforme necessidade
-            objeto="Contrato aprovado a partir do BM",
-            status="aguardando_assinatura",
-        )"""
-
     return redirect("detalhe_bm", pk=bm.pk)
 
 
@@ -1595,17 +1640,30 @@ def registrar_entrega(request, pk):
     contrato = evento.contrato_terceiro
     boletins = evento.boletins_medicao.all()
 
+    # 🔹 Adiciona a cor da linha conforme o status
+    boletins_detalhados = []
+    for bm in boletins:
+        if bm.status_coordenador == "aprovado" and bm.status_gerente == "aprovado":
+            row_class = "table-success"
+        elif bm.status_coordenador == "reprovado" or bm.status_gerente == "reprovado":
+            row_class = "table-danger"
+        else:
+            row_class = "table-warning"
+
+        boletins_detalhados.append({
+            "bm": bm,
+            "row_class": row_class
+        })
+
     if request.method == "POST":
         form = EventoEntregaForm(request.POST, request.FILES, instance=evento)
 
-        # Se checkbox de "valor igual" estiver marcado, sobrescreve valor_pago
         valor_igual = request.POST.get("check_valor_igual") == "on"
         if valor_igual:
             form.data = form.data.copy()
             form.data['valor_pago'] = str(evento.valor_previsto)
 
         if form.is_valid():
-            # Se houver BMs cadastrados, data_pagamento é obrigatório
             if evento.contrato_terceiro.boletins_medicao.exists() and not form.cleaned_data['data_pagamento']:
                 form.add_error('data_pagamento', 'Preencha a Data de Pagamento, pois existem BMs cadastrados.')
             else:
@@ -1618,10 +1676,35 @@ def registrar_entrega(request, pk):
         "form": form,
         "evento": evento,
         "contrato": contrato,
-        "boletins":boletins,
+        "boletins_detalhados": boletins_detalhados,
     })
 
 
+@login_required
+def avaliar_bm(request, bm_id):
+    bm = get_object_or_404(BM, id=bm_id)
+    usuario = request.user
+
+    if usuario.grupo not in ["coordenador", "gerente"]:
+        return JsonResponse({"success": False, "error": "Sem permissão."}, status=403)
+
+    acao = request.POST.get("acao")
+    if acao not in ["aprovar", "reprovar"]:
+        return JsonResponse({"success": False, "error": "Ação inválida."}, status=400)
+
+    if usuario.grupo == "coordenador":
+        bm.status_coordenador = "aprovado" if acao == "aprovar" else "reprovado"
+        bm.data_aprovacao_coordenador = timezone.now()
+    elif usuario.grupo == "gerente":
+        bm.status_gerente = "aprovado" if acao == "aprovar" else "reprovado"
+        bm.data_aprovacao_gerente = timezone.now()
+
+    bm.save()
+    return JsonResponse({
+        "success": True,
+        "status_coordenador": bm.status_coordenador,
+        "status_gerente": bm.status_gerente
+    })
 
 
 @login_required
