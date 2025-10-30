@@ -656,22 +656,36 @@ def nova_solicitacao_prospeccao(request):
 @login_required
 def lista_solicitacoes(request):
     if request.user.grupo == 'coordenador' or request.user.grupo == 'financeiro':
-        solicitacoes = SolicitacaoProspeccao.objects.filter(coordenador=request.user).exclude(status="Onboarding").order_by('-data_solicitacao')
+        solicitacoes = SolicitacaoProspeccao.objects.filter(coordenador=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
     elif request.user.grupo == 'suprimento':
-        solicitacoes = SolicitacaoProspeccao.objects.all().exclude(status="Onboarding").order_by('-data_solicitacao')
+        solicitacoes = SolicitacaoProspeccao.objects.all().exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
     elif request.user.grupo == 'gerente':
         centros_do_gerente = request.user.centros.all()
         # filtra solicitações cujo solicitante tenha pelo menos um centro em comum
         solicitacoes = SolicitacaoProspeccao.objects.filter(
             coordenador__centros__in=centros_do_gerente
-        ).exclude(status="Onboarding").distinct().order_by('-data_solicitacao')
+        ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
 
+    lista_solicitacoes = []
+    for s in solicitacoes:
+        proposta_escolhida = PropostaFornecedor.objects.filter(
+            solicitacao=s,
+            fornecedor=s.fornecedor_escolhido
+        ).first()
+
+        contrato = DocumentoContratoTerceiro.objects.filter(solicitacao=s).first()
+        lista_solicitacoes.append({
+            "solicitacao": s,
+            "fornecedor": s.fornecedor_escolhido,
+            "proposta": proposta_escolhida,
+            "contrato": contrato
+        })
 
     paginator = Paginator(solicitacoes, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
-    context = {'page_obj': page_obj}
+    context = {'page_obj': page_obj, "lista_solicitacoes": lista_solicitacoes}
 
     return render(request, 'gestao_contratos/lista_solicitacoes.html', context)
 
@@ -780,7 +794,7 @@ def triagem_fornecedores(request, pk):
                     fail_silently=False,
                 )
             except Exception as e:
-                essages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
+                messages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
             messages.success(request, "Triagem e propostas salvas com sucesso!")
             return redirect("lista_solicitacoes")
 
@@ -832,7 +846,7 @@ def nenhum_fornecedor_ideal(request, pk):
                     fail_silently=False,
                 )
             except Exception as e:
-                essages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
         messages.success(request, "Solicitação atualizada: nenhum fornecedor é ideal.")
     return redirect("lista_solicitacoes")
 
@@ -879,7 +893,7 @@ def detalhes_triagem_fornecedores(request, pk):
                         fail_silently=False,
                     )
                 except Exception as e:
-                    essages.warning(request, f"Erro ao enviar e-mail para gerente: {e}")
+                    messages.warning(request, f"Erro ao enviar e-mail para gerente: {e}")
             messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando aprovação do gerente.")
         return redirect('lista_solicitacoes')
 
@@ -938,7 +952,7 @@ def aprovar_fornecedor_gerente(request, pk):
             assunto = f"Fornecedor {solicitacao.fornecedor_escolhido.nome} aprovado pela gerência"
             mensagem = (
                 f"Prezados,\n\n"
-                f"O gerente {request.user.get_full_name() or request.user.username} "
+                f"O gerente {request.user.username} "
                 f"aprovou o fornecedor {solicitacao.fornecedor_escolhido.nome} "
                 f"na solicitação #{solicitacao.id}.\n\n"
                 f"Contrato: {solicitacao.contrato.cod_projeto}\n"
@@ -979,7 +993,7 @@ def aprovar_fornecedor_gerente(request, pk):
                 send_mail(
                     assunto,
                     mensagem,
-                    settings.DEFAULT_FROM_EMAIL,
+                    "hidro.gestao25@gmail.com",
                     list(set(emails_suprimentos)),  # remove duplicados
                     fail_silently=False,
                 )
@@ -1196,30 +1210,95 @@ def cadastrar_contrato(request, solicitacao_id):
     return render(request, "fornecedores/cadastrar_contrato.html", context)
 
 
+def criar_contrato_se_aprovado(solicitacao):
+    try:
+        bm = solicitacao.minuta_boletins_medicao
+    except DocumentoBM.DoesNotExist:
+        print("BM não encontrado")
+        return None
+
+    bm_aprovado = bm.aprovado_por_ambos
+    contrato_aprovado = solicitacao.aprovacao_gerencia is True
+
+    print(f"Solicitacao {solicitacao.id} - BM aprovado: {bm_aprovado}, Contrato aprovado: {contrato_aprovado}")
+
+    contrato_existente = ContratoTerceiros.objects.filter(prospeccao=solicitacao).first()
+    if bm_aprovado and contrato_aprovado and not contrato_existente:
+        print("Criando ContratoTerceiro...")
+        documento = DocumentoContratoTerceiro.objects.filter(solicitacao=solicitacao).first()
+        proposta = PropostaFornecedor.objects.filter(
+            solicitacao=solicitacao,
+            fornecedor=solicitacao.fornecedor_escolhido
+        ).first()
+
+        contrato = ContratoTerceiros.objects.create(
+            cod_projeto=solicitacao.contrato,
+            prospeccao=solicitacao,
+            num_contrato=documento.numero_contrato if documento else None,
+            empresa_terceira=solicitacao.fornecedor_escolhido,
+            coordenador=solicitacao.coordenador,
+            data_inicio=documento.prazo_inicio if documento else None,
+            data_fim=documento.prazo_fim if documento else None,
+            valor_total=documento.valor_total if documento else 0,
+            objeto=documento.objeto if documento else "",
+            condicao_pagamento=proposta.condicao_pagamento if proposta else None,
+            status="Ativo",
+            observacao=documento.observacao if documento else None,
+        )
+        print(f"Contrato criado: {contrato.id}")
+        Evento.objects.filter(
+            prospeccao=solicitacao,
+            contrato_terceiro__isnull=True
+        ).update(contrato_terceiro=contrato)
+
+        solicitacao.status = "Onboarding"
+        solicitacao.save()
+
+        # Envia e-mail
+        suprimentos = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email__exact="")
+        lista_emails = [u.email for u in suprimentos]
+        if lista_emails:
+            assunto = f"Contrato criado: {contrato.cod_projeto}"
+            mensagem = (
+                f"Olá, equipe de Suprimentos!\n\n"
+                f"O BM e o documento do contrato da solicitação '{solicitacao.id}' foram aprovados.\n\n"
+                f"📄 Código do Projeto: {contrato.cod_projeto}\n"
+                f"🏢 Fornecedor: {contrato.empresa_terceira}\n"
+                f"💰 Valor Total: R$ {contrato.valor_total:,.2f}\n"
+                f"📅 Vigência: {contrato.data_inicio.strftime('%d/%m/%Y') if contrato.data_inicio else 'Não definida'} "
+                f"a {contrato.data_fim.strftime('%d/%m/%Y') if contrato.data_fim else 'Não definida'}\n\n"
+                f"⚠️ Observações: {contrato.observacao or 'Nenhuma'}\n\n"
+                "Recomendação: Agendar reunião de onboarding com o fornecedor o quanto antes para alinhamento das responsabilidades.\n\n"
+                "Atenciosamente,\n"
+                "Sistema de Gestão de Terceiros - HIDROGestão"
+            )
+            try:
+                send_mail(assunto, mensagem, "hidro.gestao25@gmail.com", lista_emails, fail_silently=False)
+            except Exception as e:
+                print(f"Erro ao enviar e-mail: {e}")
+
+        return contrato
+
+    return None
+
+
+
+
 @login_required
 def detalhes_contrato(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
-    # Busca o documento de contrato, se existir
     contrato_doc = getattr(solicitacao, "contrato_relacionado", None)
-
-    # Busca o fornecedor escolhido e sua proposta
     fornecedor_escolhido = solicitacao.fornecedor_escolhido
     proposta_escolhida = None
     if fornecedor_escolhido:
         proposta_escolhida = PropostaFornecedor.objects.filter(
             solicitacao=solicitacao, fornecedor=fornecedor_escolhido
         ).first()
-
-    # Fornecedores selecionados na triagem
     fornecedores_selecionados = solicitacao.fornecedores_selecionados.all()
-
-    # Histórico: revisões feitas a partir desta
     revisoes = solicitacao.revisoes.all()
-    # Se esta solicitação for uma revisão, mostramos também a origem
     origem = solicitacao.solicitacao_origem
 
-    # Aprovação pelo gerente
     if request.method == "POST" and request.user.grupo == "gerente" and contrato_doc:
         acao = request.POST.get("acao")
         justificativa = request.POST.get("justificativa", "")
@@ -1228,99 +1307,23 @@ def detalhes_contrato(request, pk):
             solicitacao.aprovacao_gerencia = True
             solicitacao.reprovacao_gerencia = False
             solicitacao.justificativa_gerencia = ""
-            solicitacao.status = "Planejamento do Contrato"
-
-            coordenador = solicitacao.coordenador
-            suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
-            assunto = "A minuta de contrato foi APROVADA pela Gerência"
-            mensagem = (
-                f"Olá,\n\n"
-                f"A minuta de contrato foi aprovada pela Gerência. \n\n"
-                "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
-                "https://hidrogestao.pythonanywhere.com/"
-            )
-            try:
-                send_mail(
-                    assunto, mensagem,
-                    "hidro.gestao25@gmail.com",
-                    list(suprimentos),
-                    fail_silently=False,
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
-
-            mensagem = (
-                f"Olá, {coordenador.username}\n\n"
-                f"A minuta de contrato de contratação de terceiro foi aprovada pela Gerência. \n\n"
-                "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
-                "https://hidrogestao.pythonanywhere.com/"
-            )
-            try:
-                send_mail(
-                    assunto, mensagem,
-                    "hidro.gestao25@gmail.com",
-                    [coordenador.email],
-                    fail_silently=False,
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
-
-            messages.success(
-                request, f"Solicitação {solicitacao.id} aprovada com sucesso!"
-            )
-
+            messages.success(request, "Documento do contrato aprovado pela gerência.")
         elif acao == "reprovar":
             solicitacao.aprovacao_gerencia = False
             solicitacao.reprovacao_gerencia = True
             solicitacao.justificativa_gerencia = justificativa
-            coordenador = solicitacao.coordenador
-            suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
-            assunto = "A minuta de contrato foi REPROVADA pela Gerência"
-            mensagem = (
-                f"Olá,\n\n"
-                f"A minuta de contrato foi reprovada pela Gerência. \n\n"
-                f"A justificativa para a reprovação foi:\n"
-                f'"{solicitacao.justificativa_gerencia}"\n\n'
-                "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
-                "https://hidrogestao.pythonanywhere.com/"
-            )
-            try:
-                send_mail(
-                    assunto, mensagem,
-                    "hidro.gestao25@gmail.com",
-                    list(suprimentos),
-                    fail_silently=False,
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
-
-            mensagem = (
-                f"Olá, {coordenador.username}\n\n"
-                f"A minuta de contrato para a contratação de terceiro foi reprovada pela Gerência e encaminhada para revisão. \n\n"
-                "Por favor, acompanhe o andamento no sistema HIDROGestão.\n"
-                "https://hidrogestao.pythonanywhere.com/"
-            )
-            try:
-                send_mail(
-                    assunto, mensagem,
-                    "hidro.gestao25@gmail.com",
-                    [coordenador.email],
-                    fail_silently=False,
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
-
-            solicitacao.status = "Reprovado pela gerência"
-            messages.warning(request, f"Solicitação {solicitacao.id} reprovada.")
+            messages.warning(request, "Documento do contrato reprovado pela gerência.")
         else:
             messages.error(request, "Ação inválida.")
 
-        solicitacao.aprovado_por = request.user
-        solicitacao.data_aprovacao = timezone.now()
         solicitacao.save()
+
+        # Tenta criar o contrato caso BM e documento do contrato estejam aprovados
+        criar_contrato_se_aprovado(solicitacao)
+
         return redirect("lista_solicitacoes")
 
-    context = {
+    return render(request, "gestao_contratos/detalhes_contrato.html", {
         "solicitacao": solicitacao,
         "contrato_doc": contrato_doc,
         "fornecedor_escolhido": fornecedor_escolhido,
@@ -1328,9 +1331,7 @@ def detalhes_contrato(request, pk):
         "fornecedores_selecionados": fornecedores_selecionados,
         "revisoes": revisoes,
         "origem": origem,
-    }
-
-    return render(request, "gestao_contratos/detalhes_contrato.html", context)
+    })
 
 
 @login_required
@@ -1420,92 +1421,45 @@ def inserir_minuta_bm(request, pk):
 @login_required
 def detalhe_bm(request, pk):
     bm = get_object_or_404(DocumentoBM, pk=pk)
-
     solicitacao = bm.solicitacao
+    usuario = request.user
 
     if request.method == "POST":
         acao = request.POST.get("acao")
-        usuario = request.user
 
-        # Se coordenador avaliando
+        # Avaliação do coordenador
         if usuario.grupo == "coordenador":
             if acao == "aprovar":
                 bm.status_coordenador = "aprovado"
                 bm.data_aprovacao_coordenador = timezone.now()
+                messages.success(request, "Minuta BM aprovada pelo coordenador.")
+            elif acao == "reprovar":
+                bm.status_coordenador = "reprovado"
+                bm.data_aprovacao_coordenador = timezone.now()
+                messages.warning(request, "Minuta BM reprovada pelo coordenador.")
 
-        # Se gerente avaliando
+        # Avaliação do gerente
         elif usuario.grupo == "gerente":
             if acao == "aprovar":
                 bm.status_gerente = "aprovado"
                 bm.data_aprovacao_gerente = timezone.now()
+                messages.success(request, "Minuta BM aprovada pelo gerente.")
+            elif acao == "reprovar":
+                bm.status_gerente = "reprovado"
+                bm.data_aprovacao_gerente = timezone.now()
+                messages.warning(request, "Minuta BM reprovada pelo gerente.")
 
         bm.save()
 
-        try:
-            documento = DocumentoContratoTerceiro.objects.get(solicitacao=solicitacao)
-        except DocumentoContratoTerceiro.DoesNotExist:
-            documento = None
-
-        proposta = PropostaFornecedor.objects.filter(
-            solicitacao=solicitacao,
-            fornecedor=solicitacao.fornecedor_escolhido
-        ).first()
-        # Se ambos aprovaram → cria contrato e finaliza solicitação
-        if (bm.status_coordenador=="aprovado") and (bm.status_gerente=="aprovado"):
-            contrato, created = ContratoTerceiros.objects.get_or_create(
-                cod_projeto=solicitacao.contrato,
-                prospeccao=solicitacao,
-                num_contrato=documento.numero_contrato if documento else None,
-                empresa_terceira=solicitacao.fornecedor_escolhido,
-                coordenador=solicitacao.coordenador,
-                data_inicio=documento.prazo_inicio if documento else None,
-                data_fim=documento.prazo_fim if documento else None,
-                valor_total=documento.valor_total if documento else 0,
-                objeto=documento.objeto if documento else "",
-                condicao_pagamento=proposta.condicao_pagamento if proposta else None,
-                status="Ativo",
-                observacao=documento.observacao if documento else None,
-            )
-            Evento.objects.filter(prospeccao=solicitacao, contrato_terceiro__isnull=True).update(contrato_terceiro=contrato)
-            solicitacao.status = "Onboarding"
-            solicitacao.save()
-
-            # Envia e-mail para o grupo de suprimento
-            suprimentos = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email__exact="")
-
-            lista_emails = [u.email for u in suprimentos]
-            if lista_emails:
-                assunto = f"Contrato criado: {contrato.cod_projeto}"
-                mensagem = (
-                    f"Olá, equipe de Suprimentos!\n\n"
-                    f"O documento BM referente à solicitação '{solicitacao}' foi aprovado pelo Coordenador e pelo Gerente.\n\n"
-                    f"Um novo contrato com o fornecedor '{contrato.empresa_terceira}' foi criado no sistema.\n\n"
-                    f"📄 Código do Projeto: {contrato.cod_projeto}\n"
-                    f"🏢 Fornecedor: {contrato.empresa_terceira}\n"
-                    f"💰 Valor Total: R$ {contrato.valor_total:,.2f}\n"
-                    f"📅 Vigência: {contrato.data_inicio} a {contrato.data_fim}\n\n"
-                    f"⚠️ Recomendação:\n"
-                    f"Agendar o quanto antes a reunião de onboarding com o fornecedor, "
-                    f"para alinhamento inicial, apresentação das responsabilidades e integração às rotinas da contratante.\n\n"
-                    f"Atenciosamente,\n"
-                    f"Sistema de Gestão de Terceiros"
-                )
-
-                try:
-                    send_mail(
-                        assunto,
-                        mensagem,
-                        "hidro.gestao25@gmail.com",  # remetente
-                        lista_emails,
-                        fail_silently=False,
-                    )
-                except Exception as e:
-                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
-
+        # Tenta criar o contrato caso BM e documento do contrato estejam aprovados
+        criar_contrato_se_aprovado(solicitacao)
 
         return redirect("lista_solicitacoes")
 
-    return render(request, "gestao_contratos/detalhe_bm.html", {"bm": bm, "solicitacao": solicitacao})
+    return render(request, "gestao_contratos/detalhe_bm.html", {
+        "bm": bm,
+        "solicitacao": solicitacao
+    })
 
 
 @login_required

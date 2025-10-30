@@ -64,6 +64,22 @@
                                     </a>
                                 {% endif %}
 
+                            {% elif request.user.grupo == 'suprimento' and item.solicitacao.status == "Planejamento do Contrato" %}
+                                <!-- Cadastrar ou Revisar Contrato para outros usuários -->
+                                {% if item.contrato %}
+                                    <a href="{% url 'cadastrar_contrato' item.solicitacao.id %}"
+                                       class="btn btn-warning btn-sm"
+                                       onclick="event.stopPropagation();">
+                                        Revisar Contrato
+                                    </a>
+                                {% else %}
+                                    <a href="{% url 'cadastrar_contrato' item.solicitacao.id %}"
+                                       class="btn btn-primary btn-sm"
+                                       onclick="event.stopPropagation();">
+                                        Cadastrar Contrato
+                                    </a>
+                                {% endif %}
+
                             {% elif request.user.grupo == 'suprimento' and item.solicitacao.status == 'Aguardando boletim' %}
                                 <a href="{% url 'inserir_minuta_bm' item.solicitacao.id %}" class="btn btn-info btn-sm">
                                     Inserir Minuta do BM
