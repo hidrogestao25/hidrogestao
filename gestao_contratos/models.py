@@ -385,7 +385,7 @@ class ContratoTerceiros(models.Model):
     )
 
     def __str__(self):
-        return f"Contrato {self.cod_projeto} - {self.empresa_terceira}"
+        return f"Contrato {self.num_contrato} - {self.cod_projeto} - {self.empresa_terceira}"
 
 
 # ---------------------------
@@ -537,7 +537,7 @@ class DocumentoBM(models.Model):
         ('aprovado', 'Aprovado'),
         ('reprovado', 'Reprovado'),
     ]
-    solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE)
+    solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="minuta_boletins_medicao")
     minuta_boletim = models.FileField(
         upload_to='Minuta boletim/',
         blank=True,

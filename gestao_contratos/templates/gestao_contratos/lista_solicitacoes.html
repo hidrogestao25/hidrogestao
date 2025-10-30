@@ -20,8 +20,8 @@
                     <th>Previsto no Orçamento</th>
                     <th>Valor Provisionado</th>
                     <th>Status</th>
-                    <th>Aprovação Gerente</th>
-                    {% if request.user.grupo in 'suprimento,coordenador, gerente' %}
+                    <th>Aprovação do Fornecedor - Gerência</th>
+                    {% if request.user.grupo in 'suprimento,coordenador,gerente' %}
                         <th>Ações</th>
                     {% endif %}
                 </tr>
@@ -39,7 +39,7 @@
                                 <i class="bi bi-x-lg text-danger fs-4"></i>
                             {% endif %}
                         </td>
-                        <td>{{ solicitacao.valor_provisionado }}</td>
+                        <td>R$ {{ solicitacao.valor_provisionado|floatformat:2 }}</td>
                         <td>
                             {% if solicitacao.nenhum_fornecedor_ideal %}
                                 Nenhum fornecedor é ideal
@@ -50,20 +50,18 @@
                         <td>
                             {% if solicitacao.status == "Fornecedor Selecionado" %}
                                 <span class="badge bg-warning">Aguardando aprovação</span>
-                            {% elif solicitacao.status == "Aprovado" %}
+                            {% elif solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
                                 <span class="badge bg-success">Aprovado</span>
-                            {% elif solicitacao.status == "Reprovado" %}
+                            {% elif solicitacao.aprovacao_fornecedor_gerente == "reprovado" %}
                                 <span class="badge bg-danger">Reprovado</span>
-                            {% elif solicitacao.status == "Finalizada" %}
-                                <span class="badge bg-secondary">Finalizada</span>
                             {% else %}
                                 <span class="badge bg-secondary">Pendente</span>
                             {% endif %}
                         </td>
 
+                        <!-- AÇÕES -->
                         <td>
-                        {% if request.user.grupo == 'suprimento' %}
-
+                            {% if request.user.grupo == 'suprimento' %}
                                 {% if solicitacao.aprovado == None %}
                                     <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success btn-sm">Aprovar</a>
                                     <a href="{% url 'aprovar_solicitacao' solicitacao.id 'reprovar' %}" class="btn btn-danger btn-sm">Reprovar</a>
@@ -79,25 +77,70 @@
                                     {% endif %}
                                 {% endif %}
 
-                                {% if solicitacao.aprovacao_fornecedor_gerente == 'aprovado' and solicitacao.aprovacao_gerencia == False %}
-                                    <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-primary btn-sm">Inserir Minuta do BM</a>
+                                {% if solicitacao.aprovacao_fornecedor_gerente == 'aprovado' and not solicitacao.aprovacao_gerencia %}
+                                  {% if solicitacao.minuta_boletins_medicao %}
+                                    <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-warning">
+                                      Revisar Minuta do BM
+                                    </a>
+                                  {% else %}
+                                    <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-primary">
+                                      Inserir Minuta do BM
+                                    </a>
+                                  {% endif %}
                                 {% endif %}
 
-                        {% elif request.user.grupo == 'gerente' and solicitacao.status == "Fornecedor selecionado" %}
-                                <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Aprovar/Reprovar Fornecedor</a>
-                        {% endif %}
-                        {% if request.user.grupo == 'coordenador' and solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" %}
+
+                                {% if solicitacao.status == "Fornecedor aprovado" or solicitacao.status == "Planejamento do Contrato" %}
+                                    {% with contrato=solicitacao.contrato_relacionado %}
+                                        {% if contrato %}
+                                            <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">Revisar Contrato</a>
+                                        {% else %}
+                                            <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-primary btn-sm">Cadastrar Contrato</a>
+                                        {% endif %}
+                                    {% endwith %}
+                                {% endif %}
+                            {% endif %}
+
+                            {% if request.user.grupo == 'gerente' %}
+                                {% with contrato=solicitacao.contrato_relacionado %}
+                                    {% if contrato %}
+                                        {% if not solicitacao.aprovacao_gerencia and not solicitacao.reprovacao_gerencia %}
+                                            <!-- Nenhuma avaliação feita ainda -->
+                                            <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-primary btn-sm">
+                                                Avaliar Contrato
+                                            </a>
+                                        {% else %}
+                                            <!-- Já houve aprovação ou reprovação -->
+                                            <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">
+                                                Reavaliar Contrato
+                                            </a>
+                                        {% endif %}
+                                    {% endif %}
+                                {% endwith %}
+                                {% if solicitacao.minuta_boletins_medicao %}
+                                    <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
+                                        Avaliar Minuta BM
+                                    </a>
+                                {% endif %}
+                            {% endif %}
+
+                            {% if request.user.grupo == 'coordenador' %}
+                              {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" %}
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
-                        {% endif %}
-                        {% if solicitacao.documentobm %}
-                                <a href="{% url 'detalhe_bm' solicitacao.documentobm.id %}" class="btn btn-info btn-sm">Detalhes BM</a>
-                        {% endif %}
+                              {% endif %}
+                              {% if solicitacao.minuta_boletins_medicao %}
+                                  <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
+                                      Avaliar Minuta BM
+                                  </a>
+                              {% endif %}
+                            {% endif %}
                         </td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
 
+        <!-- PAGINAÇÃO -->
         <nav>
             <ul class="pagination">
                 {% if page_obj.has_previous %}
