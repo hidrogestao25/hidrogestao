@@ -47,7 +47,7 @@ for evento in eventos_hoje:
         mensagem = (
             f"Olá {coordenador.first_name or coordenador.username},\n\n"
             f"Este é um lembrete automático para a entrega prevista hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
-            f"Empresa terceira: {evento.empresa_terceira}\n"
+            f"Fornecedor: {evento.empresa_terceira}\n"
             f"Descrição: {evento.descricao}\n"
             f"Contrato: {contrato.num_contrato or 'N/A'}\n\n"
             f"Atenciosamente,\nSistema Hidrogestão"

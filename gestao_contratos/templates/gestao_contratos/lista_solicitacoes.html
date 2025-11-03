@@ -102,6 +102,9 @@
                             {% endif %}
 
                             {% if request.user.grupo == 'gerente' %}
+                                {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
+                                    <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Avaliar Fornecedor</a>
+                                {% endif %}
                                 {% with contrato=solicitacao.contrato_relacionado %}
                                     {% if contrato %}
                                         {% if not solicitacao.aprovacao_gerencia and not solicitacao.reprovacao_gerencia %}
@@ -118,9 +121,15 @@
                                     {% endif %}
                                 {% endwith %}
                                 {% if solicitacao.minuta_boletins_medicao %}
-                                    <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
-                                        Avaliar Minuta BM
-                                    </a>
+                                    {% if solicitacao.minuta_boletins_medicao.status_gerente == 'pendente' %}
+                                        <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
+                                            Avaliar Minuta BM
+                                        </a>
+                                    {% else %}
+                                        <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning btn-sm">
+                                            Reavaliar Minuta BM
+                                        </a>
+                                    {% endif %}
                                 {% endif %}
                             {% endif %}
 
@@ -129,9 +138,15 @@
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                               {% endif %}
                               {% if solicitacao.minuta_boletins_medicao %}
-                                  <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
-                                      Avaliar Minuta BM
-                                  </a>
+                                  {% if solicitacao.minuta_boletins_medicao.status_coordenador == 'pendente' %}
+                                      <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
+                                          Avaliar Minuta BM
+                                      </a>
+                                  {% else %}
+                                      <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning btn-sm">
+                                          Reavaliar Minuta BM
+                                      </a>
+                                  {% endif %}
                               {% endif %}
                             {% endif %}
                         </td>
