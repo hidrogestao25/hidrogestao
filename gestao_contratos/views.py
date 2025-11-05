@@ -26,7 +26,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, Reference, LineChart
 from openpyxl.styles import Font
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 
 User = get_user_model()
 
@@ -109,7 +109,136 @@ def is_financeiro(user):
 
 
 def home(request):
-    return render(request, 'home.html')
+    user = request.user
+    hoje = timezone.now().date()
+    limite = hoje + timedelta(days=10)
+
+    grupo = getattr(user, "grupo", None)
+    is_suprimento = grupo == "suprimento"
+    is_coordenador = grupo == "coordenador"
+    is_gerente = grupo == "gerente"
+
+    context = {
+        "is_suprimento": is_suprimento,
+        "is_coordenador": is_coordenador,
+        "is_gerente": is_gerente,
+    }
+
+    # ==================== SUPRIMENTO ====================
+    if is_suprimento:
+        solicitacoes_pendentes = SolicitacaoProspeccao.objects.filter(
+            Q(aprovado__isnull=True)
+            | (Q(aprovado=True) & Q(triagem_realizada=False))
+            | (Q(aprovado=True) & Q(triagem_realizada=True) & Q(fornecedor_escolhido__isnull=True))
+            | (Q(aprovacao_fornecedor_gerente="aprovado") & Q(aprovacao_gerencia=False))
+            | Q(status__in=["Fornecedor aprovado", "Planejamento do Contrato"])
+        ).exclude(status__in=["Onboarding"]).distinct()
+
+        eventos_proximos = Evento.objects.filter(
+            data_prevista__range=[hoje, limite]
+        ).order_by("data_prevista")
+
+        # 🚨 Entregas atrasadas (todas)
+        entregas_atrasadas = Evento.objects.filter(
+            Q(realizado=False) & Q(data_prevista__lt=hoje)
+        ).order_by("data_prevista")
+
+        context.update({
+            "painel_titulo": "Painel de Suprimentos",
+            "solicitacoes_pendentes": solicitacoes_pendentes,
+            "eventos_proximos": eventos_proximos,
+            "entregas_atrasadas": entregas_atrasadas,
+        })
+
+    # ==================== COORDENADOR ====================
+    elif is_coordenador:
+        solicitacoes_pendentes = SolicitacaoProspeccao.objects.filter(
+            Q(coordenador=user)
+            & (Q(triagem_realizada=True, status="Triagem realizada") |
+               Q(minuta_boletins_medicao__status_coordenador="pendente"))
+        ).distinct()
+
+        bms_pendentes = BM.objects.filter(
+            contrato__coordenador=user,
+            status_coordenador="pendente"
+        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
+
+        eventos_proximos = Evento.objects.filter(
+            data_prevista__range=[hoje, limite],
+            contrato_terceiro__coordenador=user
+        ).order_by("data_prevista")
+
+        # 🚨 Entregas atrasadas do coordenador
+        entregas_atrasadas = Evento.objects.filter(
+            Q(contrato_terceiro__coordenador=user)
+            & Q(realizado=False)
+            & Q(data_prevista__lt=hoje)
+        ).order_by("data_prevista")
+
+        context.update({
+            "painel_titulo": "Painel do Coordenador",
+            "solicitacoes_pendentes": solicitacoes_pendentes,
+            "bms_pendentes": bms_pendentes,
+            "eventos_proximos": eventos_proximos,
+            "entregas_atrasadas": entregas_atrasadas,
+        })
+
+    # ==================== GERENTE ====================
+    elif is_gerente:
+        centros_gerente = getattr(user, "centros", None)
+        centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []
+
+        solicitacoes = (
+            SolicitacaoProspeccao.objects.filter(coordenador__centros__in=centros_ids)
+            .select_related("fornecedor_escolhido", "coordenador")
+            .exclude(status__in=["Onboarding"]).distinct()
+        )
+
+        lista_solicitacoes = []
+        for s in solicitacoes:
+            proposta_escolhida = PropostaFornecedor.objects.filter(
+                solicitacao=s, fornecedor=s.fornecedor_escolhido
+            ).first()
+            contrato = DocumentoContratoTerceiro.objects.filter(solicitacao=s).first()
+
+            pendente_fornecedor = s.fornecedor_escolhido and s.aprovacao_fornecedor_gerente == "pendente"
+            pendente_contrato = contrato and not getattr(contrato, "aprovacao_gerencia", False)
+
+            if pendente_fornecedor or pendente_contrato:
+                lista_solicitacoes.append({
+                    "solicitacao": s,
+                    "fornecedor": s.fornecedor_escolhido,
+                    "proposta": proposta_escolhida,
+                    "contrato": contrato,
+                })
+
+        bms_pendentes = BM.objects.filter(
+            contrato__coordenador__centros__in=centros_ids,
+            status_gerente="pendente"
+        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento").distinct()
+
+        eventos_proximos = Evento.objects.filter(
+            data_prevista__range=[hoje, limite],
+            contrato_terceiro__coordenador__centros__in=centros_ids
+        ).order_by("data_prevista").distinct()
+
+        # 🚨 Entregas atrasadas dos centros do gerente
+        entregas_atrasadas = Evento.objects.filter(
+            contrato_terceiro__coordenador__centros__in=centros_ids,
+            realizado=False,
+            data_prevista__lt=hoje
+        ).order_by("data_prevista").distinct()
+
+        context.update({
+            "painel_titulo": "Painel da Gerência",
+            "solicitacoes_pendentes": lista_solicitacoes,
+            "bms_pendentes": bms_pendentes,
+            "eventos_proximos": eventos_proximos,
+            "entregas_atrasadas": entregas_atrasadas,
+        })
+
+    return render(request, "home.html", context)
+
 
 
 def logout(request):
@@ -2212,7 +2341,12 @@ def detalhes_entrega(request, evento_id):
     evento = get_object_or_404(Evento, id=evento_id)
     bms = BM.objects.filter(evento=evento).order_by('-data_pagamento')
 
+    fornecedor = None
+    if hasattr(evento, 'contrato_terceiro') and evento.contrato_terceiro.empresa_terceira:
+        fornecedor = evento.contrato_terceiro.empresa_terceira
+
     return render(request, 'contratos/detalhes_entrega.html', {
         'evento': evento,
         'bms': bms,
+        'fornecedor': fornecedor,
     })

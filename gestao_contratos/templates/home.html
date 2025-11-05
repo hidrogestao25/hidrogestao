@@ -1,15 +1,202 @@
 {% extends 'base.html' %}
-
-{% block title %}Home - HIDROGestao{% endblock %}
+{% block title %}Home - HIDROGestão{% endblock %}
 
 {% block content %}
-<div class="text-center">
-    <h1>Bem-vindo ao HIDROGestão</h1>
-    <p class="lead">Sistema de gestão de contratos, clientes e fornecedores.</p>
+<div class="container mt-4">
+
     {% if user.is_authenticated %}
-        <p>Você está logado como: <strong>{{ user.username }}</strong></p>
+        <div class="text-center mb-4">
+            <h1>Bem-vindo ao HIDROGestão</h1>
+            <p class="lead">Sistema de gestão de contratos, clientes e fornecedores.</p>
+        </div>
+
+        {% if painel_titulo %}
+            <h2 class="text-center mb-4">{{ painel_titulo }}</h2>
+        {% endif %}
+
+        <div class="row">
+            <!-- 1️⃣ Quadro: Solicitações Pendentes -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Solicitações de Prospecção Pendentes</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if solicitacoes_pendentes %}
+                            <ul class="list-group list-group-flush">
+                                {% if request.user.grupo == 'gerente' %}
+                                    {% for item in solicitacoes_pendentes %}
+                                        {% with solicitacao=item.solicitacao contrato=item.contrato %}
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <strong>Solicitação #{{ solicitacao.id }}</strong><br>
+                                                    {% if solicitacao.descricao %}
+                                                        <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
+                                                    {% endif %}
+                                                    <span class="badge bg-secondary">{{ solicitacao.status }}</span>
+                                                </div>
+                                                <div class="text-end">
+                                                    {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
+                                                        <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm mb-1">
+                                                            Avaliar Fornecedor
+                                                        </a><br>
+                                                    {% endif %}
+                                                    {% if contrato and not contrato.aprovacao_gerencia %}
+                                                        <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-primary btn-sm mb-1">
+                                                            Avaliar Contrato
+                                                        </a><br>
+                                                    {% endif %}
+                                                    {% if solicitacao.minuta_boletins_medicao %}
+                                                        {% if solicitacao.minuta_boletins_medicao.status_gerente == 'pendente' %}
+                                                            <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-info btn-sm">
+                                                                Avaliar Minuta BM
+                                                            </a>
+                                                        {% endif %}
+                                                    {% endif %}
+                                                </div>
+                                            </li>
+                                        {% endwith %}
+                                    {% endfor %}
+                                {% else %}
+                                    {% for solicitacao in solicitacoes_pendentes %}
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>Solicitação #{{ solicitacao.id }}</strong><br>
+                                                {% if solicitacao.descricao %}
+                                                    <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
+                                                {% endif %}
+                                                <span class="badge bg-secondary">{{ solicitacao.status }}</span>
+                                            </div>
+                                            {% if request.user.grupo == 'suprimento' %}
+                                                <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">Ver</a>
+                                            {% elif request.user.grupo == 'coordenador' %}
+                                                {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" %}
+                                                    <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">
+                                                        Selecionar Fornecedor
+                                                    </a>
+                                                {% elif solicitacao.minuta_boletins_medicao %}
+                                                    {% if solicitacao.minuta_boletins_medicao.status_coordenador == 'pendente' %}
+                                                        <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
+                                                            Avaliar Minuta BM
+                                                        </a>
+                                                    {% endif %}
+                                                {% endif %}
+                                            {% endif %}
+                                        </li>
+                                    {% endfor %}
+                                {% endif %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted mb-0">Nenhuma solicitação pendente no momento.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2️⃣ Quadro: Boletins de Medição Pendentes -->
+            {% if bms_pendentes %}
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            {% if request.user.grupo == 'coordenador' %}
+                                Boletins de Medição Pendentes (Coordenador)
+                            {% else %}
+                                Boletins de Medição Pendentes (Gerência)
+                            {% endif %}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush">
+                            {% for bm in bms_pendentes %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
+                                        <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
+                                        <span class="badge bg-secondary">Data: {{ bm.data_pagamento|date:"d/m/Y" }}</span>
+                                    </div>
+                                    <a href="{% url 'detalhes_entrega' bm.evento.id %}" class="btn btn-outline-primary btn-sm">Avaliar BM</a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- 3️⃣ Quadro: Entregas Atrasadas -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if entregas_atrasadas %}
+                            <ul class="list-group list-group-flush">
+                                {% for e in entregas_atrasadas %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>{{ e.empresa_terceira }}</strong><br>
+                                            {% if e.descricao %}
+                                                <small>{{ e.descricao|truncatechars:60 }}</small><br>
+                                            {% endif %}
+                                            <span class="badge bg-danger">Prevista: {{ e.data_prevista|date:"d/m/Y" }}</span>
+                                        </div>
+                                        {% if request.user.grupo == 'suprimento' %}
+                                            <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-danger">Registrar Entrega</a>
+                                        {% else %}
+                                            <a href="{% url 'detalhes_entrega' e.id %}" class="btn btn-sm btn-outline-danger">Ver</a>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted mb-0">Nenhuma entrega atrasada encontrada.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4️⃣ Quadro: Próximas Entregas -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-warning">
+                        <h5 class="mb-0">Próximas Entregas (10 dias)</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if eventos_proximos %}
+                            <ul class="list-group list-group-flush">
+                                {% for e in eventos_proximos %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>{{ e.empresa_terceira }}</strong><br>
+                                            {% if e.descricao %}
+                                                <small>{{ e.descricao|truncatechars:60 }}</small><br>
+                                            {% endif %}
+                                            <span class="badge bg-info">Entrega: {{ e.data_prevista|date:"d/m/Y" }}</span>
+                                        </div>
+                                        {% if request.user.grupo == 'suprimento' %}
+                                            <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-warning">Registrar Entrega</a>
+                                        {% else %}
+                                            <a href="{% url 'detalhes_entrega' e.id %}" class="btn btn-sm btn-outline-warning">Ver</a>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted mb-0">Nenhum evento com entrega nos próximos 10 dias.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
     {% else %}
-        <a href="{% url 'login' %}" class="btn btn-primary">Entrar</a>
+        <div class="text-center">
+            <h1>Bem-vindo ao HIDROGestão</h1>
+            <p class="lead">Sistema de gestão de contratos, clientes e fornecedores.</p>
+            <a href="{% url 'login' %}" class="btn btn-primary">Entrar</a>
+        </div>
     {% endif %}
 </div>
 {% endblock %}

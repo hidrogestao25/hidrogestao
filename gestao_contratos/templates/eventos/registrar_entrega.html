@@ -4,6 +4,9 @@
   <div class="card shadow-sm">
     <div class="card-header bg-success text-white">
       <h5>Registrar Entrega - Evento {{ evento.id }}</h5>
+      <p class="text-muted mb-0">
+        Fornecedor: <strong>{{ contrato.empresa_terceira }}</strong>
+      </p>
     </div>
     <div class="card-body">
       <form method="post" enctype="multipart/form-data" id="entregaForm">
