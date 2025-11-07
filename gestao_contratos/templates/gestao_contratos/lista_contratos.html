@@ -26,7 +26,18 @@
             <td>{{ contrato.cod_projeto }}</td>
             <td>{{ contrato.coordenador }}</td>
             <td>{{ contrato.cliente.nome }}</td>
-            <td>{{ contrato.status }}</td>
+            {% if contrato.status == 'ativo' %}
+              <td>Ativo</td>
+            {% elif contrato.status == 'suspenso' %}
+              <td>Suspenso</td>
+            {% elif contrato.status == 'aguardando_assinatura' %}
+              <td>Aguardando assinatura</td>
+            {% elif contrato.status == 'em_elaboracao' %}
+              <td>Em elaboração</td>
+            {% elif contrato.status == 'encerrado' %}
+              <td>Encerrado</td>
+            {% endif %}
+
           </tr>
         {% empty %}
         <tr>

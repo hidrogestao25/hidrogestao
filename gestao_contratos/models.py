@@ -49,6 +49,7 @@ class CentroDeTrabalho(models.Model):
 # -----------------
 class Cliente(models.Model):
     nome = models.CharField(max_length=200)
+    razao_social = models.CharField(max_length=200, blank=True, null=True)
     cpf_cnpj = models.CharField(max_length=18, unique=True)
     endereco = models.TextField(blank=True, null=True)
     telefone = models.CharField(max_length=20, blank=True, null=True)
@@ -65,7 +66,10 @@ class Cliente(models.Model):
     observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
-        return self.nome
+        if self.razao_social == None:
+            return self.nome
+        else:
+            return f"{self.nome} ({self.razao_social})"
 
 
 # -----------------
@@ -228,6 +232,7 @@ class SolicitacaoProspeccao(models.Model):
         blank=True,
         related_name='escolhido_em'
     )
+    justificativa_fornecedor_escolhido = models.TextField(null=True, blank=True)
 
     status = models.CharField(max_length=100, default='Em análise')
     solicitacao_origem = models.ForeignKey(

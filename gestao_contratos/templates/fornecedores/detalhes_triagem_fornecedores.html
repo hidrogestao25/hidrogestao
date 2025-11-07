@@ -62,7 +62,16 @@
                 </tbody>
             </table>
 
+
+
             {% if request.user == solicitacao.coordenador %}
+            <div class="mb-3">
+                <label for="justificativa_fornecedor_escolhido" class="form-label">
+                    Justificativa pela escolha do fornecedor:
+                </label>
+                <textarea name="justificativa_fornecedor_escolhido" id="justificativa_fornecedor_escolhido"
+                          class="form-control" rows="3" required>{{ solicitacao.justificativa_fornecedor_escolhido }}</textarea>
+            </div>
             <div class="mb-3">
                 <button type="submit" class="btn btn-success">Escolher Fornecedor</button>
             </div>
@@ -72,7 +81,13 @@
         <p>Nenhum fornecedor selecionado na triagem.</p>
     {% endif %}
 
-    {# Botões de aprovação do gerente #}
+    {% if request.user.grupo == "gerente" and solicitacao.justificativa_fornecedor_escolhido %}
+    <div class="alert alert-info mt-4">
+        <strong>Justificativa do Coordenador:</strong><br>
+        {{ solicitacao.justificativa_fornecedor_escolhido }}
+    </div>
+    {% endif %}
+
     {% if request.user.grupo == "gerente" and solicitacao.fornecedor_escolhido %}
       <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
           {% csrf_token %}
