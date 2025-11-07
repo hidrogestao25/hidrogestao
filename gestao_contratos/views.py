@@ -996,20 +996,32 @@ def detalhes_triagem_fornecedores(request, pk):
     # Coordenador escolhe fornecedor
     if request.user == solicitacao.coordenador and request.method == "POST":
         escolhido_id = request.POST.get("fornecedor_escolhido")
+        justificativa = request.POST.get("justificativa_fornecedor_escolhido", "").strip()
+
         if escolhido_id:
+            if not justificativa:
+                messages.warning(request, "Por favor, insira uma justificativa para a escolha do fornecedor.")
+                return redirect('detalhes_triagem_fornecedores', pk=pk)
+
             fornecedor = get_object_or_404(EmpresaTerceira, pk=escolhido_id)
             solicitacao.fornecedor_escolhido = fornecedor
+            solicitacao.justificativa_fornecedor_escolhido = justificativa
             solicitacao.nenhum_fornecedor_ideal = False
             solicitacao.status = 'Fornecedor selecionado'
             solicitacao.aprovacao_gerente = "pendente"
             solicitacao.save()
 
             # notifica gerente
-            gerentes = list(User.objects.filter(grupo="gerente", centros__in=solicitacao.coordenador.centros.all()).distinct().values_list("email", flat=True))
+            gerentes = list(User.objects.filter(
+                grupo="gerente",
+                centros__in=solicitacao.coordenador.centros.all()
+            ).distinct().values_list("email", flat=True))
+
             if gerentes:
                 assunto = f"Aprovação necessária - Fornecedor escolhido para {solicitacao.contrato}"
                 mensagem = (
-                    f"O coordenador {solicitacao.coordenador.username} selecionou o fornecedor {fornecedor.nome}.\n\n"
+                    f"O coordenador {solicitacao.coordenador.username} selecionou o fornecedor {fornecedor.nome}.\n"
+                    f"Justificativa: {justificativa}\n\n"
                     f"É necessário que você aprove ou reprove essa escolha.\n"
                     f"Acesse o sistema HIDROGestão para mais informações:\n"
                     f"https://hidrogestao.pythonanywhere.com/"
@@ -1023,6 +1035,7 @@ def detalhes_triagem_fornecedores(request, pk):
                     )
                 except Exception as e:
                     messages.warning(request, f"Erro ao enviar e-mail para gerente: {e}")
+
             messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando aprovação do gerente.")
         return redirect('lista_solicitacoes')
 
@@ -1032,6 +1045,7 @@ def detalhes_triagem_fornecedores(request, pk):
         "propostas_dict": propostas_dict,
     }
     return render(request, "fornecedores/detalhes_triagem_fornecedores.html", context)
+
 
 
 @login_required

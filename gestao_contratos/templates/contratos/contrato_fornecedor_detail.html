@@ -127,7 +127,7 @@
             <td>{{ evento.data_prevista_pagamento|date:"d/m/Y" }}</td>
             <td>R$ {{ evento.valor_previsto|floatformat:2 }}</td>
 
-            {% if evento.valor_pago %}
+            {% if evento.valor_pago is not None  %}
               <td>
                 R$ {{ evento.valor_pago|floatformat:2 }}
                 {% if evento.valor_pago != evento.valor_previsto %}

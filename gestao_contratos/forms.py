@@ -97,11 +97,11 @@ class ClienteForm(forms.ModelForm):
         fields = '__all__'
         widgets = {
             'nome': forms.TextInput(attrs={'class': 'form-control'}),
+            'razao_social': forms.TextInput(attrs={'class': 'form-control'}),
             'cpf_cnpj': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_cpf_cnpj'}),
             'endereco': forms.Textarea(attrs={'class': 'form-control', 'row': 3}),
             'telefone': forms.TextInput(attrs={'class': 'form-control'}),
             'email':  forms.TextInput(attrs={'class': 'form-control'}),
-
             'ponto_focal':  forms.TextInput(attrs={'class': 'form-control'}),
             'email_focal':  forms.TextInput(attrs={'class': 'form-control'}),
             'telefone_focal':  forms.TextInput(attrs={'class': 'form-control'}),
