@@ -448,18 +448,18 @@ class Indicadores(models.Model):
 
     @property
     def entregas_total(self):
-        return EntregaFornecedor.objects.filter(empresa_terceira=self.empresa_terceira).count()
+        return Evento.objects.filter(empresa_terceira=self.empresa_terceira).count()
 
     @property
     def entregas_conformes(self):
-        return EntregaFornecedor.objects.filter(
+        return Evento.objects.filter(
             empresa_terceira=self.empresa_terceira,
             avaliacao='Aprovado'
         ).count()
 
     @property
     def entregas_nao_conformes(self):
-        return EntregaFornecedor.objects.filter(
+        return Evento.objects.filter(
             empresa_terceira=self.empresa_terceira,
             avaliacao='Reprovado'
         ).count()
@@ -472,7 +472,7 @@ class Indicadores(models.Model):
 
     @property
     def entregas_pontuais(self):
-        return EntregaFornecedor.objects.filter(
+        return Evento.objects.filter(
             empresa_terceira=self.empresa_terceira,
             data_prevista__isnull=False,
             data_entrega__lte=models.F('data_prevista')
