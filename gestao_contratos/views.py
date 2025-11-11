@@ -2130,15 +2130,17 @@ def previsao_pagamentos(request):
 
 @login_required
 def download_bms_aprovados(request):
-    # Obtém as datas do GET
     data_inicial_str = request.GET.get("data_inicial")
     data_limite_str = request.GET.get("data_limite")
 
-    # Se não houver data_inicial, usa a data de hoje
-    if data_inicial_str:
-        data_inicial = datetime.strptime(data_inicial_str, "%Y-%m-%d").date()
-    else:
-        data_inicial = timezone.now().date()
+    if not data_limite_str:
+        return HttpResponse("Data limite é obrigatória para o download.", content_type="text/plain")
+
+    try:
+        data_inicial = datetime.strptime(data_inicial_str, "%Y-%m-%d").date() if data_inicial_str else timezone.now().date()
+        data_limite = datetime.strptime(data_limite_str, "%Y-%m-%d").date()
+    except ValueError:
+        return HttpResponse("Datas inválidas no formato. Use YYYY-MM-DD.", content_type="text/plain")
 
     # data_limite é obrigatória
     data_limite = datetime.strptime(data_limite_str, "%Y-%m-%d").date()
