@@ -2090,6 +2090,10 @@ def previsao_pagamentos(request):
             'evento'
         ).order_by('-data_pagamento')
 
+        # 🔹 Se o coordenador foi selecionado, filtra também os BMs
+        if coordenador:
+            bms = bms.filter(contrato__coordenador=coordenador)
+
         # Determina status de aprovação (para exibir na tabela)
         for bm in bms:
             # Define o status geral
