@@ -2130,76 +2130,60 @@ def previsao_pagamentos(request):
 
 @login_required
 def download_bms_aprovados(request):
-    # Obtém filtros de data da query string
-    data_inicial = request.GET.get("data_inicial")
-    data_limite = request.GET.get("data_limite")
+    # Obtém as datas do GET
+    data_inicial_str = request.GET.get("data_inicial")
+    data_limite_str = request.GET.get("data_limite")
 
-    # Converte para datas válidas
-    try:
-        if data_inicial:
-            data_inicial = datetime.strptime(data_inicial, "%Y-%m-%d").date()
-        if data_limite:
-            data_limite = datetime.strptime(data_limite, "%Y-%m-%d").date()
-    except ValueError:
-        return HttpResponse("Datas inválidas informadas.", content_type="text/plain")
+    # Se não houver data_inicial, usa a data de hoje
+    if data_inicial_str:
+        data_inicial = datetime.strptime(data_inicial_str, "%Y-%m-%d").date()
+    else:
+        data_inicial = timezone.now().date()
 
-    # Filtro base: aprovados por ambos e com arquivo
-    filtros = Q(status_coordenador="aprovado", status_gerente="aprovado") & ~Q(arquivo_bm="")
+    # data_limite é obrigatória
+    data_limite = datetime.strptime(data_limite_str, "%Y-%m-%d").date()
 
-    # Adiciona o filtro de data, se fornecido
-    if data_inicial and data_limite:
-        filtros &= Q(data_pagamento__range=[data_inicial, data_limite])
-    elif data_inicial:
-        filtros &= Q(data_pagamento__gte=data_inicial)
-    elif data_limite:
-        filtros &= Q(data_pagamento__lte=data_limite)
-
-    bms_aprovados = BM.objects.filter(filtros)
+    # Filtra apenas BMs aprovados por ambos e com arquivo, dentro do intervalo de datas
+    bms_aprovados = BM.objects.filter(
+        status_coordenador='aprovado',
+        status_gerente='aprovado',
+        data_pagamento__range=[data_inicial, data_limite]
+    ).exclude(arquivo_bm='')
 
     if not bms_aprovados.exists():
-        return HttpResponse(
-            "Nenhum BM aprovado encontrado no período informado.",
-            content_type="text/plain",
-        )
+        return HttpResponse("Nenhum BM aprovado encontrado para download nesse período.", content_type="text/plain")
 
-    # Cria o arquivo ZIP em memória
     buffer_zip = BytesIO()
     with zipfile.ZipFile(buffer_zip, "w", zipfile.ZIP_DEFLATED) as zipf:
         for bm in bms_aprovados:
             if not bm.arquivo_bm:
-                continue
+                continue  # pula sem arquivo
 
             try:
-                # Lê o arquivo diretamente do campo FileField
-                with bm.arquivo_bm.open("rb") as f:
+                with bm.arquivo_bm.open('rb') as f:
                     conteudo = f.read()
 
-                # Extrai o nome original do arquivo
-                nome_original = os.path.basename(bm.arquivo_bm.name)
-
-                # Adiciona informações de projeto e número do BM
+                # Nome do projeto e nome do arquivo original (mantém extensão)
                 nome_projeto = (
                     bm.contrato.cod_projeto.cod_projeto
                     if bm.contrato and bm.contrato.cod_projeto
                     else "SemProjeto"
                 )
-
-                # Mantém a extensão original
+                nome_original = bm.arquivo_bm.name.split('/')[-1]
                 nome_arquivo_zip = f"{nome_projeto}_BM{bm.numero_bm}_{nome_original}"
 
-                # Adiciona ao ZIP
                 zipf.writestr(nome_arquivo_zip, conteudo)
 
             except Exception as e:
                 print(f"⚠️ Erro ao adicionar BM {bm.id} ao ZIP: {e}")
 
-    # Retorna o arquivo ZIP para download
     buffer_zip.seek(0)
+
+    # Formata as datas no nome do arquivo ZIP (ex: 2025-11-01_a_2025-11-30)
+    nome_arquivo_zip = f"BMs_Aprovados_{data_inicial.strftime('%Y-%m-%d')}_a_{data_limite.strftime('%Y-%m-%d')}.zip"
+
     response = HttpResponse(buffer_zip.getvalue(), content_type="application/zip")
-    nome_zip = "BMs_Aprovados"
-    if data_inicial and data_limite:
-        nome_zip += f"_{data_inicial.strftime('%d%m%Y')}_a_{data_limite.strftime('%d%m%Y')}"
-    response["Content-Disposition"] = f'attachment; filename="{nome_zip}.zip"'
+    response["Content-Disposition"] = f'attachment; filename="{nome_arquivo_zip}"'
     return response
 
 
