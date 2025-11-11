@@ -1386,6 +1386,7 @@ def criar_contrato_se_aprovado(solicitacao):
             objeto=documento.objeto if documento else "",
             condicao_pagamento=proposta.condicao_pagamento if proposta else None,
             status="Ativo",
+            num_contrato_arquivo = documento.arquivo_contrato if documento else None,
             observacao=documento.observacao if documento else None,
         )
         print(f"Contrato criado: {contrato.id}")
@@ -1822,7 +1823,6 @@ def previsao_pagamentos(request):
 
         hoje = timezone.now().date()
         usuario = request.user
-
         data_inicio_filtro = data_inicial or hoje
 
         filtros_base = Q(
@@ -1850,7 +1850,7 @@ def previsao_pagamentos(request):
 
         eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
 
-        # Tabela destrinchada
+        # ==== TABELA ====
         pagamentos = eventos.values(
             'contrato_terceiro__cod_projeto__cod_projeto',
             'empresa_terceira__nome',
@@ -1924,34 +1924,28 @@ def previsao_pagamentos(request):
             )
             grafico_html = plot(fig, auto_open=False, output_type='div')
 
-        # ==== GRÁFICO 2: BARRA PELO CALENDÁRIO (DIVIDIDO POR COORDENADOR) ====
-        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento').values_list('data_pagamento', flat=True))
+        # ==== GRÁFICO 2: POR COORDENADOR ====
+        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
+                          .values_list('data_pagamento', flat=True))
 
-        # Obtém todos os coordenadores envolvidos nos eventos filtrados
         coordenadores = list(set(
             eventos.values_list('contrato_terceiro__coordenador__username', flat=True)
         ))
 
         fig_barra = go.Figure()
-        data_inicio = None
-
-        # Para cada coordenador, gera uma série de barras empilhadas
         for coord in coordenadores:
             y_previstos = []
             data_inicio = None
 
             for data_fim in calendario:
-                if data_inicio is None:
-                    eventos_previsto = Evento.objects.filter(
-                        data_prevista_pagamento__lte=data_fim,
-                        contrato_terceiro__coordenador__username=coord
-                    )
-                else:
-                    eventos_previsto = Evento.objects.filter(
-                        data_prevista_pagamento__gt=data_inicio,
-                        data_prevista_pagamento__lte=data_fim,
-                        contrato_terceiro__coordenador__username=coord
-                    )
+                filtro_periodo = Q(data_prevista_pagamento__lte=data_fim)
+                if data_inicio:
+                    filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
+
+                eventos_previsto = Evento.objects.filter(
+                    filtro_periodo,
+                    contrato_terceiro__coordenador__username=coord
+                )
 
                 total_previsto_periodo = eventos_previsto.aggregate(
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
@@ -1966,7 +1960,6 @@ def previsao_pagamentos(request):
                 y=y_previstos
             ))
 
-        # Layout empilhado e estilizado
         fig_barra.update_layout(
             barmode='stack',
             title="Pagamentos Previsto (por Coordenador, conforme calendário de pagamento)",
@@ -1979,34 +1972,36 @@ def previsao_pagamentos(request):
 
         grafico_barras = plot(fig_barra, output_type='div')
 
-        # ==== GRÁFICO 2.2: BARRA PELO CALENDÁRIO (DIVIDIDO POR PROJETO) ====
-        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento').values_list('data_pagamento', flat=True))
+        # ==== GRÁFICO 2.2: POR PROJETO ====
+        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
+                          .values_list('data_pagamento', flat=True))
 
-        # Obtém todos os coordenadores envolvidos nos eventos filtrados
-        projetos = list(set(
-            eventos.values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True)
-        ))
+        # 🔸 filtra os projetos conforme coordenador (ou todos se não houver filtro)
+        if coordenador:
+            projetos = list(Evento.objects.filter(
+                contrato_terceiro__coordenador=coordenador
+            ).values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True))
+        else:
+            projetos = list(Evento.objects.values_list(
+                'contrato_terceiro__cod_projeto__cod_projeto', flat=True))
+
+        projetos = list(set(projetos))
 
         fig_barra_proj = go.Figure()
-        data_inicio = None
-
-        # Para cada coordenador, gera uma série de barras empilhadas
         for proj in projetos:
             y_previstos = []
             data_inicio = None
 
             for data_fim in calendario:
-                if data_inicio is None:
-                    eventos_previsto = Evento.objects.filter(
-                        data_prevista_pagamento__lte=data_fim,
-                        contrato_terceiro__cod_projeto__cod_projeto=proj
-                    )
-                else:
-                    eventos_previsto = Evento.objects.filter(
-                        data_prevista_pagamento__gt=data_inicio,
-                        data_prevista_pagamento__lte=data_fim,
-                        contrato_terceiro__cod_projeto__cod_projeto=proj
-                    )
+                filtro_periodo = Q(data_prevista_pagamento__lte=data_fim)
+                if data_inicio:
+                    filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
+
+                filtro_base = Q(contrato_terceiro__cod_projeto__cod_projeto=proj)
+                if coordenador:
+                    filtro_base &= Q(contrato_terceiro__coordenador=coordenador)
+
+                eventos_previsto = Evento.objects.filter(filtro_periodo & filtro_base)
 
                 total_previsto_periodo = eventos_previsto.aggregate(
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
@@ -2016,12 +2011,11 @@ def previsao_pagamentos(request):
                 data_inicio = data_fim
 
             fig_barra_proj.add_trace(go.Bar(
-                name=f"{proj or 'Sem Coordenador'}",
+                name=f"{proj or 'Sem Projeto'}",
                 x=calendario,
                 y=y_previstos
             ))
 
-        # Layout empilhado e estilizado
         fig_barra_proj.update_layout(
             barmode='stack',
             title="Pagamentos Previsto (por Projeto, conforme calendário de pagamento)",
@@ -2034,55 +2028,54 @@ def previsao_pagamentos(request):
 
         grafico_barras_projeto = plot(fig_barra_proj, output_type='div')
 
-        # ==== GRÁFICO 3: BARRA PELO CALENDÁRIO ====
-        # Pega as datas do calendário do banco
-        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento').values_list('data_pagamento', flat=True))
+        # ==== GRÁFICO 3: PREVISTO x PAGO ====
+        calendario = list(
+            CalendarioPagamento.objects.order_by("data_pagamento")
+            .values_list("data_pagamento", flat=True)
+        )
 
         y_previstos = []
         y_pagos = []
         data_inicio = None
 
         for data_fim in calendario:
-            if data_inicio is None:
-                eventos_previsto = Evento.objects.filter(data_prevista_pagamento__lte=data_fim)
-                eventos_pago = Evento.objects.filter(data_pagamento__lte=data_fim)
-            else:
-                eventos_previsto = Evento.objects.filter(
-                    data_prevista_pagamento__gt=data_inicio,
-                    data_prevista_pagamento__lte=data_fim
-                )
-                eventos_pago = Evento.objects.filter(
-                    data_pagamento__gt=data_inicio,
-                    data_pagamento__lte=data_fim
-                )
+            filtro_prev = Q(data_prevista_pagamento__lte=data_fim)
+            filtro_pago = Q(data_pagamento__lte=data_fim)
+            if data_inicio:
+                filtro_prev &= Q(data_prevista_pagamento__gt=data_inicio)
+                filtro_pago &= Q(data_pagamento__gt=data_inicio)
 
-            total_previsto_periodo = eventos_previsto.aggregate(
-                total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
-            )['total']
+            if coordenador:
+                filtro_prev &= Q(contrato_terceiro__coordenador=coordenador)
+                filtro_pago &= Q(contrato_terceiro__coordenador=coordenador)
 
-            total_pago_periodo = eventos_pago.aggregate(
-                total=Coalesce(Sum('valor_pago'), Decimal('0.00'))
-            )['total']
+            total_previsto_periodo = Evento.objects.filter(filtro_prev).aggregate(
+                total=Coalesce(Sum("valor_previsto"), Decimal("0.00"))
+            )["total"]
+
+            total_pago_periodo = Evento.objects.filter(filtro_pago).aggregate(
+                total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
+            )["total"]
 
             y_previstos.append(total_previsto_periodo)
             y_pagos.append(total_pago_periodo)
             data_inicio = data_fim
 
-        fig_barra = go.Figure(data=[
-            go.Bar(name='Previsto', x=calendario, y=y_previstos, marker_color='orange'),
-            go.Bar(name='Pago', x=calendario, y=y_pagos, marker_color='green')
+        fig_barra_final = go.Figure(data=[
+            go.Bar(name="Previsto", x=calendario, y=y_previstos, marker_color="orange"),
+            go.Bar(name="Pago", x=calendario, y=y_pagos, marker_color="green"),
         ])
 
-        fig_barra.update_layout(
-            barmode='group',
+        fig_barra_final.update_layout(
+            barmode="group",
             title="Pagamentos Previsto x Pago (Calendário de pagamento)",
             xaxis_title="Data",
             yaxis_title="Valor (R$)",
             template="plotly_white",
-            height=500
+            height=500,
         )
 
-        grafico_barra = plot(fig_barra, output_type='div')
+        grafico_barra = plot(fig_barra_final, output_type="div")
 
     return render(request, "gestao_contratos/previsao_pagamentos.html", {
         "form": form,
@@ -2094,6 +2087,7 @@ def previsao_pagamentos(request):
         "grafico_barras_projeto": grafico_barras_projeto,
         "grafico_barra": grafico_barra,
     })
+
 
 
 @login_required
