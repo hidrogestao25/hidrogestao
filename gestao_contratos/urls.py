@@ -57,5 +57,7 @@ urlpatterns = [
     path("previsao-pagamentos/", views.previsao_pagamentos, name="previsao_pagamentos"),
     path('previsao-pagamentos/exportar/', views.exportar_previsao_pagamentos_excel, name='exportar_previsao_pagamentos_excel'),
 
+    path('download_bms_aprovados/', views.download_bms_aprovados, name='download_bms_aprovados'),
+
     path('ranking-fornecedores/', views.ranking_fornecedores, name='ranking_fornecedores'),
 ]

@@ -19,6 +19,8 @@ import pandas as pd
 from plotly.offline import plot
 import plotly.colors as pc
 
+import os
+import zipfile
 import openpyxl
 from django.http import HttpResponse, JsonResponse
 from openpyxl import Workbook
@@ -1815,6 +1817,8 @@ def previsao_pagamentos(request):
     grafico_barra = None
     grafico_barras = None
     grafico_barras_projeto = None
+    bms = []
+    total_bm_pago = None
 
     if form.is_valid():
         data_limite = form.cleaned_data["data_limite"]
@@ -2077,6 +2081,35 @@ def previsao_pagamentos(request):
 
         grafico_barra = plot(fig_barra_final, output_type="div")
 
+        # ==== TABELA DE BMs ====
+        bms = BM.objects.filter(
+            data_pagamento__range=[data_inicio_filtro, data_limite]
+        ).select_related(
+            'contrato__cod_projeto',
+            'contrato__coordenador',
+            'evento'
+        ).order_by('-data_pagamento')
+
+        # Determina status de aprovação (para exibir na tabela)
+        for bm in bms:
+            # Define o status geral
+            if bm.status_coordenador == 'aprovado' and bm.status_gerente == 'aprovado':
+                bm.status_geral = '✅ Aprovado'
+                bm.falta_aprovar = '-'
+            elif bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado':
+                bm.status_geral = '❌ Reprovado'
+                bm.falta_aprovar = '-'
+            else:
+                bm.status_geral = '⏳ Aguardando Aprovação'
+                faltando = []
+                if bm.status_coordenador != 'aprovado':
+                    faltando.append('Coordenador')
+                if bm.status_gerente != 'aprovado':
+                    faltando.append('Gerente')
+                bm.falta_aprovar = ', '.join(faltando)
+
+        total_bm_pago = sum(bm.valor_pago or 0 for bm in bms)
+
     return render(request, "gestao_contratos/previsao_pagamentos.html", {
         "form": form,
         "pagamentos": pagamentos,
@@ -2086,8 +2119,47 @@ def previsao_pagamentos(request):
         "grafico_barras": grafico_barras,
         "grafico_barras_projeto": grafico_barras_projeto,
         "grafico_barra": grafico_barra,
+        "bms": bms,
+        "total_bm_pago": total_bm_pago,
     })
 
+
+@login_required
+def download_bms_aprovados(request):
+    # Filtra apenas BMs aprovados por ambos e com arquivo
+    bms_aprovados = BM.objects.filter(
+        status_coordenador='aprovado',
+        status_gerente='aprovado'
+    ).exclude(arquivo_bm='')  # evita registros com campo vazio
+
+    if not bms_aprovados.exists():
+        return HttpResponse("Nenhum BM aprovado encontrado para download.", content_type="text/plain")
+
+    buffer_zip = BytesIO()
+    with zipfile.ZipFile(buffer_zip, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for bm in bms_aprovados:
+            if not bm.arquivo_bm:
+                continue  # pula sem arquivo
+
+            try:
+                with bm.arquivo_bm.open('rb') as f:
+                    conteudo = f.read()
+
+                nome_projeto = (
+                    bm.contrato.cod_projeto.cod_projeto
+                    if bm.contrato and bm.contrato.cod_projeto
+                    else "SemProjeto"
+                )
+                nome_arquivo_zip = f"{nome_projeto}_BM{bm.numero_bm}.pdf"
+                zipf.writestr(nome_arquivo_zip, conteudo)
+
+            except Exception as e:
+                print(f"⚠️ Erro ao adicionar BM {bm.id} ao ZIP: {e}")
+
+    buffer_zip.seek(0)
+    response = HttpResponse(buffer_zip.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = 'attachment; filename="BMs_Aprovados.zip"'
+    return response
 
 
 @login_required

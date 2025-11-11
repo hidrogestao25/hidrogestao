@@ -73,15 +73,43 @@
                 {% endif %}
               </td>
               <td>
-                {% if user.grupo in "coordenador gerente" %}
+                {% if user.grupo == "coordenador" %}
                   <div class="d-flex gap-1">
-                    <button type="button" class="btn btn-sm btn-success btn-aprovar" data-bm-id="{{ bm.id }}">Aprovar</button>
-                    <button type="button" class="btn btn-sm btn-danger btn-reprovar" data-bm-id="{{ bm.id }}">Reprovar</button>
+                    <button type="button"
+                            class="btn btn-sm btn-success btn-aprovar"
+                            data-bm-id="{{ bm.id }}"
+                            {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>
+                      Aprovar
+                    </button>
+                    <button type="button"
+                            class="btn btn-sm btn-danger btn-reprovar"
+                            data-bm-id="{{ bm.id }}"
+                            {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>
+                      Reprovar
+                    </button>
                   </div>
+
+                {% elif user.grupo == "gerente" %}
+                  <div class="d-flex gap-1">
+                    <button type="button"
+                            class="btn btn-sm btn-success btn-aprovar"
+                            data-bm-id="{{ bm.id }}"
+                            {% if bm.status_gerente != "pendente" %}disabled{% endif %}>
+                      Aprovar
+                    </button>
+                    <button type="button"
+                            class="btn btn-sm btn-danger btn-reprovar"
+                            data-bm-id="{{ bm.id }}"
+                            {% if bm.status_gerente != "pendente" %}disabled{% endif %}>
+                      Reprovar
+                    </button>
+                  </div>
+
                 {% else %}
                   -
                 {% endif %}
               </td>
+
             </tr>
           {% endfor %}
         </tbody>
