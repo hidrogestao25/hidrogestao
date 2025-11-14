@@ -2185,13 +2185,16 @@ def download_bms_aprovados(request):
     coordenador = request.GET.get("coordenador")
 
     if not data_limite_str:
-        return HttpResponse("Data limite é obrigatória para o download.", content_type="text/plain")
+        messages.error(request, "Data limite é obrigatória para o download.")
+        return redirect("previsao_pagamentos")
+
 
     try:
         data_inicial = datetime.strptime(data_inicial_str, "%Y-%m-%d").date() if data_inicial_str else timezone.now().date()
         data_limite = datetime.strptime(data_limite_str, "%Y-%m-%d").date()
     except ValueError:
-        return HttpResponse("Datas inválidas no formato. Use YYYY-MM-DD.", content_type="text/plain")
+        messages.error(request, "Datas inválidas no formato. Use YYYY-MM-DD.")
+        return redirect("previsao_pagamentos")
 
     # === FILTRO PRINCIPAL: APROVADOS ===
     bms_aprovados = BM.objects.filter(
@@ -2219,7 +2222,8 @@ def download_bms_aprovados(request):
     bms_aprovados = bms_aprovados.exclude(arquivo_bm='')
 
     if not bms_aprovados.exists():
-        return HttpResponse("Nenhum BM aprovado encontrado para download nesse período.", content_type="text/plain")
+        messages.error(request, "Nenhum BM aprovado encontrado para download nesse período.")
+        return redirect("previsao_pagamentos")
 
     # === CRIAÇÃO DO ZIP ===
     buffer_zip = BytesIO()
