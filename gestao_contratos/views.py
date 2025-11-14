@@ -1740,8 +1740,10 @@ def registrar_entrega(request, pk):
     contrato = evento.contrato_terceiro
     boletins = evento.boletins_medicao.all()
 
-    # 🔹 Adiciona a cor da linha conforme o status
     boletins_detalhados = []
+    has_reprovacao_coordenador = False
+    has_reprovacao_gerente = False
+
     for bm in boletins:
         if bm.status_coordenador == "aprovado" and bm.status_gerente == "aprovado":
             row_class = "table-success"
@@ -1749,6 +1751,12 @@ def registrar_entrega(request, pk):
             row_class = "table-danger"
         else:
             row_class = "table-warning"
+
+        # Marca se há reprovação para exibir colunas no template
+        if bm.status_coordenador == "reprovado":
+            has_reprovacao_coordenador = True
+        if bm.status_gerente == "reprovado":
+            has_reprovacao_gerente = True
 
         boletins_detalhados.append({
             "bm": bm,
@@ -1777,7 +1785,10 @@ def registrar_entrega(request, pk):
         "evento": evento,
         "contrato": contrato,
         "boletins_detalhados": boletins_detalhados,
+        "has_reprovacao_coordenador": has_reprovacao_coordenador,
+        "has_reprovacao_gerente": has_reprovacao_gerente,
     })
+
 
 
 @login_required
@@ -1785,26 +1796,45 @@ def avaliar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
     usuario = request.user
 
+    # Verifica permissão
     if usuario.grupo not in ["coordenador", "gerente"]:
         return JsonResponse({"success": False, "error": "Sem permissão."}, status=403)
 
     acao = request.POST.get("acao")
+    justificativa = request.POST.get("justificativa", "").strip()
+
     if acao not in ["aprovar", "reprovar"]:
         return JsonResponse({"success": False, "error": "Ação inválida."}, status=400)
 
+    # Atualiza campos conforme o grupo
     if usuario.grupo == "coordenador":
         bm.status_coordenador = "aprovado" if acao == "aprovar" else "reprovado"
         bm.data_aprovacao_coordenador = timezone.now()
+
+        if acao == "reprovar":
+            bm.justificativa_reprovacao_coordenador = justificativa or "Sem justificativa informada."
+        else:
+            bm.justificativa_reprovacao_coordenador = None
+
     elif usuario.grupo == "gerente":
         bm.status_gerente = "aprovado" if acao == "aprovar" else "reprovado"
         bm.data_aprovacao_gerente = timezone.now()
 
+        if acao == "reprovar":
+            bm.justificativa_reprovacao_gerente = justificativa or "Sem justificativa informada."
+        else:
+            bm.justificativa_reprovacao_gerente = None
+
     bm.save()
+
     return JsonResponse({
         "success": True,
         "status_coordenador": bm.status_coordenador,
-        "status_gerente": bm.status_gerente
+        "status_gerente": bm.status_gerente,
+        "justificativa_reprovacao_coordenador": bm.justificativa_reprovacao_coordenador,
+        "justificativa_reprovacao_gerente": bm.justificativa_reprovacao_gerente,
     })
+
 
 
 @login_required
@@ -1819,6 +1849,7 @@ def previsao_pagamentos(request):
     grafico_barras_projeto = None
     bms = []
     total_bm_pago = None
+    total_bm_previsto = None
 
     if form.is_valid():
         data_limite = form.cleaned_data["data_limite"]
@@ -2082,9 +2113,22 @@ def previsao_pagamentos(request):
         grafico_barra = plot(fig_barra_final, output_type="div")
 
         # ==== TABELA DE BMs ====
-        bms = BM.objects.filter(
-            data_pagamento__range=[data_inicio_filtro, data_limite]
-        ).select_related(
+        # === FILTRO DE BM (Pagamento OU Período de Medição) ===
+        filtro_bm = request.GET.get("filtro_bm", "pagamento")
+
+        if filtro_bm == "medicao":
+            # filtra pelo período de medição definido no form
+            bms = BM.objects.filter(
+                data_inicial_medicao__date__gte=data_inicio_filtro,
+                data_final_medicao__date__lte=data_limite
+            )
+        else:
+            # filtro padrão: data de pagamento
+            bms = BM.objects.filter(
+                data_pagamento__range=[data_inicio_filtro, data_limite]
+            )
+
+        bms = bms.select_related(
             'contrato__cod_projeto',
             'contrato__coordenador',
             'evento'
@@ -2113,6 +2157,10 @@ def previsao_pagamentos(request):
                 bm.falta_aprovar = ', '.join(faltando)
 
         total_bm_pago = sum(bm.valor_pago or 0 for bm in bms)
+        total_bm_previsto = sum(
+            (bm.evento.valor_previsto if bm.evento and bm.evento.valor_previsto else 0)
+            for bm in bms
+        )
 
     return render(request, "gestao_contratos/previsao_pagamentos.html", {
         "form": form,
@@ -2125,6 +2173,7 @@ def previsao_pagamentos(request):
         "grafico_barra": grafico_barra,
         "bms": bms,
         "total_bm_pago": total_bm_pago,
+        "total_bm_previsto": total_bm_previsto,
     })
 
 
@@ -2132,6 +2181,8 @@ def previsao_pagamentos(request):
 def download_bms_aprovados(request):
     data_inicial_str = request.GET.get("data_inicial")
     data_limite_str = request.GET.get("data_limite")
+    filtro_bm = request.GET.get("filtro_bm", "pagamento")  # pagto ou medicao
+    coordenador = request.GET.get("coordenador")
 
     if not data_limite_str:
         return HttpResponse("Data limite é obrigatória para o download.", content_type="text/plain")
@@ -2142,30 +2193,45 @@ def download_bms_aprovados(request):
     except ValueError:
         return HttpResponse("Datas inválidas no formato. Use YYYY-MM-DD.", content_type="text/plain")
 
-    # data_limite é obrigatória
-    data_limite = datetime.strptime(data_limite_str, "%Y-%m-%d").date()
-
-    # Filtra apenas BMs aprovados por ambos e com arquivo, dentro do intervalo de datas
+    # === FILTRO PRINCIPAL: APROVADOS ===
     bms_aprovados = BM.objects.filter(
         status_coordenador='aprovado',
-        status_gerente='aprovado',
-        data_pagamento__range=[data_inicial, data_limite]
-    ).exclude(arquivo_bm='')
+        status_gerente='aprovado'
+    )
+
+    # === FILTRAR POR PAGAMENTO OU MEDIÇÃO ===
+    if filtro_bm == "medicao":
+        bms_aprovados = bms_aprovados.filter(
+            data_inicial_medicao__date__gte=data_inicial,
+            data_final_medicao__date__lte=data_limite
+        )
+    else:
+        # PADRÃO → por pagamento
+        bms_aprovados = bms_aprovados.filter(
+            data_pagamento__range=[data_inicial, data_limite]
+        )
+
+    # === FILTRAR POR COORDENADOR, SE APLICADO ===
+    if coordenador:
+        bms_aprovados = bms_aprovados.filter(contrato__coordenador=coordenador)
+
+    # === APENAS COM ARQUIVO ===
+    bms_aprovados = bms_aprovados.exclude(arquivo_bm='')
 
     if not bms_aprovados.exists():
         return HttpResponse("Nenhum BM aprovado encontrado para download nesse período.", content_type="text/plain")
 
+    # === CRIAÇÃO DO ZIP ===
     buffer_zip = BytesIO()
     with zipfile.ZipFile(buffer_zip, "w", zipfile.ZIP_DEFLATED) as zipf:
         for bm in bms_aprovados:
             if not bm.arquivo_bm:
-                continue  # pula sem arquivo
+                continue
 
             try:
                 with bm.arquivo_bm.open('rb') as f:
                     conteudo = f.read()
 
-                # Nome do projeto e nome do arquivo original (mantém extensão)
                 nome_projeto = (
                     bm.contrato.cod_projeto.cod_projeto
                     if bm.contrato and bm.contrato.cod_projeto
@@ -2181,12 +2247,12 @@ def download_bms_aprovados(request):
 
     buffer_zip.seek(0)
 
-    # Formata as datas no nome do arquivo ZIP (ex: 2025-11-01_a_2025-11-30)
     nome_arquivo_zip = f"BMs_Aprovados_{data_inicial.strftime('%Y-%m-%d')}_a_{data_limite.strftime('%Y-%m-%d')}.zip"
 
     response = HttpResponse(buffer_zip.getvalue(), content_type="application/zip")
-    response["Content-Disposition"] = f'attachment; filename="{nome_arquivo_zip}"'
+    response["Content-Disposition"] = f'attachment; filename=\"{nome_arquivo_zip}\"'
     return response
+
 
 
 @login_required
@@ -2452,8 +2518,13 @@ def detalhes_entrega(request, evento_id):
     if hasattr(evento, 'contrato_terceiro') and evento.contrato_terceiro.empresa_terceira:
         fornecedor = evento.contrato_terceiro.empresa_terceira
 
+    tem_reprovacao_coordenador = bms.filter(status_coordenador='reprovado').exists()
+    tem_reprovacao_gerente = bms.filter(status_gerente='reprovado').exists()
+
     return render(request, 'contratos/detalhes_entrega.html', {
         'evento': evento,
-        'bms': bms,
         'fornecedor': fornecedor,
+        'bms': bms,
+        'tem_reprovacao_coordenador': tem_reprovacao_coordenador,
+        'tem_reprovacao_gerente': tem_reprovacao_gerente,
     })
