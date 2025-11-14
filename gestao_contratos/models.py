@@ -601,6 +601,15 @@ class BM(models.Model):
     status_gerente = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
     data_aprovacao_gerente = models.DateTimeField(null=True, blank=True)
 
+    justificativa_reprovacao_coordenador = models.TextField(
+        null=True, blank=True,
+        verbose_name="Justificativa da Reprovação do Coordenador"
+    )
+    justificativa_reprovacao_gerente = models.TextField(
+        null=True, blank=True,
+        verbose_name="Justificativa da Reprovação do Gerente"
+    )
+    
     arquivo_bm = models.FileField(
         upload_to='BM/',
         verbose_name='Inserir arquivo do Boletim de Medição',

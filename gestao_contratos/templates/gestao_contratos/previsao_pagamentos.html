@@ -69,7 +69,7 @@
         <td>R$ {{ item.valor_pago|floatformat:2 }}</td>
       </tr>
       {% endfor %}
-      <tr class="fw-bold">
+      <tr class="fw-bold table-secondary">
         <td colspan="4">Total Geral</td>
         <td>R$ {{ total_previsto|floatformat:2 }}</td>
         <td></td>
@@ -83,22 +83,55 @@
     <div class="d-flex justify-content-between align-items-center mt-5">
       <h4>Boletins de Medição (BMs) com Pagamento no Período</h4>
       <div class="d-flex justify-content-end mb-3">
-            <a href="{% url 'download_bms_aprovados' %}?data_inicial={{ form.data_inicial.value }}&data_limite={{ form.data_limite.value }}" class="btn btn-success">
-              <i class="bi bi-download"></i> Baixar BMs Aprovados (.zip)
-            </a>
+        <a href="{% url 'download_bms_aprovados' %}?data_inicial={{ form.data_inicial.value }}&data_limite={{ form.data_limite.value }}&filtro_bm={{ request.GET.filtro_bm|default:'pagamento' }}"
+           class="btn btn-success">
+            <i class="bi bi-download"></i> Baixar BMs Aprovados (.zip)
+        </a>
+
       </div>
     </div>
+
+    <form method="get" class="mb-3">
+        <div class="d-flex gap-3 align-items-center">
+
+            <label class="form-check-label fw-bold me-3">Filtrar BMs por:</label>
+
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="filtro_bm" value="pagamento"
+                       {% if request.GET.filtro_bm != "medicao" %}checked{% endif %}>
+                <label class="form-check-label">Data de Pagamento</label>
+            </div>
+
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="filtro_bm" value="medicao"
+                       {% if request.GET.filtro_bm == "medicao" %}checked{% endif %}>
+                <label class="form-check-label">Período de Medição</label>
+            </div>
+
+            <button type="submit" class="btn btn-primary ms-3">
+                Aplicar
+            </button>
+        </div>
+
+        <!-- mantém os filtros originais -->
+        <input type="hidden" name="data_inicial" value="{{ form.data_inicial.value }}">
+        <input type="hidden" name="data_limite" value="{{ form.data_limite.value }}">
+        <input type="hidden" name="coordenador" value="{{ form.coordenador.value }}">
+    </form>
+
 
     <table class="table table-bordered table-striped">
     <thead class="table-dark">
       <tr>
         <th>Projeto</th>
+        <th>Fornecedor</th>
         <th>Coordenador</th>
         <th>Nº BM</th>
-        <th>Valor Pago</th>
+        <th>Período de Medição</th>
+        <th>Valor Previsto</th>
+        <th>Valor a Ser Pago</th>
         <th>Data de Pagamento</th>
-        <th>Status</th>
-        <th>Falta Aprovar</th>
+        <th>Aprovações</th>
         <th>Ações</th>
       </tr>
     </thead>
@@ -106,21 +139,45 @@
       {% for bm in bms %}
         <tr>
           <td>{{ bm.contrato.cod_projeto.cod_projeto }}</td>
-          <td>{{ bm.contrato.coordenador.username }}</td>
+          <td>{{ bm.contrato.empresa_terceira.nome }}</td>
+          <td>{{ bm.contrato.coordenador.first_name }} {{ bm.contrato.coordenador.last_name }} </td>
           <td>{{ bm.numero_bm }}</td>
-          <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
-          <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
-          <td>{{ bm.status_geral }}</td>
           <td>
-            {% if bm.falta_aprovar == '-' %}
-              <span class="text-success">Nenhum</span>
+              {% if bm.data_inicial_medicao and bm.data_final_medicao %}
+                  {{ bm.data_inicial_medicao|date:"d/m/Y" }} até {{ bm.data_final_medicao|date:"d/m/Y" }}
+              {% else %}
+                  <span class="text-muted">Não informado</span>
+              {% endif %}
+          </td>
+
+          <td>
+            {% if bm.evento and bm.evento.valor_previsto %}
+              R$ {{ bm.evento.valor_previsto|floatformat:2 }}
             {% else %}
-              <span class="text-warning">{{ bm.falta_aprovar }}</span>
+              <span class="text-muted">-</span>
             {% endif %}
           </td>
+          <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
+          <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
+
+          <td>
+              {% if bm.data_aprovacao_coordenador %}
+                  <strong>Coord.:</strong> {{ bm.data_aprovacao_coordenador|date:"d/m/Y H:i" }}<br>
+              {% else %}
+                  <strong>Coord.:</strong> <span class="text-warning">Pendente</span><br>
+              {% endif %}
+
+              {% if bm.data_aprovacao_gerente %}
+                  <strong>Gerente:</strong> {{ bm.data_aprovacao_gerente|date:"d/m/Y H:i" }}
+              {% else %}
+                  <strong>Gerente:</strong> <span class="text-warning">Pendente</span>
+              {% endif %}
+          </td>
+
+
+          <!-- Ações (sem alteração) -->
           <td>
             {% if bm.evento %}
-
               {% if request.user.grupo == 'suprimento' %}
                 <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
                    class="btn btn-sm btn-outline-success">
@@ -148,14 +205,16 @@
         </tr>
       {% endfor %}
 
-      <!-- 🔸 Linha de total geral -->
+      <!-- 🔸 Linha de totais gerais -->
       <tr class="fw-bold table-secondary">
-        <td colspan="3" class="text-end">Total Geral:</td>
+        <td colspan="5" class="text-end">Totais Gerais:</td>
+        <td>R$ {{ total_bm_previsto|floatformat:2 }}</td>
         <td>R$ {{ total_bm_pago|floatformat:2 }}</td>
-        <td colspan="4"></td>
+        <td colspan="5"></td>
       </tr>
     </tbody>
   </table>
+
 
   </div>
   {% endif %}
