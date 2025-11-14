@@ -217,6 +217,43 @@
 
 
   </div>
+  {% else %}
+  <div class="mt-5">
+    <div class="justify-content-between align-items-center mt-5">
+      <h4>Boletins de Medição (BMs) com Pagamento no Período</h4>
+
+          <h5>Não há Boletins cadastrados para o filtro solicitado</h5>
+
+      </div>
+
+      <form method="get" class="mb-3">
+          <div class="d-flex gap-3 align-items-center">
+
+              <label class="form-check-label fw-bold me-3">Filtrar BMs por:</label>
+
+              <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="filtro_bm" value="pagamento"
+                         {% if request.GET.filtro_bm != "medicao" %}checked{% endif %}>
+                  <label class="form-check-label">Data de Pagamento</label>
+              </div>
+
+              <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="filtro_bm" value="medicao"
+                         {% if request.GET.filtro_bm == "medicao" %}checked{% endif %}>
+                  <label class="form-check-label">Período de Medição</label>
+              </div>
+
+              <button type="submit" class="btn btn-primary ms-3">
+                  Aplicar
+              </button>
+          </div>
+
+          <!-- mantém os filtros originais -->
+          <input type="hidden" name="data_inicial" value="{{ form.data_inicial.value }}">
+          <input type="hidden" name="data_limite" value="{{ form.data_limite.value }}">
+          <input type="hidden" name="coordenador" value="{{ form.coordenador.value }}">
+      </form>
+    </div>
   {% endif %}
 
   {% if grafico_html %}
