@@ -37,51 +37,10 @@
   </form>
 
 
-  {% if pagamentos %}
-  <div class="d-flex justify-content-end mb-3">
-    <a href="{% url 'exportar_previsao_pagamentos_excel' %}?{{ request.GET.urlencode }}"
-       class="btn btn-success">
-      <i class="bi bi-file-earmark-excel"></i> Baixar Excel
-    </a>
-  </div>
-
-  <table class="table table-bordered table-striped">
-    <thead class="table-dark">
-      <tr>
-        <th>Projeto</th>
-        <th>Coordenador</th>
-        <th>Fornecedor</th>
-        <th>Data Prevista</th>
-        <th>Valor Previsto</th>
-        <th>Data Pagamento</th>
-        <th>Valor Pago</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in pagamentos %}
-      <tr>
-        <td>{{ item.contrato_terceiro__cod_projeto__cod_projeto }}</td>
-        <td>{{ item.contrato_terceiro__coordenador__username }}</td>
-        <td>{{ item.empresa_terceira__nome }}</td>
-        <td>{{ item.data_prevista_pagamento|date:"d/m/Y" }}</td>
-        <td>R$ {{ item.valor_previsto|floatformat:2 }}</td>
-        <td>{% if item.data_pagamento %}{{ item.data_pagamento|date:"d/m/Y" }}{% endif %}</td>
-        <td>R$ {{ item.valor_pago|floatformat:2 }}</td>
-      </tr>
-      {% endfor %}
-      <tr class="fw-bold table-secondary">
-        <td colspan="4">Total Geral</td>
-        <td>R$ {{ total_previsto|floatformat:2 }}</td>
-        <td></td>
-        <td>R$ {{ total_pago|floatformat:2 }}</td>
-      </tr>
-    </tbody>
-  </table>
-
   {% if bms %}
   <div class="mt-5">
     <div class="d-flex justify-content-between align-items-center mt-5">
-      <h4>Boletins de Medição (BMs) com Pagamento no Período</h4>
+      <h4>Boletins de Medição (BMs)</h4>
       <div class="d-flex justify-content-end mb-3">
         <a href="{% url 'download_bms_aprovados' %}?data_inicial={{ form.data_inicial.value }}&data_limite={{ form.data_limite.value }}&filtro_bm={{ request.GET.filtro_bm|default:'pagamento' }}"
            class="btn btn-success">
@@ -99,7 +58,7 @@
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="radio" name="filtro_bm" value="pagamento"
                        {% if request.GET.filtro_bm != "medicao" %}checked{% endif %}>
-                <label class="form-check-label">Data de Pagamento</label>
+                <label class="form-check-label">Data de Criação do BM</label>
             </div>
 
             <div class="form-check form-check-inline">
@@ -220,7 +179,7 @@
   {% else %}
   <div class="mt-5">
     <div class="justify-content-between align-items-center mt-5">
-      <h4>Boletins de Medição (BMs) com Pagamento no Período</h4>
+      <h4>Boletins de Medição (BMs)</h4>
 
           <h5>Não há Boletins cadastrados para o filtro solicitado</h5>
 
@@ -234,7 +193,7 @@
               <div class="form-check form-check-inline">
                   <input class="form-check-input" type="radio" name="filtro_bm" value="pagamento"
                          {% if request.GET.filtro_bm != "medicao" %}checked{% endif %}>
-                  <label class="form-check-label">Data de Pagamento</label>
+                  <label class="form-check-label">Data de Criação do BM</label>
               </div>
 
               <div class="form-check form-check-inline">
@@ -255,6 +214,54 @@
       </form>
     </div>
   {% endif %}
+
+
+  {% if pagamentos %}
+  <div class="d-flex justify-content-between align-items-center mt-5">
+    <h4>Previsão de Pagamentos</h4>
+    <div class="d-flex justify-content-end mb-3">
+      <a href="{% url 'exportar_previsao_pagamentos_excel' %}?{{ request.GET.urlencode }}"
+         class="btn btn-success">
+        <i class="bi bi-file-earmark-excel"></i> Baixar Excel
+      </a>
+    </div>
+  </div>
+
+
+  <table class="table table-bordered table-striped">
+    <thead class="table-dark">
+      <tr>
+        <th>Projeto</th>
+        <th>Coordenador</th>
+        <th>Fornecedor</th>
+        <th>Data Prevista</th>
+        <th>Valor Previsto</th>
+        <th>Data Pagamento</th>
+        <th>Valor Pago</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pagamentos %}
+      <tr>
+        <td>{{ item.contrato_terceiro__cod_projeto__cod_projeto }}</td>
+        <td>{{ item.contrato_terceiro__coordenador__username }}</td>
+        <td>{{ item.empresa_terceira__nome }}</td>
+        <td>{{ item.data_prevista_pagamento|date:"d/m/Y" }}</td>
+        <td>R$ {{ item.valor_previsto|floatformat:2 }}</td>
+        <td>{% if item.data_pagamento %}{{ item.data_pagamento|date:"d/m/Y" }}{% endif %}</td>
+        <td>R$ {{ item.valor_pago|floatformat:2 }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="fw-bold table-secondary">
+        <td colspan="4">Total Geral</td>
+        <td>R$ {{ total_previsto|floatformat:2 }}</td>
+        <td></td>
+        <td>R$ {{ total_pago|floatformat:2 }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+
 
   {% if grafico_html %}
     <h4 class="mt-5">Gráfico de Pagamentos Acumulados</h4>
