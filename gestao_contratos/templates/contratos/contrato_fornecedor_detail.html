@@ -151,9 +151,14 @@
               {% endif %}
             </td>
             <td>
-              {% if request.user.grupo == 'coordenador' or request.user.grupo == 'gerente' %}
+              {% if  request.user.grupo == 'gerente' %}
               <a href="{% url 'detalhes_entrega' evento.id %}" class="btn btn-sm btn-outline-info">
                 Detalhes da Entrega
+              </a>
+
+              {% elif request.user.grupo == 'coordenador' %}
+              <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
+                Registrar Entrega
               </a>
 
               {% elif request.user.grupo == 'suprimento' %}

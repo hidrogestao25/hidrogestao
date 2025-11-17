@@ -8,9 +8,12 @@
         Fornecedor: <strong>{{ contrato.empresa_terceira }}</strong>
       </p>
     </div>
+
     <div class="card-body">
+      <!-- FORM PRINCIPAL -->
       <form method="post" enctype="multipart/form-data" id="entregaForm">
         {% csrf_token %}
+
         <div class="mb-3">
           <label class="form-label fw-bold" for="id_arquivo">Arquivo</label>
           {{ form.arquivo }}
@@ -28,12 +31,16 @@
 
         <div class="mb-3 form-check">
           {{ form.realizado }}
-          <label class="form-check-label fw-bold" for="id_realizado">Completamente Finalizado</label>
+          <label class="form-check-label fw-bold" for="id_realizado">
+            Completamente Finalizado
+          </label>
         </div>
 
         <div class="mb-3 form-check">
           {{ form.com_atraso }}
-          <label class="form-check-label fw-bold" for="id_com_atraso">Entregue com Atraso</label>
+          <label class="form-check-label fw-bold" for="id_com_atraso">
+            Entregue com Atraso
+          </label>
         </div>
 
         <div class="mb-3">
@@ -58,6 +65,7 @@
             <label class="form-label fw-bold" for="id_valor_pago">Valor Pago</label>
             {{ form.valor_pago }}
           </div>
+
           <div class="mb-3">
             <label class="form-label fw-bold" for="id_justificativa">Justificativa</label>
             {{ form.justificativa }}
@@ -75,10 +83,11 @@
         </div>
       </form>
 
-      <!-- Lista de Boletins -->
+      <!-- LISTA DE BMs -->
       <hr>
       <div class="mb-4">
         <h5>Boletins de Medição Cadastrados</h5>
+
         {% if boletins_detalhados %}
         <table class="table table-bordered table-striped align-middle">
           <thead class="table-light">
@@ -89,25 +98,36 @@
               <th>Data Pagamento</th>
               <th>Status Coordenador</th>
               <th>Status Gerente</th>
+
               {% if has_reprovacao_coordenador %}
                 <th>Justificativa Coordenador</th>
               {% endif %}
+
               {% if has_reprovacao_gerente %}
                 <th>Justificativa Gerente</th>
               {% endif %}
+
               <th>Observação</th>
               <th>Arquivo</th>
+
+              {% if request.user.grupo == 'coordenador' %}
+              <th>Ações</th>
+              {% endif %}
             </tr>
           </thead>
+
           <tbody id="lista-bms">
             {% for item in boletins_detalhados %}
-              <tr class="{{ item.row_class }}">
+              <tr id="bm-row-{{ item.bm.id }}" class="{{ item.row_class }}">
+
                 <td>{{ item.bm.numero_bm }}</td>
                 <td>{{ item.bm.parcela_paga }}</td>
                 <td>R$ {{ item.bm.valor_pago|floatformat:2 }}</td>
                 <td>{{ item.bm.data_pagamento|date:"d/m/Y" }}</td>
-                <td>{{ item.bm.status_coordenador|capfirst }}</td>
-                <td>{{ item.bm.status_gerente|capfirst }}</td>
+
+                <td class="status-coordenador">{{ item.bm.status_coordenador|capfirst }}</td>
+                <td class="status-gerente">{{ item.bm.status_gerente|capfirst }}</td>
+
                 {% if has_reprovacao_coordenador %}
                   <td>
                     {% if item.bm.status_coordenador == 'reprovado' %}
@@ -115,6 +135,7 @@
                     {% else %}-{% endif %}
                   </td>
                 {% endif %}
+
                 {% if has_reprovacao_gerente %}
                   <td>
                     {% if item.bm.status_gerente == 'reprovado' %}
@@ -122,30 +143,113 @@
                     {% else %}-{% endif %}
                   </td>
                 {% endif %}
+
                 <td>{{ item.bm.observacao|default:"-" }}</td>
+
                 <td>
                   {% if item.bm.arquivo_bm %}
-                    <a href="{{ item.bm.arquivo_bm.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                    <a href="{{ item.bm.arquivo_bm.url }}" class="btn btn-sm btn-outline-primary" target="_blank">
                       Abrir/Download
                     </a>
                   {% else %}
                     <span class="text-muted">Sem arquivo</span>
                   {% endif %}
                 </td>
+
+                {% if request.user.grupo == 'coordenador' %}
+                <td>
+                  <div class="d-flex gap-1">
+
+                    <button type="button"
+                      class="btn btn-sm btn-success btn-aprovar"
+                      data-bm-id="{{ item.bm.id }}"
+                      {% if item.bm.status_coordenador != "pendente" %}
+                        disabled
+                      {% endif %}
+                    >Aprovar</button>
+
+                    <button type="button"
+                      class="btn btn-sm btn-danger btn-reprovar"
+                      data-bm-id="{{ item.bm.id }}"
+                      {% if item.bm.status_coordenador != "pendente" %}
+                        disabled
+                      {% endif %}
+                    >Reprovar</button>
+
+                  </div>
+                </td>
+                {% endif %}
+
               </tr>
             {% endfor %}
           </tbody>
         </table>
+
         {% else %}
           <p class="text-muted">Nenhum boletim cadastrado para este evento.</p>
         {% endif %}
       </div>
+
+
+      {% if request.user.grupo == 'suprimento' %}
+      <button type="button" class="btn btn-primary mt-3"
+              data-bs-toggle="modal"
+              data-bs-target="#bmModal">Cadastrar BM</button>
+
+      <!-- Modal BM -->
+      <div class="modal fade" id="bmModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+              <h5 class="modal-title">Cadastrar Boletim de Medição</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body" id="bmModalBody">
+              <div class="text-center p-4">Carregando...</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
   </div>
 </div>
 
+<!-- MODAL JUSTIFICATIVA -->
+<div class="modal fade" id="modalJustificativa" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Justificativa da Reprovação</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <label class="form-label">Explique o motivo da reprovação:</label>
+        <textarea id="justificativaTexto" class="form-control" rows="4"></textarea>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="btnConfirmarReprovar" class="btn btn-danger">Confirmar Reprovação</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- SCRIPTS -->
 <script>
 document.addEventListener("DOMContentLoaded", function() {
+
+  /* ------------------------
+      VALOR PAGO / PREVISTO
+  ------------------------ */
   const checkIgual = document.getElementById("check_valor_igual");
   const camposDiv = document.getElementById("campos_valor_pago_justificativa");
   const inputJustificativa = document.getElementById("id_justificativa");
@@ -154,7 +258,7 @@ document.addEventListener("DOMContentLoaded", function() {
   function atualizarCampos() {
     if (checkIgual.checked) {
       camposDiv.style.display = "none";
-      if (inputValorPago) inputValorPago.value = {{ evento.valor_previsto|default:0 }};
+      if (inputValorPago) inputValorPago.value = "{{ evento.valor_previsto|default:0 }}";
       if (inputJustificativa) inputJustificativa.required = false;
     } else {
       camposDiv.style.display = "block";
@@ -164,6 +268,130 @@ document.addEventListener("DOMContentLoaded", function() {
 
   checkIgual.addEventListener("change", atualizarCampos);
   atualizarCampos();
+
+
+
+  /* ------------------------
+      MODAL CADASTRO BM
+  ------------------------ */
+  const bmModal = document.getElementById("bmModal");
+
+  if (bmModal) {
+    bmModal.addEventListener("show.bs.modal", function() {
+      fetch("{% url 'cadastrar_bm' contrato.id evento.id %}")
+        .then(r => r.text())
+        .then(html => {
+
+          document.getElementById("bmModalBody").innerHTML = html;
+
+          const bmForm = document.getElementById("bmForm");
+
+          bmForm.addEventListener("submit", function(e) {
+            e.preventDefault();
+
+            const fd = new FormData(bmForm);
+
+            fetch("{% url 'cadastrar_bm' contrato.id evento.id %}", {
+              method: "POST",
+              body: fd,
+              headers: {"X-Requested-With": "XMLHttpRequest"}
+            })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success) {
+                bootstrap.Modal.getInstance(bmModal).hide();
+                location.reload();
+              } else {
+                alert(Object.values(data.errors).flat().join("\n"));
+              }
+            });
+
+          });
+
+        });
+    });
+  }
+
+
+
+  /* ------------------------
+      APROVAÇÃO / REPROVAÇÃO
+  ------------------------ */
+
+  const csrfToken = "{{ csrf_token }}";
+  let bmReprovandoId = null;
+
+  function atualizarLinha(bmId, statusCoordenador, statusGerente) {
+    const row = document.getElementById("bm-row-" + bmId);
+    if (!row) return;
+
+    if (statusCoordenador === "reprovado" || statusGerente === "reprovado") {
+      row.className = "table-danger";
+    } else if (statusCoordenador === "aprovado" && statusGerente === "aprovado") {
+      row.className = "table-success";
+    } else {
+      row.className = "table-warning";
+    }
+
+    row.querySelector(".status-coordenador").innerText = statusCoordenador || "-";
+    row.querySelector(".status-gerente").innerText = statusGerente || "-";
+
+    row.querySelectorAll(".btn-aprovar, .btn-reprovar").forEach(btn => btn.disabled = true);
+  }
+
+
+  document.querySelectorAll(".btn-aprovar, .btn-reprovar").forEach(btn => {
+
+    btn.addEventListener("click", function() {
+      const bmId = this.dataset.bmId;
+      const acao = this.classList.contains("btn-aprovar") ? "aprovar" : "reprovar";
+
+      if (acao === "reprovar") {
+        bmReprovandoId = bmId;
+        new bootstrap.Modal(document.getElementById("modalJustificativa")).show();
+      } else {
+        enviarAvaliacao(bmId, acao, "");
+      }
+    });
+
+  });
+
+
+  function enviarAvaliacao(bmId, acao, justificativa) {
+    fetch("{% url 'avaliar_bm' bm_id=0 %}".replace("0", bmId), {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrfToken,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({acao, justificativa})
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        atualizarLinha(bmId, data.status_coordenador, data.status_gerente);
+      } else {
+        alert("Erro: " + data.error);
+      }
+    });
+  }
+
+
+  document.getElementById("btnConfirmarReprovar").addEventListener("click", () => {
+
+    const just = document.getElementById("justificativaTexto").value.trim();
+
+    if (!just) {
+      alert("Por favor, insira uma justificativa.");
+      return;
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById("modalJustificativa")).hide();
+    enviarAvaliacao(bmReprovandoId, "reprovar", just);
+  });
+
+
 });
 </script>
+
 {% endblock %}

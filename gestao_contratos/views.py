@@ -6,7 +6,7 @@ from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from django.db.models import Sum, Q, DecimalField
 from decimal import Decimal
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -2124,8 +2124,13 @@ def previsao_pagamentos(request):
             )
         else:
             # filtro padrão: data de pagamento
-            bms = BM.objects.filter(
-                data_pagamento__range=[data_inicio_filtro, data_limite]
+            bms = BM.objects.annotate(
+                data_ultima_aprovacao=Greatest(
+                    'data_aprovacao_coordenador',
+                    'data_aprovacao_gerente'
+                )
+            ).filter(
+                data_ultima_aprovacao__date__range=[data_inicio_filtro, data_limite]
             )
 
         bms = bms.select_related(
@@ -2210,8 +2215,13 @@ def download_bms_aprovados(request):
         )
     else:
         # PADRÃO → por pagamento
-        bms_aprovados = bms_aprovados.filter(
-            data_pagamento__range=[data_inicial, data_limite]
+        bms_aprovados = bms_aprovados.annotate(
+            data_ultima_aprovacao=Greatest(
+                'data_aprovacao_coordenador',
+                'data_aprovacao_gerente'
+            )
+        ).filter(
+            data_ultima_aprovacao__date__range=[data_inicial, data_limite]
         )
 
     # === FILTRAR POR COORDENADOR, SE APLICADO ===
@@ -2483,6 +2493,7 @@ def ranking_fornecedores(request):
     return render(request, 'gestao_contratos/ranking_fornecedores.html', context)
 
 
+
 @login_required
 def cadastrar_bm(request, contrato_id, evento_id):
     contrato = get_object_or_404(ContratoTerceiros, id=contrato_id)
@@ -2494,23 +2505,79 @@ def cadastrar_bm(request, contrato_id, evento_id):
             bm = form.save(commit=False)
             bm.contrato = contrato
             bm.evento = evento
+
             if not bm.valor_pago:
                 bm.valor_pago = evento.valor_previsto
+
             bm.save()
-            return JsonResponse({"success": True})
+
+            try:
+                emails = set()
+
+                # COORDENADOR
+                coordenador = contrato.coordenador
+                if coordenador and coordenador.email:
+                    emails.add(coordenador.email)
+
+                # GERENTES DOS MESMOS CENTROS
+                if coordenador:
+                    coordenador_centros = coordenador.centros.all()
+
+                    gerentes = User.objects.filter(
+                        grupo="gerente",
+                        centros__in=coordenador_centros
+                    ).distinct()
+
+                    for gerente in gerentes:
+                        if gerente.email:
+                            emails.add(gerente.email)
+
+                # Se existir alguém para enviar
+                if emails:
+                    assunto = f"BM cadastrado para avaliação - Projeto {contrato.cod_projeto}"
+                    mensagem = (
+                        f"Olá,\n\n"
+                        f"Um novo Boletim de Medição foi cadastrado e está aguardando avaliação.\n\n"
+                        f"📌 Projeto: {contrato.cod_projeto}\n"
+                        f"📌 Contrato: {contrato.num_contrato} - {contrato.empresa_terceira}\n"
+                        f"📌 Evento: {evento.descricao}\n"
+                        f"📌 Valor Previsto: R$ {evento.valor_previsto}\n"
+                        f"📌 Valor Informado no BM: R$ {bm.valor_pago}\n\n"
+                        f"Acesse o sistema para aprovar ou reprovar o BM.\n\n"
+                        f"Atenciosamente,\n"
+                        f"Sistema HIDROGestão"
+                    )
+
+                    send_mail(
+                        assunto,
+                        mensagem,
+                        "hidro.gestao25@gmail.com",
+                        list(emails),
+                        fail_silently=False,
+                    )
+                    
+            except Exception as e:
+                print("Erro ao enviar e-mail:", e)
+                messages.error(request, "⚠ Não foi possível enviar o e-mail aos gestores.")
+
+            else:
+                messages.success(request, "BM cadastrado com sucesso! Os gestores foram notificados.")
+
         else:
-            print(form.errors)
-            return JsonResponse({"success": False, "errors": form.errors}, status=400)
+            messages.error(request, "O formulário possui erros. Verifique os campos abaixo.")
+
     else:
         form = BMForm(initial={
             "valor_pago": evento.valor_previsto,
             "data_pagamento": evento.data_pagamento.strftime('%Y-%m-%d') if evento.data_pagamento else None,
         })
-        return render(request, "bm/cadastrar_bm_popup.html", {
-            "form": form,
-            "contrato": contrato,
-            "evento": evento,
-        })
+
+    return render(request, "bm/cadastrar_bm_popup.html", {
+        "form": form,
+        "contrato": contrato,
+        "evento": evento,
+    })
+
 
 
 @login_required
