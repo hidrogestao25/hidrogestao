@@ -1798,15 +1798,15 @@ def avaliar_bm(request, bm_id):
 
     # Verifica permissão
     if usuario.grupo not in ["coordenador", "gerente"]:
-        return JsonResponse({"success": False, "error": "Sem permissão."}, status=403)
+        messages.error(request, "⚠ Você não tem permissão para isso.")
 
     acao = request.POST.get("acao")
     justificativa = request.POST.get("justificativa", "").strip()
 
     if acao not in ["aprovar", "reprovar"]:
-        return JsonResponse({"success": False, "error": "Ação inválida."}, status=400)
+        messages.error(request, "⚠ Ação inválida.")
 
-    # Atualiza campos conforme o grupo
+    # Atualiza conforme o grupo
     if usuario.grupo == "coordenador":
         bm.status_coordenador = "aprovado" if acao == "aprovar" else "reprovado"
         bm.data_aprovacao_coordenador = timezone.now()
@@ -1826,6 +1826,63 @@ def avaliar_bm(request, bm_id):
             bm.justificativa_reprovacao_gerente = None
 
     bm.save()
+
+    try:
+        status_coord = bm.status_coordenador
+        status_ger = bm.status_gerente
+
+        # Só envia quando AMBOS já avaliaram
+        if status_coord != "pendente" and status_ger != "pendente":
+
+            # Busca todos do grupo suprimento
+            usuarios_suprimento = User.objects.filter(grupo="suprimento")
+            lista_emails = [u.email for u in usuarios_suprimento if u.email]
+
+            if lista_emails:
+
+                # Ambos aprovaram
+                if status_coord == "aprovado" and status_ger == "aprovado":
+                    assunto = f"BM aprovado - Contrato {bm.contrato.num_contrato}"
+                    mensagem = (
+                        f"Olá, equipe de Suprimentos!\n\n"
+                        f"O Boletim de Medição foi APROVADO pelo coordenador e pelo gerente.\n\n"
+                        f"Projeto: {bm.contrato.cod_projeto}\n"
+                        f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
+                        f"Evento: {bm.evento.descricao}\n"
+                        f"Valor BM: R$ {bm.valor_pago}\n\n"
+                        f"Atenciosamente,\n"
+                        f"Sistema HIDROGestão"
+                    )
+
+                # Algum reprovou
+                else:
+                    assunto = f"BM reprovado - Contrato {bm.contrato.num_contrato}"
+                    mensagem = (
+                        f"Olá, equipe de Suprimentos!\n\n"
+                        f"O Boletim de Medição foi REPROVADO.\n\n"
+                        f"Projeto: {bm.contrato.cod_projeto}\n"
+                        f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
+                        f"Evento: {bm.evento.descricao}\n\n"
+                        f"Justificativas:\n"
+                        f"- Coordenador: {bm.justificativa_reprovacao_coordenador or 'Aprovou'}\n"
+                        f"- Gerente: {bm.justificativa_reprovacao_gerente or 'Aprovou'}\n\n"
+                        f"Atenciosamente,\n"
+                        f"Sistema HIDROGestão"
+                    )
+
+                send_mail(
+                    assunto,
+                    mensagem,
+                    "hidro.gestao25@gmail.com",
+                    lista_emails,
+                    fail_silently=False,
+                )
+
+    except Exception as e:
+        print("Erro ao enviar e-mail de avaliação:", e)
+        messages.error(request, "⚠ Não foi possível enviar o e-mail para Suprimentos.")
+
+    # -------------------------------------------------------------------
 
     return JsonResponse({
         "success": True,
@@ -2519,7 +2576,7 @@ def cadastrar_bm(request, contrato_id, evento_id):
                 if coordenador and coordenador.email:
                     emails.add(coordenador.email)
 
-                # GERENTES DOS MESMOS CENTROS
+                # GERENTES
                 if coordenador:
                     coordenador_centros = coordenador.centros.all()
 
@@ -2555,7 +2612,7 @@ def cadastrar_bm(request, contrato_id, evento_id):
                         list(emails),
                         fail_silently=False,
                     )
-                    
+
             except Exception as e:
                 print("Erro ao enviar e-mail:", e)
                 messages.error(request, "⚠ Não foi possível enviar o e-mail aos gestores.")
