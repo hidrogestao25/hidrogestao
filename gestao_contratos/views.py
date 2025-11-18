@@ -2636,6 +2636,39 @@ def cadastrar_bm(request, contrato_id, evento_id):
     })
 
 
+@login_required
+def editar_bm(request, bm_id):
+    bm = get_object_or_404(BM, id=bm_id)
+
+    if request.user.grupo != "suprimento":
+        return HttpResponse("Sem permissão.", status=403)
+
+    if request.method == "POST":
+        form = BMForm(request.POST, request.FILES, instance=bm)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "BM atualizado com sucesso!")
+            return redirect("registrar_entrega", pk=bm.evento.id)
+    else:
+        form = BMForm(instance=bm)
+
+    return render(request, "bm/editar_bm.html", {"form": form, "bm": bm})
+
+
+@login_required
+def deletar_bm(request, bm_id):
+    bm = get_object_or_404(BM, id=bm_id)
+
+    if request.user.grupo != "suprimento":
+        return HttpResponse("Sem permissão.", status=403)
+
+    evento_id = bm.evento.id
+    bm.delete()
+
+    messages.success(request, "BM apagado com sucesso!")
+    return redirect("registrar_entrega", pk=evento_id)
+
+
 
 @login_required
 def detalhes_entrega(request, evento_id):

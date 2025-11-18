@@ -45,6 +45,8 @@ urlpatterns = [
     path("bm/<int:pk>/aprovar/<str:papel>/", views.aprovar_bm, name="aprovar_bm"),
     path("bm/<int:pk>/reprovar/<str:papel>/", views.reprovar_bm, name="reprovar_bm"),
     path('bms/<int:bm_id>/avaliar/', views.avaliar_bm, name='avaliar_bm'),
+    path("bm/<int:bm_id>/editar/", views.editar_bm, name="editar_bm"),
+    path("bm/<int:bm_id>/deletar/", views.deletar_bm, name="deletar_bm"),
 
     path("evento/<int:pk>/editar/", views.editar_evento, name="editar_evento"),
     path("evento_contrato/<int:pk>/editar/", views.editar_evento_contrato, name="editar_evento_contrato"),

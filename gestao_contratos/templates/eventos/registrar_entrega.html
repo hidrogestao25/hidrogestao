@@ -110,7 +110,7 @@
               <th>Observação</th>
               <th>Arquivo</th>
 
-              {% if request.user.grupo == 'coordenador' %}
+              {% if request.user.grupo == 'coordenador' or request.user.grupo == 'suprimento' %}
               <th>Ações</th>
               {% endif %}
             </tr>
@@ -175,6 +175,27 @@
                         disabled
                       {% endif %}
                     >Reprovar</button>
+
+                  </div>
+                </td>
+                {% endif %}
+                
+                {% if request.user.grupo == 'suprimento' %}
+                <td>
+                  <div class="d-flex gap-1">
+
+                    <a href="{% url 'editar_bm' item.bm.id %}"
+                       class="btn btn-sm btn-warning">
+                       Editar
+                    </a>
+
+                    <form method="post" action="{% url 'deletar_bm' item.bm.id %}"
+                          onsubmit="return confirm('Tem certeza que deseja apagar este BM?');">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-sm btn-danger">
+                        Apagar
+                      </button>
+                    </form>
 
                   </div>
                 </td>
