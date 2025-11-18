@@ -1,4 +1,5 @@
 import os
+import sys
 import django
 import datetime
 import shutil
@@ -6,11 +7,6 @@ import time
 from django.core.mail import send_mail
 from django.conf import settings
 
-# --- CONFIGURA DJANGO ---
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "hidrogestao.settings")
-django.setup()
-
-from gestao_terceiros.models import Evento, ContratoTerceiros, User  # ajuste conforme o nome real do app
 
 # --- 1️⃣ BACKUP DO BANCO ---
 db_path = "/home/hidrogestao/hidrogestao/db.sqlite3"
@@ -34,7 +30,15 @@ for arquivo in os.listdir(backup_dir):
             os.remove(caminho_arquivo)
             print(f"🗑️ Backup removido: {arquivo}")
 
+
 # --- 3️⃣ VERIFICAÇÃO DE EVENTOS (data_prevista = hoje) ---
+# --- CONFIGURA DJANGO ---
+sys.path.append('/home/hidrogestao/hidrogestao')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "HIDROGestao.settings")
+django.setup()
+
+from gestao_contratos.models import Evento, ContratoTerceiros, User
+
 hoje = datetime.date.today()
 eventos_hoje = Evento.objects.filter(data_prevista=hoje)
 
@@ -43,6 +47,7 @@ for evento in eventos_hoje:
     if contrato and contrato.coordenador and contrato.coordenador.email:
         coordenador = contrato.coordenador
         email_destino = coordenador.email
+        print(f"👥 Usuário Coordenador: {email_destino}")
         assunto = f"Lembrete de entrega - Evento #{evento.id}"
         mensagem = (
             f"Olá {coordenador.first_name or coordenador.username},\n\n"
@@ -53,7 +58,7 @@ for evento in eventos_hoje:
             f"Atenciosamente,\nSistema Hidrogestão"
         )
         try:
-            send_mail(assunto, mensagem, settings.EMAIL_HOST_USER, [email_destino])
+            send_mail(assunto, mensagem, "hidro.gestao25@gmail.com", [email_destino])
             print(f"📧 E-mail enviado para {email_destino} (Evento {evento.id})")
         except Exception as e:
             print(f"⚠️ Erro ao enviar e-mail para {email_destino}: {e}")
@@ -92,7 +97,7 @@ for contrato in contratos_hoje:
         f"Atenciosamente,\nSistema Hidrogestão"
     )
     try:
-        send_mail(assunto, mensagem, settings.EMAIL_HOST_USER, destinatarios)
+        send_mail(assunto, mensagem, "hidro.gestao25@gmail.com", destinatarios)
         print(f"📧 E-mail enviado: Contrato {contrato.id} -> {destinatarios}")
     except Exception as e:
         print(f"⚠️ Erro ao enviar e-mail para {destinatarios}: {e}")
