@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container mt-4">
+  <div class="card">
+    <div class="card-header bg-warning text-white">
+      <h5>Editar BM nº {{ bm.numero_bm }}</h5>
+    </div>
+
+    <div class="card-body">
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ form.as_p }}
+
+        <div class="d-flex justify-content-end gap-2">
+          <a href="{% url 'registrar_entrega' bm.evento.id %}" class="btn btn-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-success">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
