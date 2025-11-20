@@ -390,6 +390,8 @@ class NFForm(forms.ModelForm):
             "data_pagamento",
             "arquivo_nf",
             "observacao",
+            "financeiro_autorizou",
+            "nf_dentro_prazo",
         ]
 
         widgets = {

@@ -4,14 +4,14 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
-from django.db.models import Sum, Q, DecimalField
+from django.db.models import Sum, Q, DecimalField, Avg
 from decimal import Decimal
 from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor
 from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm
 
 import plotly.graph_objs as go
@@ -543,6 +543,15 @@ def contrato_cliente_detalhe(request, pk):
 @login_required
 def contrato_fornecedor_detalhe(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
+    fornecedor = contrato.empresa_terceira
+
+    indicadores_geral, _ = Indicadores.objects.get_or_create(empresa_terceira=fornecedor)
+    indicadores_contrato = contrato
+    contratos_fornecedor = ContratoTerceiros.objects.filter(
+        empresa_terceira=contrato.empresa_terceira,
+        status='ativo'
+    )
+
 
     proposta_fornecedor = None
     if contrato.prospeccao and contrato.prospeccao.fornecedor_escolhido:
@@ -638,6 +647,9 @@ def contrato_fornecedor_detalhe(request, pk):
             "eventos": eventos,
             "plot_div": plot_div,
             "comparativo_div": comparativo_div,
+            "indicadores_geral": indicadores_geral,
+            "indicadores_contrato": indicadores_contrato,
+            "contratos_ativos": contratos_fornecedor.count(),
         },
     )
 
@@ -708,6 +720,7 @@ def cliente_detalhe(request, pk):
 @login_required
 def fornecedor_detalhe(request, pk):
     fornecedor = get_object_or_404(EmpresaTerceira, pk=pk)
+    indicadores_geral = Indicadores(empresa_terceira=fornecedor)
     if request.user.grupo in ["suprimento", "financeiro"]:
         contratos = fornecedor.contratos.all()  # busca todos os contratos vinculados a este fornecedor
     elif request.user.grupo == "coordenador":
@@ -729,7 +742,12 @@ def fornecedor_detalhe(request, pk):
         return render(
             request,
             'fornecedores/fornecedor_detail_edit.html',
-            {'form': form, 'fornecedor': fornecedor, 'contratos': contratos}
+            {
+                'form': form,
+                'fornecedor': fornecedor,
+                'contratos': contratos,
+                'indicadores_geral': indicadores_geral,
+                }
         )
 
     return render(
@@ -2767,4 +2785,48 @@ def detalhes_entrega(request, evento_id):
         'bms': bms,
         'tem_reprovacao_coordenador': tem_reprovacao_coordenador,
         'tem_reprovacao_gerente': tem_reprovacao_gerente,
+    })
+
+@login_required
+def avaliar_evento_fornecedor(request, evento_id):
+    evento = get_object_or_404(Evento, id=evento_id)
+    contrato = evento.contrato_terceiro
+    fornecedor = contrato.empresa_terceira
+
+    # Permissão
+    if request.user.grupo != "coordenador":
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    # Se já existe avaliação → bloquear
+    avaliacao_existente = AvaliacaoFornecedor.objects.filter(evento=evento).first()
+
+    if request.method == "POST":
+        if avaliacao_existente:
+            return JsonResponse({"success": False, "error": "Evento já avaliado."})
+
+        nota_gestao = request.POST.get("nota_gestao")
+        nota_tecnica = request.POST.get("nota_tecnica")
+        nota_entrega = request.POST.get("nota_entrega")
+        comentario = request.POST.get("comentario")
+
+        AvaliacaoFornecedor.objects.create(
+            empresa_terceira=fornecedor,
+            contrato_terceiro=contrato,
+            evento=evento,
+            area_avaliadora="Coordenador",
+            avaliador=request.user,
+            nota_gestao=nota_gestao,
+            nota_tecnica=nota_tecnica,
+            nota_entrega=nota_entrega,
+            comentario=comentario,
+        )
+
+        return redirect('contrato_fornecedor_detalhe', pk=contrato.pk)
+
+    return render(request, "eventos/avaliar_evento.html", {
+        "evento": evento,
+        "contrato": contrato,
+        "fornecedor": fornecedor,
+        "avaliacao": avaliacao_existente,
     })
