@@ -372,7 +372,6 @@ class ContratoTerceiros(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL, null=True,
         related_name="contratos_coordenados",
-        #limit_choices_to={'groups__name': 'Coordenador de Contrato'}
     )
     guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
     condicao_pagamento = models.CharField(max_length=80, null=True, blank=True)
@@ -391,6 +390,90 @@ class ContratoTerceiros(models.Model):
 
     def __str__(self):
         return f"Contrato {self.num_contrato} - {self.cod_projeto} - {self.empresa_terceira}"
+
+    @property
+    def eventos(self):
+        return Evento.objects.filter(contrato_terceiro=self)
+
+    @property
+    def entregas_total(self):
+        return self.eventos.filter(realizado=True).count()
+
+    @property
+    def entregas_conformes(self):
+        return self.eventos.filter(avaliacao="Aprovado").count()
+
+    @property
+    def entregas_nao_conformes(self):
+        return self.eventos.filter(avaliacao="Reprovado").count()
+
+    @property
+    def IQ(self):
+        """Índice de Qualidade"""
+        total = self.entregas_total
+        conformes = self.entregas_conformes
+        return (conformes / total * 100) if total > 0 else 0
+
+    @property
+    def entregas_pontuais(self):
+        return self.eventos.filter(
+            data_prevista__isnull=False,
+            data_entrega__lte=models.F("data_prevista")
+        ).count()
+
+    @property
+    def IP(self):
+        """Índice de Pontualidade"""
+        total = self.entregas_total
+        pontuais = self.entregas_pontuais
+        return (pontuais / total * 100) if total > 0 else 0
+
+    @property
+    def INC(self):
+        """Índice de Entregas Não Conformes"""
+        total = self.entregas_total
+        nao_conformes = self.entregas_nao_conformes
+        return (nao_conformes / total * 100) if total > 0 else 0
+
+    @property
+    def IS_gestao(self):
+        """Índice de Satisfação - Gestão (avaliado apenas neste contrato)"""
+        avaliacoes = AvaliacaoFornecedor.objects.filter(
+            contrato_terceiro=self
+        )
+        total_avaliacoes = avaliacoes.count()
+        if total_avaliacoes == 0:
+            return 0
+        soma_notas = sum(a.nota_gestao for a in avaliacoes if a.nota_gestao)
+        media = soma_notas / total_avaliacoes
+        return (media / 5) * 100
+
+    @property
+    def IS_tecnica(self):
+        """Índice de Satisfação - Técnica (avaliado apenas neste contrato)"""
+        avaliacoes = AvaliacaoFornecedor.objects.filter(
+            contrato_terceiro=self
+        )
+        total_avaliacoes = avaliacoes.count()
+        if total_avaliacoes == 0:
+            return 0
+        soma_notas = sum(a.nota_tecnica for a in avaliacoes if a.nota_tecnica)
+        media = soma_notas / total_avaliacoes
+        return (media / 5) * 100
+
+    @property
+    def IS_entrega(self):
+        """Índice de Satisfação - Entrega (avaliado apenas neste contrato)"""
+        avaliacoes = AvaliacaoFornecedor.objects.filter(
+            contrato_terceiro=self
+        )
+        total_avaliacoes = avaliacoes.count()
+        if total_avaliacoes == 0:
+            return 0
+        soma_notas = sum(a.nota_entrega for a in avaliacoes if a.nota_entrega)
+        media = soma_notas / total_avaliacoes
+        return (media / 5) * 100
+
 
 
 # ---------------------------
@@ -434,8 +517,12 @@ class Evento(models.Model):
 class AvaliacaoFornecedor(models.Model):
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
     contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE)
+    evento = models.ForeignKey(Evento, on_delete=models.CASCADE, blank=True, null=True, related_name="avaliacoes")
     area_avaliadora = models.CharField(max_length=100)
-    nota = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    avaliador = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    nota_gestao = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)], null=True, blank=True)
+    nota_tecnica = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)], null=True, blank=True)
+    nota_entrega = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)], null=True, blank=True)
     comentario = models.TextField(blank=True, null=True)
     data_avaliacao = models.DateField(auto_now_add=True)
 
@@ -446,9 +533,12 @@ class AvaliacaoFornecedor(models.Model):
 class Indicadores(models.Model):
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
 
+    def __str__(self):
+        return f"{self.empresa_terceira}"
+
     @property
     def entregas_total(self):
-        return Evento.objects.filter(empresa_terceira=self.empresa_terceira).count()
+        return Evento.objects.filter(empresa_terceira=self.empresa_terceira,realizado=True).count()
 
     @property
     def entregas_conformes(self):
@@ -491,16 +581,40 @@ class Indicadores(models.Model):
         return (nao_conforme / total) * 100 if total > 0 else 0
 
     @property
-    def IS(self):
+    def IS_gestao(self):
         avaliacoes = AvaliacaoFornecedor.objects.filter(
             empresa_terceira=self.empresa_terceira
         )
         total_avaliacoes = avaliacoes.count()
         if total_avaliacoes == 0:
             return 0
-        soma_notas = sum(a.nota for a in avaliacoes)
+        soma_notas = sum(a.nota_gestao for a in avaliacoes)
         media = soma_notas / total_avaliacoes
-        return (media / 5) * 100  # % da nota máxima
+        return (media / 5) * 100
+
+    @property
+    def IS_tecnica(self):
+        avaliacoes = AvaliacaoFornecedor.objects.filter(
+            empresa_terceira=self.empresa_terceira
+        )
+        total_avaliacoes = avaliacoes.count()
+        if total_avaliacoes == 0:
+            return 0
+        soma_notas = sum(a.nota_tecnica for a in avaliacoes)
+        media = soma_notas / total_avaliacoes
+        return (media / 5) * 100
+
+    @property
+    def IS_entrega(self):
+        avaliacoes = AvaliacaoFornecedor.objects.filter(
+            empresa_terceira=self.empresa_terceira
+        )
+        total_avaliacoes = avaliacoes.count()
+        if total_avaliacoes == 0:
+            return 0
+        soma_notas = sum(a.nota_entrega for a in avaliacoes)
+        media = soma_notas / total_avaliacoes
+        return (media / 5) * 100
 
 
 """# ---------------------
@@ -656,6 +770,8 @@ class NF(models.Model):
         null=True, blank=True
     )
     observacao = models.TextField(null=True, blank=True)
+    financeiro_autorizou = models.BooleanField(default=False)
+    nf_dentro_prazo = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Nota Fiscal {self.id} - {self.evento.descricao} (id - {self.evento.id})"

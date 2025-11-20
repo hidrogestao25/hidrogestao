@@ -51,6 +51,7 @@ urlpatterns = [
     path("evento/<int:evento_id>/cadastrar-nf/", views.cadastrar_nf, name="cadastrar_nf"),
     path("evento/<int:nf_id>/editar-nf/", views.editar_nf, name="editar_nf"),
     path("nf/<int:nf_id>/deletar/", views.deletar_nf, name="deletar_nf"),
+    path('evento/<int:evento_id>/avaliar/', views.avaliar_evento_fornecedor, name='avaliar_evento_fornecedor'),
 
     path("evento/<int:pk>/editar/", views.editar_evento, name="editar_evento"),
     path("evento_contrato/<int:pk>/editar/", views.editar_evento_contrato, name="editar_evento_contrato"),

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container mt-4">
+  <div class="card shadow">
+    <div class="card-header bg-primary text-white">
+      <h5>Avaliar Evento do Fornecedor</h5>
+    </div>
+    <div class="card-body">
+
+      <p><strong>Fornecedor:</strong> {{ fornecedor }}</p>
+      <p><strong>Evento:</strong> {{ evento.descricao }}</p>
+
+      {% if avaliacao %}
+        <div class="alert alert-success">
+          Evento já avaliado anteriormente.
+        </div>
+      {% else %}
+
+      <form method="post">
+        {% csrf_token %}
+
+        <h6><strong>Critério: Gestão</strong></h6>
+        <select name="nota_gestao" class="form-select" required>
+          <option value="">Selecione...</option>
+          <option value="5">5 - Excelente: Fornecedor apresenta pro-atividade, facilidade de contato, flexibilidade e baixa necessidade de supervisão.</option>
+          <option value="4">4 - Bom: Interesse na relação, flexibilidade moderada, baixa supervisão.</option>
+          <option value="3">3 - Regular: Indiferença comercial, pouca flexibilidade, demanda maior supervisão.</option>
+          <option value="2">2 - Ruim: Dificuldade na relação, alta necessidade de supervisão.</option>
+          <option value="1">1 - Péssimo: Conflitos, supervisão acima do normal.</option>
+        </select>
+
+        <hr>
+
+        <h6><strong>Critério: Técnica</strong></h6>
+        <select name="nota_tecnica" class="form-select" required>
+          <option value="">Selecione...</option>
+          <option value="5">5 - Excelente: Domínio técnico destacado, certificações, equipamentos de destaque.</option>
+          <option value="4">4 - Bom: Capacidade técnica adequada, estrutura e certificação dentro da média.</option>
+          <option value="3">3 - Regular: Capacidade técnica adequada e suficiente ao escopo.</option>
+          <option value="2">2 - Ruim: Insuficiência em técnica, estrutura ou certificações.</option>
+          <option value="1">1 - Péssimo: Fragilidade técnica relevante, risco à qualidade.</option>
+        </select>
+
+        <hr>
+
+        <h6><strong>Critério: Entrega</strong></h6>
+        <select name="nota_entrega" class="form-select" required>
+          <option value="">Selecione...</option>
+          <option value="5">5 - Excelente: Alta qualidade técnica, sem revisão, entregue no prazo.</option>
+          <option value="4">4 - Bom: Qualidade ok, pouca revisão, entregue no prazo.</option>
+          <option value="3">3 - Regular: Exige revisão técnica, entregue no prazo com cobrança.</option>
+          <option value="2">2 - Ruim: Baixa qualidade, formatos errados, entrega fora do solicitado.</option>
+          <option value="1">1 - Péssimo: Totalmente em desacordo com padrão HIDROBR.</option>
+        </select>
+
+        <hr>
+
+        <label><strong>Comentário (opcional):</strong></label>
+        <textarea name="comentario" class="form-control" rows="3"></textarea>
+
+        <button class="btn btn-success mt-3">Salvar Avaliação</button>
+      </form>
+
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+
+{% endblock %}

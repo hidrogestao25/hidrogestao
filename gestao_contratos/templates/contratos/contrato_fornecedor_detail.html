@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
-
 <div class="container mt-4">
   <div class="card shadow-sm">
     <div class="card-header card-header-custom text-white">
@@ -157,6 +156,24 @@
               </a>
 
               {% elif request.user.grupo == 'coordenador' %}
+              {% if evento.realizado %}
+                {% with avaliacao=evento.avaliacoes.first %}
+
+                    {% if avaliacao %}
+                        <!-- Avaliação já feita -->
+                        <button class="btn btn-sm btn-secondary" disabled>
+                            Avaliado ✔
+                        </button>
+                    {% else %}
+                        <!-- Evento realizado, mas sem avaliação -->
+                        <a href="{% url 'avaliar_evento_fornecedor' evento.id %}"
+                           class="btn btn-sm btn-outline-primary">
+                           Avaliar Evento ⭐
+                        </a>
+                    {% endif %}
+
+                {% endwith %}
+              {% endif %}
               <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
                 Registrar Entrega
               </a>
@@ -184,7 +201,232 @@
       <a href="{% url 'cadastrar_evento_contrato' contrato.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
   {% endif %}
 
+  <hr>
 
+  <h5>📊 Indicadores do Fornecedor</h5>
+
+  <div class="row mt-3">
+
+    <!-- Indicadores deste contrato -->
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-primary text-white">
+                Indicadores deste Contrato
+            </div>
+            <div class="card-body">
+                <p><strong>Total de Eventos Finalizados:</strong> {{ indicadores_contrato.entregas_total }}</p>
+                <p><strong>Entregas Conformes:</strong>  {{ indicadores_contrato.entregas_conformes }}</p>
+
+                <!-- IQ -->
+                <div class="d-flex align-items-center mb-2">
+                    <strong class="me-2" style="min-width: 220px;">Índice de Qualidade:</strong>
+                    <span class="me-2" style="width:70px;">{{ indicadores_contrato.IQ|floatformat:2 }}%</span>
+
+                    <div class="progress flex-grow-1" style="height: 14px;">
+                        <div class="progress-bar
+                            {% if indicadores_contrato.IQ < 50 %}bg-danger
+                            {% elif indicadores_contrato.IQ < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ indicadores_contrato.IQ|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_contrato.IQ|floatformat:2|cut:","|slice:"-2:" }}%;">
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- IP -->
+                <div class="d-flex align-items-center mb-2">
+                    <strong class="me-2" style="min-width: 220px;">Índice de Pontualidade:</strong>
+                    <span class="me-2" style="width:70px;">{{ indicadores_contrato.IP|floatformat:2 }}%</span>
+
+                    <div class="progress flex-grow-1" style="height: 14px;">
+                        <div class="progress-bar
+                            {% if indicadores_contrato.IP < 50 %}bg-danger
+                            {% elif indicadores_contrato.IP < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ indicadores_contrato.IP|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_contrato.IP|floatformat:2|cut:","|slice:"-2:" }}%;">
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- INC -->
+                <div class="d-flex align-items-center mb-3">
+                    <strong class="me-2" style="min-width: 220px;">Índice de Entregas Não Conformes:</strong>
+                    <span class="me-2" style="width:70px;">{{ indicadores_contrato.INC|floatformat:2 }}%</span>
+
+                    <div class="progress flex-grow-1" style="height: 14px;">
+                        <div class="progress-bar
+                            {% if indicadores_contrato.INC < 50 %}bg-danger
+                            {% elif indicadores_contrato.INC < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ indicadores_contrato.INC|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_contrato.INC|floatformat:2|cut:","|slice:"-2:" }}%;">
+                        </div>
+                    </div>
+
+                </div>
+
+                <hr>
+
+                <!-- IS técnica -->
+                <div class="d-flex align-items-center mb-2">
+                    <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Técnica:</strong>
+                    <span class="me-2" style="width:70px;">{{ indicadores_contrato.IS_tecnica|floatformat:2 }}%</span>
+
+                    <div class="progress flex-grow-1" style="height: 14px;">
+                        <div class="progress-bar
+                            {% if indicadores_contrato.IS_tecnica < 50 %}bg-danger
+                            {% elif indicadores_contrato.IS_tecnica < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ indicadores_contrato.IS_tecnica|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_contrato.IS_tecnica|floatformat:2|cut:","|slice:"-2:" }}%;">
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- IS gestão -->
+                <div class="d-flex align-items-center mb-2">
+                    <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Gestão:</strong>
+                    <span class="me-2" style="width:70px;">{{ indicadores_contrato.IS_gestao|floatformat:2 }}%</span>
+
+                    <div class="progress flex-grow-1" style="height: 14px;">
+                        <div class="progress-bar
+                            {% if indicadores_contrato.IS_gestao < 50 %}bg-danger
+                            {% elif indicadores_contrato.IS_gestao < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ indicadores_contrato.IS_gestao|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_contrato.IS_gestao|floatformat:2|cut:","|slice:"-2:" }}%;">
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- IS entrega -->
+                <div class="d-flex align-items-center mb-2">
+                    <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Entrega:</strong>
+                    <span class="me-2" style="width:70px;">{{ indicadores_contrato.IS_entrega|floatformat:2 }}%</span>
+
+                    <div class="progress flex-grow-1" style="height: 14px;">
+                        <div class="progress-bar
+                            {% if indicadores_contrato.IS_entrega < 50 %}bg-danger
+                            {% elif indicadores_contrato.IS_entrega < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ indicadores_contrato.IS_entrega|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_contrato.IS_entrega|floatformat:2|cut:","|slice:"-2:" }}%;">
+                        </div>
+                    </div>
+
+                </div>
+
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Indicadores gerais do fornecedor -->
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-3">
+          <div class="card-header bg-secondary text-white">
+            Indicadores Gerais do Fornecedor
+          </div>
+          <div class="card-body">
+            <p><strong>Contratos Ativos:</strong> {{ contratos_ativos }}</p>
+
+            <!-- IQ -->
+            <div class="d-flex align-items-center mb-2">
+                <strong class="me-2" style="min-width: 220px;">Índice de Qualidade:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores_geral.IQ|floatformat:2 }}%</span>
+
+                <div class="progress flex-grow-1" style="height: 14px;">
+                    <div class="progress-bar
+                        {% if indicadores_geral.IQ < 50 %}bg-danger
+                        {% elif indicadores_geral.IQ < 80 %}bg-warning
+                        {% else %}bg-success{% endif %}"
+                        style="width: {{ indicadores_geral.IQ|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_geral.IQ|floatformat:2|cut:","|slice:"-2:" }}%;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- IP -->
+            <div class="d-flex align-items-center mb-2">
+                <strong class="me-2" style="min-width: 220px;">Índice de Pontualidade:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores_geral.IP|floatformat:2 }}%</span>
+
+                <div class="progress flex-grow-1" style="height: 14px;">
+                    <div class="progress-bar
+                        {% if indicadores_geral.IP < 50 %}bg-danger
+                        {% elif indicadores_geral.IP < 80 %}bg-warning
+                        {% else %}bg-success{% endif %}"
+                        style="width: {{ indicadores_geral.IP|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_geral.IP|floatformat:2|cut:","|slice:"-2:" }}%;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- INC -->
+            <div class="d-flex align-items-center mb-3">
+                <strong class="me-2" style="min-width: 220px;">Índice de Entregas Não Conformes:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores_geral.INC|floatformat:2 }}%</span>
+
+                <div class="progress flex-grow-1" style="height: 14px;">
+                    <div class="progress-bar
+                        {% if indicadores_geral.INC < 50 %}bg-danger
+                        {% elif indicadores_geral.INC < 80 %}bg-warning
+                        {% else %}bg-success{% endif %}"
+                        style="width: {{ indicadores_geral.INC|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_geral.INC|floatformat:2|cut:","|slice:"-2:" }}%;">
+                    </div>
+                </div>
+            </div>
+
+            <hr>
+
+            <!-- IS técnica -->
+            <div class="d-flex align-items-center mb-2">
+                <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Técnica:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores_geral.IS_tecnica|floatformat:2 }}%</span>
+
+                <div class="progress flex-grow-1" style="height: 14px;">
+                    <div class="progress-bar
+                        {% if indicadores_geral.IS_tecnica < 50 %}bg-danger
+                        {% elif indicadores_geral.IS_tecnica < 80 %}bg-warning
+                        {% else %}bg-success{% endif %}"
+                        style="width: {{ indicadores_geral.IS_tecnica|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_geral.IS_tecnica|floatformat:2|cut:","|slice:"-2:" }}%;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- IS gestão -->
+            <div class="d-flex align-items-center mb-2">
+                <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Gestão:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores_geral.IS_gestao|floatformat:2 }}%</span>
+
+                <div class="progress flex-grow-1" style="height: 14px;">
+                    <div class="progress-bar
+                        {% if indicadores_geral.IS_gestao < 50 %}bg-danger
+                        {% elif indicadores_geral.IS_gestao < 80 %}bg-warning
+                        {% else %}bg-success{% endif %}"
+                        style="width: {{ indicadores_geral.IS_gestao|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_geral.IS_gestao|floatformat:2|cut:","|slice:"-2:" }}%;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- IS entrega -->
+            <div class="d-flex align-items-center mb-2">
+                <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Entrega:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores_geral.IS_entrega|floatformat:2 }}%</span>
+
+                <div class="progress flex-grow-1" style="height: 14px;">
+                    <div class="progress-bar
+                        {% if indicadores_geral.IS_entrega < 50 %}bg-danger
+                        {% elif indicadores_geral.IS_entrega < 80 %}bg-warning
+                        {% else %}bg-success{% endif %}"
+                        style="width: {{ indicadores_geral.IS_entrega|floatformat:2|cut:","|slice:":-2" }}.{{ indicadores_geral.IS_entrega|floatformat:2|cut:","|slice:"-2:" }}%;">
+                    </div>
+                </div>
+            </div>
+
+          </div>
+
+        </div>
+    </div>
+
+  </div>
   <hr>
 
   <!-- plotlyjs (carregar biblioteca só uma vez na base ou aqui) -->
