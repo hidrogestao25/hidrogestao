@@ -179,15 +179,18 @@
                   </div>
                 </td>
                 {% endif %}
-                
+
                 {% if request.user.grupo == 'suprimento' %}
                 <td>
                   <div class="d-flex gap-1">
 
-                    <a href="{% url 'editar_bm' item.bm.id %}"
-                       class="btn btn-sm btn-warning">
-                       Editar
-                    </a>
+                    <button class="btn btn-sm btn-warning btn-editar-bm"
+                            data-bm-id="{{ item.bm.id }}"
+                            data-bs-toggle="modal"
+                            data-bs-target="#editarBMModal">
+                        Editar
+                    </button>
+
 
                     <form method="post" action="{% url 'deletar_bm' item.bm.id %}"
                           onsubmit="return confirm('Tem certeza que deseja apagar este BM?');">
@@ -210,6 +213,72 @@
           <p class="text-muted">Nenhum boletim cadastrado para este evento.</p>
         {% endif %}
       </div>
+
+      <hr>
+      <h5>Notas Fiscais Cadastradas</h5>
+
+      {% if notas_fiscais %}
+      <table class="table table-bordered table-striped align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>ID NF</th>
+            <th>BM</th>
+            <th>Parcela</th>
+            <th>Valor Pago</th>
+            <th>Data Pagamento</th>
+            <th>Observação</th>
+            <th>Arquivo</th>
+            {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+              <th>Ações</th>
+            {% endif %}
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for nf in notas_fiscais %}
+          <tr>
+            <td>{{ nf.id }}</td>
+            <td>{{ nf.bm.numero_bm }}</td>
+            <td>{{ nf.parcela_paga }}</td>
+            <td>R$ {{ nf.valor_pago|floatformat:2 }}</td>
+            <td>{{ nf.data_pagamento|date:"d/m/Y" }}</td>
+            <td>{{ nf.observacao|default:"-" }}</td>
+            <td>
+              {% if nf.arquivo_nf %}
+                <a href="{{ nf.arquivo_nf.url }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                  Abrir/Download
+                </a>
+              {% else %}
+                <span class="text-muted">Sem arquivo</span>
+              {% endif %}
+            </td>
+
+            {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+            <td>
+              <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-warning btn-editar-nf"
+                        data-nf-id="{{ nf.id }}"
+                        data-bs-toggle="modal"
+                        data-bs-target="#editarNFModal">
+                    Editar
+                </button>
+
+                <form method="post" action="{% url 'deletar_nf' nf.id %}"
+                      onsubmit="return confirm('Tem certeza que deseja apagar esta NF?');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
+                </form>
+              </div>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted">Nenhuma Nota Fiscal cadastrada para este evento.</p>
+      {% endif %}
+
 
 
       {% if request.user.grupo == 'suprimento' %}
@@ -234,6 +303,64 @@
         </div>
       </div>
       {% endif %}
+      {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+      <button type="button" class="btn btn-info mt-3"
+              data-bs-toggle="modal"
+              data-bs-target="#nfModal">Cadastrar NF</button>
+
+      <!-- Modal NF -->
+      <div class="modal fade" id="nfModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+              <h5 class="modal-title">Cadastrar Nota Fiscal</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body" id="nfModalBody">
+              <div class="text-center p-4">Carregando...</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Editar NF -->
+      <div class="modal fade" id="editarNFModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+              <h5 class="modal-title">Editar Nota Fiscal</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body" id="editarNFModalBody">
+              <div class="text-center p-4">Carregando...</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Editar BM -->
+      <div class="modal fade" id="editarBMModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+              <h5 class="modal-title">Editar BM</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body" id="editarBMModalBody">
+              <div class="text-center p-4">Carregando...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% endif %}
+
+
 
     </div>
   </div>
@@ -333,8 +460,105 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 
+  /* ------------------------
+        MODAL EDITAR BM
+  ------------------------ */
+
+  document.querySelectorAll(".btn-editar-bm").forEach(btn => {
+
+    btn.addEventListener("click", function() {
+
+      const bmId = this.dataset.bmId;
+
+      fetch(`/bm/${bmId}/editar/`)
+        .then(r => r.text())
+        .then(html => {
+
+          document.getElementById("editarBMModalBody").innerHTML = html;
+        });
+    });
+
+  });
 
 
+  /* ------------------------
+      MODAL CADASTRO NF
+  ------------------------ */
+  const nfModal = document.getElementById("nfModal");
+
+  if (nfModal) {
+    nfModal.addEventListener("show.bs.modal", function() {
+
+      fetch("{% url 'cadastrar_nf' evento.id %}")
+        .then(r => r.text())
+        .then(html => {
+
+          document.getElementById("nfModalBody").innerHTML = html;
+
+          const nfForm = document.getElementById("nfForm");
+
+          nfForm.addEventListener("submit", function(e) {
+            e.preventDefault();
+
+            const fd = new FormData(nfForm);
+
+            fetch("{% url 'cadastrar_nf' evento.id %}", {
+              method: "POST",
+              body: fd,
+              headers: {"X-Requested-With": "XMLHttpRequest"}
+            })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success) {
+                bootstrap.Modal.getInstance(nfModal).hide();
+                location.reload();
+              } else {
+                alert(Object.values(data.errors).flat().join("\n"));
+              }
+            });
+          });
+
+        });
+    });
+  }
+
+  /* ------------------------
+        MODAL EDITAR NF
+  ------------------------ */
+
+  const editarNFModal = document.getElementById("editarNFModal");
+
+  document.querySelectorAll(".btn-editar-nf").forEach(btn => {
+    btn.addEventListener("click", function() {
+      const nfId = this.dataset.nfId;
+
+      fetch(`/evento/${nfId}/editar-nf/`)  // ou {% url 'editar_nf' 0 %}.replace("0", nfId)
+        .then(r => r.text())
+        .then(html => {
+          document.getElementById("editarNFModalBody").innerHTML = html;
+
+          const form = document.getElementById("formEditarNF");
+
+          document.getElementById("btnSalvarNF")?.addEventListener("click", function () {
+              const fd = new FormData(form);
+
+              fetch(`/evento/${nfId}/editar-nf/`, {
+                  method: "POST",
+                  body: fd
+              })
+              .then(r => r.json())
+              .then(data => {
+                  if (data.success) {
+                      bootstrap.Modal.getInstance(editarNFModal).hide();
+                      location.reload();
+                  } else {
+                      alert("Erro: " + JSON.stringify(data.errors));
+                  }
+              });
+          });
+        });
+    });
+  });
   /* ------------------------
       APROVAÇÃO / REPROVAÇÃO
   ------------------------ */

@@ -11,8 +11,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm
 
 import plotly.graph_objs as go
 import pandas as pd
@@ -1739,6 +1739,7 @@ def registrar_entrega(request, pk):
     evento = get_object_or_404(Evento, pk=pk)
     contrato = evento.contrato_terceiro
     boletins = evento.boletins_medicao.all()
+    notas_fiscais = evento.nota_fiscal.all()
 
     boletins_detalhados = []
     has_reprovacao_coordenador = False
@@ -1787,6 +1788,8 @@ def registrar_entrega(request, pk):
         "boletins_detalhados": boletins_detalhados,
         "has_reprovacao_coordenador": has_reprovacao_coordenador,
         "has_reprovacao_gerente": has_reprovacao_gerente,
+        "notas_fiscais": notas_fiscais,
+
     })
 
 
@@ -2637,6 +2640,40 @@ def cadastrar_bm(request, contrato_id, evento_id):
 
 
 @login_required
+def cadastrar_nf(request, evento_id):
+    evento = get_object_or_404(Evento, id=evento_id)
+    contrato = get_object_or_404(ContratoTerceiros, id=evento.contrato_terceiro.id)
+
+    if request.method == "POST":
+        form = NFForm(request.POST, request.FILES, evento=evento)
+        if form.is_valid():
+            nf = form.save(commit=False)
+            nf.contrato = contrato
+            nf.evento = evento
+            nf.save()
+
+            return JsonResponse({"success": True})
+        else:
+            return JsonResponse({"success": False, "errors": form.errors})
+
+    else:
+        form = NFForm(
+            evento=evento,   # 🔥 IMPORTANTE
+            initial={
+                "valor_pago": evento.valor_previsto,
+                "data_pagamento": evento.data_pagamento or None
+            }
+        )
+
+    return render(request, "nf/cadastrar_nf_popup.html", {
+        "form": form,
+        "contrato": contrato,
+        "evento": evento,
+    })
+
+
+
+@login_required
 def editar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
 
@@ -2656,11 +2693,43 @@ def editar_bm(request, bm_id):
 
 
 @login_required
+def editar_nf(request, nf_id):
+    nf = get_object_or_404(NF, id=nf_id)
+    evento = nf.evento
+
+    if request.method == "POST":
+        form = NFForm(request.POST, request.FILES, evento=evento, instance=nf)
+        if form.is_valid():
+            form.save()
+            return JsonResponse({"success": True})
+        return JsonResponse({"success": False, "errors": form.errors})
+
+    else:
+        form = NFForm(
+            evento=evento,
+            instance=nf,
+            initial={
+                "valor_pago": nf.valor_pago,
+                "data_pagamento": nf.data_pagamento,
+            }
+        )
+
+    return render(request, "nf/editar_nf_popup.html", {
+        "form": form,
+        "nf": nf,
+        "evento": evento,
+        "contrato": nf.contrato,
+    })
+
+
+
+
+@login_required
 def deletar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
 
     if request.user.grupo != "suprimento":
-        return HttpResponse("Sem permissão.", status=403)
+        messages.warning(request, "Você não tem permissão para isso!")
 
     evento_id = bm.evento.id
     bm.delete()
@@ -2668,6 +2737,16 @@ def deletar_bm(request, bm_id):
     messages.success(request, "BM apagado com sucesso!")
     return redirect("registrar_entrega", pk=evento_id)
 
+
+@login_required
+def deletar_nf(request, nf_id):
+    nf = get_object_or_404(NF, id=nf_id)
+    evento_id = nf.evento.id
+
+
+    nf.delete()
+    messages.success(request, "NF apagada com sucesso!")
+    return redirect("registrar_entrega", pk=evento_id)
 
 
 @login_required
