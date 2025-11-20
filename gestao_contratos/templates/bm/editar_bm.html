@@ -1,24 +1,31 @@
-{% extends "base.html" %}
-{% block content %}
+<form id="formEditarBM" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+</form>
 
-<div class="container mt-4">
-  <div class="card">
-    <div class="card-header bg-warning text-white">
-      <h5>Editar BM nº {{ bm.numero_bm }}</h5>
-    </div>
-
-    <div class="card-body">
-      <form method="post" enctype="multipart/form-data">
-        {% csrf_token %}
-        {{ form.as_p }}
-
-        <div class="d-flex justify-content-end gap-2">
-          <a href="{% url 'registrar_entrega' bm.evento.id %}" class="btn btn-secondary">Cancelar</a>
-          <button type="submit" class="btn btn-success">Salvar</button>
-        </div>
-      </form>
-    </div>
-  </div>
+<div class="mt-3 d-flex justify-content-end gap-2">
+    <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+    <button class="btn btn-success" id="btnSalvarBM">Salvar</button>
 </div>
 
-{% endblock %}
+<script>
+document.getElementById("btnSalvarBM").addEventListener("click", function() {
+
+    const form = document.getElementById("formEditarBM");
+    const fd = new FormData(form);
+
+    fetch("{% url 'editar_bm' bm.id %}", {
+        method: "POST",
+        body: fd
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success !== false) {
+            bootstrap.Modal.getInstance(document.getElementById("editarBMModal")).hide();
+            location.reload();
+        } else {
+            alert("Erro ao salvar:\n" + Object.values(data.errors).flat().join("\n"));
+        }
+    });
+});
+</script>

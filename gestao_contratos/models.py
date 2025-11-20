@@ -609,7 +609,7 @@ class BM(models.Model):
         null=True, blank=True,
         verbose_name="Justificativa da Reprovação do Gerente"
     )
-    
+
     arquivo_bm = models.FileField(
         upload_to='BM/',
         verbose_name='Inserir arquivo do Boletim de Medição',
@@ -640,6 +640,25 @@ class BM(models.Model):
                 self.data_aprovacao_gerente = None
         super().save(*args, **kwargs)
 
+# -------------
+# Nota Fiscal
+#--------------
+class NF(models.Model):
+    contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="nota_fiscal")
+    evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='nota_fiscal')
+    bm = models.ForeignKey(BM, on_delete=models.CASCADE, related_name='nota_fiscal', blank=True, null=True)
+    valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    parcela_paga = models.PositiveIntegerField()
+    data_pagamento = models.DateField(default=timezone.now)
+    arquivo_nf = models.FileField(
+        upload_to='NF/Fornecedor/',
+        verbose_name='Inserir arquivo da Nota Fiscal',
+        null=True, blank=True
+    )
+    observacao = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Nota Fiscal {self.id} - {self.evento.descricao} (id - {self.evento.id})"
 
 # -----------
 # Documentos (cliente)

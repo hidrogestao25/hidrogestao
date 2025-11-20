@@ -1,5 +1,5 @@
 from django import forms
-from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM
+from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF
 from django.contrib import messages
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime
@@ -378,3 +378,36 @@ class BMForm(forms.ModelForm):
         # garante que o valor inicial seja respeitado se já existir
         if "initial" in kwargs and "data_pagamento" in kwargs["initial"]:
             self.fields["data_pagamento"].initial = kwargs["initial"]["data_pagamento"]
+
+
+class NFForm(forms.ModelForm):
+    class Meta:
+        model = NF
+        fields = [
+            "bm",
+            "valor_pago",
+            "parcela_paga",
+            "data_pagamento",
+            "arquivo_nf",
+            "observacao",
+        ]
+
+        widgets = {
+            "bm": forms.Select(attrs={"class": "form-control"}),
+            "valor_pago": forms.NumberInput(attrs={"class": "form-control", "step": "0.01"}),
+            "parcela_paga": forms.NumberInput(attrs={"class": "form-control"}),
+            "data_pagamento": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
+            "arquivo_nf": forms.ClearableFileInput(attrs={"class": "form-control"}),
+            "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+        }
+
+    # 🔥 FILTRANDO OS BMs PELO EVENTO
+    def __init__(self, *args, **kwargs):
+        evento = kwargs.pop("evento", None)   # recebe o evento da view
+        super().__init__(*args, **kwargs)
+
+        # Se veio um evento, filtra os BMs desse evento
+        if evento:
+            self.fields["bm"].queryset = BM.objects.filter(evento=evento)
+        else:
+            self.fields["bm"].queryset = BM.objects.none()
