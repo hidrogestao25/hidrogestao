@@ -753,7 +753,11 @@ def fornecedor_detalhe(request, pk):
     return render(
         request,
         'fornecedores/fornecedor_detail.html',
-        {'fornecedor': fornecedor, 'contratos': contratos}
+        {
+            'fornecedor': fornecedor,
+            'contratos': contratos,
+            'indicadores_geral': indicadores_geral,
+            }
     )
 
 
