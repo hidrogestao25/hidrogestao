@@ -6,7 +6,7 @@
       <h5>Detalhes do Contrato com Fornecedor</h5>
     </div>
     <div class="card-body">
-      <p><strong>Código do Projeto:</strong> {{ contrato.cod_projeto }}</p>
+      <p><strong>Código do Projeto:</strong> {{ contrato.cod_projeto.cod_projeto }}</p>
       <p><strong>Cliente:</strong> {{ contrato.cod_projeto.cliente }}</p>
       <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
@@ -154,39 +154,56 @@
               <a href="{% url 'detalhes_entrega' evento.id %}" class="btn btn-sm btn-outline-info">
                 Detalhes da Entrega
               </a>
-
+                  {% if evento.realizado %}
+                    {% with avaliacao=evento.avaliacoes.first %}
+                        {% if avaliacao %}
+                            <!-- Avaliação já feita -->
+                            <button class="btn btn-sm btn-secondary" disabled>
+                                Avaliado ✔
+                            </button>
+                        {% endif %}
+                    {% endwith %}
+                  {% endif %}
               {% elif request.user.grupo == 'coordenador' %}
-              {% if evento.realizado %}
-                {% with avaliacao=evento.avaliacoes.first %}
-
-                    {% if avaliacao %}
-                        <!-- Avaliação já feita -->
-                        <button class="btn btn-sm btn-secondary" disabled>
-                            Avaliado ✔
-                        </button>
-                    {% else %}
-                        <!-- Evento realizado, mas sem avaliação -->
-                        <a href="{% url 'avaliar_evento_fornecedor' evento.id %}"
-                           class="btn btn-sm btn-outline-primary">
-                           Avaliar Evento ⭐
-                        </a>
-                    {% endif %}
-
-                {% endwith %}
-              {% endif %}
-              <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
-                Registrar Entrega
-              </a>
+                  {% if evento.realizado %}
+                    {% with avaliacao=evento.avaliacoes.first %}
+                        {% if avaliacao %}
+                            <!-- Avaliação já feita -->
+                            <button class="btn btn-sm btn-secondary" disabled>
+                                Avaliado ✔
+                            </button>
+                        {% else %}
+                            <!-- Evento realizado, mas sem avaliação -->
+                            <a href="{% url 'avaliar_evento_fornecedor' evento.id %}"
+                               class="btn btn-sm btn-outline-primary">
+                               Avaliar Evento ⭐
+                            </a>
+                        {% endif %}
+                    {% endwith %}
+                  {% endif %}
+                  <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
+                    Registrar Entrega
+                  </a>
 
               {% elif request.user.grupo == 'suprimento' %}
-              <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
-                Registrar Entrega
-              </a>
-              <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
-              <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
-                 onclick="return confirm('Tem certeza que deseja excluir este evento?')">
-                 Apagar
-              </a>
+                  <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
+                    Registrar Entrega
+                  </a>
+                  <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
+                  <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
+                     onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                     Apagar
+                  </a>
+                  {% if evento.realizado %}
+                    {% with avaliacao=evento.avaliacoes.first %}
+                        {% if avaliacao %}
+                            <!-- Avaliação já feita -->
+                            <button class="btn btn-sm btn-secondary" disabled>
+                                Avaliado ✔
+                            </button>
+                        {% endif %}
+                    {% endwith %}
+                  {% endif %}
               {% endif %}
             </td>
           </tr>
