@@ -15,6 +15,7 @@ from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, Solic
 from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm
 
 import plotly.graph_objs as go
+import plotly.express as px
 import pandas as pd
 from plotly.offline import plot
 import plotly.colors as pc
@@ -119,11 +120,15 @@ def home(request):
     is_suprimento = grupo == "suprimento"
     is_coordenador = grupo == "coordenador"
     is_gerente = grupo == "gerente"
+    is_diretoria = grupo == "diretoria"
+    is_financeiro = grupo == "financeiro"
 
     context = {
         "is_suprimento": is_suprimento,
         "is_coordenador": is_coordenador,
         "is_gerente": is_gerente,
+        "is_diretoria": is_diretoria,
+        "is_financeiro": is_financeiro
     }
 
     # ==================== SUPRIMENTO ====================
@@ -140,7 +145,7 @@ def home(request):
             data_prevista__range=[hoje, limite]
         ).order_by("data_prevista")
 
-        # 🚨 Entregas atrasadas (todas)
+        # Entregas atrasadas (todas)
         entregas_atrasadas = Evento.objects.filter(
             Q(realizado=False) & Q(data_prevista__lt=hoje)
         ).order_by("data_prevista")
@@ -170,7 +175,7 @@ def home(request):
             contrato_terceiro__coordenador=user
         ).order_by("data_prevista")
 
-        # 🚨 Entregas atrasadas do coordenador
+        # Entregas atrasadas do coordenador
         entregas_atrasadas = Evento.objects.filter(
             Q(contrato_terceiro__coordenador=user)
             & Q(realizado=False)
@@ -224,7 +229,7 @@ def home(request):
             contrato_terceiro__coordenador__centros__in=centros_ids
         ).order_by("data_prevista").distinct()
 
-        # 🚨 Entregas atrasadas dos centros do gerente
+        # Entregas atrasadas dos centros do gerente
         entregas_atrasadas = Evento.objects.filter(
             contrato_terceiro__coordenador__centros__in=centros_ids,
             realizado=False,
@@ -238,6 +243,49 @@ def home(request):
             "eventos_proximos": eventos_proximos,
             "entregas_atrasadas": entregas_atrasadas,
         })
+    # ==================== DIRETORIA ====================
+    elif is_diretoria:
+
+        # BM aprovados por Coordenador e Gerente mas pendentes na Diretoria
+        bms_pendentes_diretoria = BM.objects.filter(
+            status_coordenador="aprovado",
+            status_gerente="aprovado",
+            aprovacao_pagamento="pendente"
+        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
+
+        # Entregas atrasadas (todas)
+        entregas_atrasadas = Evento.objects.filter(
+            realizado=False,
+            data_prevista__lt=hoje
+        ).order_by("data_prevista")
+
+        # Próximas entregas (10 dias)
+        eventos_proximos = Evento.objects.filter(
+            data_prevista__range=[hoje, limite]
+        ).order_by("data_prevista")
+
+        context.update({
+            "painel_titulo": "Painel da Diretoria",
+            "bms_pendentes_diretoria": bms_pendentes_diretoria,
+            "entregas_atrasadas": entregas_atrasadas,
+            "eventos_proximos": eventos_proximos,
+        })
+
+    # ==================== FINANCEIRO ====================
+    elif is_financeiro:
+        # Painel financeiro: eventos com BMs aprovados para pagamento, mas sem NF
+        eventos_sem_nf = BM.objects.filter(
+            status_coordenador="aprovado",
+            status_gerente="aprovado",
+            aprovacao_pagamento="aprovado"
+        ).filter(
+            Q(nota_fiscal__isnull=True)
+        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
+
+        context.update({
+            "eventos_sem_nf": eventos_sem_nf,
+        })
+
 
     return render(request, "home.html", context)
 
@@ -249,7 +297,7 @@ def logout(request):
 
 @login_required
 def lista_contratos(request):
-    if request.user.grupo in ['suprimento', 'financeiro']:
+    if request.user.grupo in ['suprimento', 'financeiro', 'diretoria']:
         contratos = Contrato.objects.all()
     elif request.user.grupo == 'coordenador':
         contratos = Contrato.objects.filter(coordenador=request.user)
@@ -281,7 +329,7 @@ def lista_contratos(request):
 @login_required
 def lista_clientes(request):
     # Filtro inicial por grupo
-    if request.user.grupo in ['suprimento', 'financeiro']:
+    if request.user.grupo in ['suprimento', 'financeiro', 'diretoria']:
         clientes = Cliente.objects.all()
     elif request.user.grupo == 'coordenador':
         clientes = Cliente.objects.filter(contratos__coordenador=request.user).distinct()
@@ -292,7 +340,7 @@ def lista_clientes(request):
     else:
         return redirect('home')
 
-    # 🔍 Campo de busca
+    # Campo de busca
     search_query = request.GET.get('search', '').strip()
     if search_query:
         clientes = clientes.filter(
@@ -317,7 +365,7 @@ def lista_clientes(request):
 @login_required
 def lista_contratos_fornecedor(request):
     # Filtragem base por grupo de usuário
-    if request.user.grupo in ['suprimento', 'financeiro']:
+    if request.user.grupo in ['suprimento', 'financeiro', 'diretoria']:
         contratos = ContratoTerceiros.objects.all()
     elif request.user.grupo == 'coordenador':
         contratos = ContratoTerceiros.objects.filter(coordenador=request.user)
@@ -328,7 +376,7 @@ def lista_contratos_fornecedor(request):
     else:
         return redirect('home')
 
-    # 🔍 Campo de busca
+    # Campo de busca
     search_query = request.GET.get('search', '').strip()
     if search_query:
         contratos = contratos.filter(
@@ -358,8 +406,8 @@ def lista_contratos_fornecedor(request):
 
 @login_required
 def lista_fornecedores(request):
-    # 🔹 Filtro base por grupo de usuário
-    if request.user.grupo in ['suprimento', 'financeiro']:
+    # Filtro base por grupo de usuário
+    if request.user.grupo in ['suprimento', 'financeiro', 'diretoria']:
         fornecedores = EmpresaTerceira.objects.all()
     elif request.user.grupo == 'coordenador':
         fornecedores = EmpresaTerceira.objects.filter(
@@ -372,7 +420,7 @@ def lista_fornecedores(request):
     else:
         return redirect('home')
 
-    # 🔍 Campo de busca
+    # Campo de busca
     search_query = request.GET.get('search', '').strip()
     if search_query:
         fornecedores = fornecedores.filter(
@@ -383,7 +431,7 @@ def lista_fornecedores(request):
             Q(estado__icontains=search_query)
         )
 
-    # 🔸 Ordenação e paginação
+    # Ordenação e paginação
     fornecedores = fornecedores.order_by('nome')
     paginator = Paginator(fornecedores, 10)
     page_number = request.GET.get('page')
@@ -399,9 +447,6 @@ def lista_fornecedores(request):
 
 @login_required
 def contrato_cliente_detalhe(request, pk):
-    import plotly.graph_objects as go
-    import pandas as pd
-
     contrato = get_object_or_404(Contrato, pk=pk)
 
     # ---- Buscar eventos ligados a esse contrato ----
@@ -434,7 +479,6 @@ def contrato_cliente_detalhe(request, pk):
         perc_previsto = perc_pago = perc_restante = 0
 
     # ---- Cores diferentes para cada fornecedor ----
-    import plotly.express as px
     fornecedores = resumo['empresa_terceira__nome'].tolist()
     cores = px.colors.qualitative.Plotly * (len(fornecedores) // 10 + 1)
 
@@ -514,7 +558,7 @@ def contrato_cliente_detalhe(request, pk):
     }
 
     # ---- Controle de edição ----
-    if request.user.grupo in ["suprimento", "financeiro"]:
+    if request.user.grupo in ["suprimento"]:
         if request.method == 'POST':
             form = ContratoForm(request.POST, instance=contrato)
             if form.is_valid():
@@ -659,12 +703,12 @@ def contrato_fornecedor_editar(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
 
     # Permissões
-    if request.user.grupo not in ["suprimento", "financeiro"]:
+    if request.user.grupo not in ["suprimento"]:
         messages.error(request, "❌ Você não tem permissão para editar contratos.")
         return redirect("contrato_fornecedor_detalhe", pk=pk)
 
     if request.method == "POST":
-        # ⚠️ Incluímos request.FILES para que o arquivo seja capturado
+        # Incluímos request.FILES para que o arquivo seja capturado
         form = ContratoFornecedorForm(request.POST, request.FILES, instance=contrato)
         print("POST:", request.POST)
         print("FILES:", request.FILES)
@@ -1822,16 +1866,18 @@ def avaliar_bm(request, bm_id):
     usuario = request.user
 
     # Verifica permissão
-    if usuario.grupo not in ["coordenador", "gerente"]:
+    if usuario.grupo not in ["coordenador", "gerente", "diretoria"]:
         messages.error(request, "⚠ Você não tem permissão para isso.")
 
     acao = request.POST.get("acao")
     justificativa = request.POST.get("justificativa", "").strip()
 
-    if acao not in ["aprovar", "reprovar"]:
+    if acao not in ["aprovar", "reprovar", "aprovar_pagamento", "reprovar_pagamento"]:
         messages.error(request, "⚠ Ação inválida.")
 
-    # Atualiza conforme o grupo
+    # ------------------------------
+    # AVALIAÇÃO DO COORDENADOR
+    # ------------------------------
     if usuario.grupo == "coordenador":
         bm.status_coordenador = "aprovado" if acao == "aprovar" else "reprovado"
         bm.data_aprovacao_coordenador = timezone.now()
@@ -1841,6 +1887,9 @@ def avaliar_bm(request, bm_id):
         else:
             bm.justificativa_reprovacao_coordenador = None
 
+    # ------------------------------
+    # AVALIAÇÃO DO GERENTE
+    # ------------------------------
     elif usuario.grupo == "gerente":
         bm.status_gerente = "aprovado" if acao == "aprovar" else "reprovado"
         bm.data_aprovacao_gerente = timezone.now()
@@ -1850,71 +1899,131 @@ def avaliar_bm(request, bm_id):
         else:
             bm.justificativa_reprovacao_gerente = None
 
+    # ------------------------------
+    # AVALIAÇÃO DA DIRETORIA
+    # ------------------------------
+    elif usuario.grupo == "diretoria":
+
+        # Valida sequência
+        if bm.status_coordenador != "aprovado" or bm.status_gerente != "aprovado":
+            return JsonResponse({
+                "success": False,
+                "error": "Coordenador e gerente ainda não aprovaram este BM."
+            }, status=400)
+
+        # Diretoria aprova pagamento
+        if acao == "aprovar_pagamento":
+            bm.aprovacao_pagamento = "aprovado"
+            bm.data_aprovacao_diretor = timezone.now()
+            bm.justificativa_reprovacao_diretor = None
+
+            # dispara e-mail para suprimento + financeiro
+            usuarios_destino = User.objects.filter(grupo__in=["suprimento", "financeiro"])
+            lista_emails = [u.email for u in usuarios_destino if u.email]
+
+            if not lista_emails:
+                return
+
+            assunto = f"Pagamento Aprovado pela Diretoria – BM {bm.id}"
+            mensagem = (
+                f"Olá, equipe!\n\n"
+                f"A diretoria APROVOU o pagamento do BM abaixo:\n\n"
+                f"Projeto: {bm.contrato.cod_projeto}\n"
+                f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
+                f"Evento: {bm.evento.descricao}\n"
+                f"Valor BM: R$ {bm.valor_pago}\n\n"
+                f"Atenciosamente,\n"
+                f"Sistema HIDROGestão"
+            )
+
+            send_mail(
+                assunto,
+                mensagem,
+                "hidro.gestao25@gmail.com",
+                lista_emails,
+                fail_silently=False,
+            )
+
+        # Diretoria reprova pagamento
+        elif acao == "reprovar_pagamento":
+            bm.aprovacao_pagamento = "reprovado"
+            bm.data_aprovacao_diretor = timezone.now()
+            bm.justificativa_reprovacao_diretor = justificativa or "Sem justificativa informada."
+
+
+    # SALVA ALTERAÇÕES
     bm.save()
 
-    try:
-        status_coord = bm.status_coordenador
-        status_ger = bm.status_gerente
+    # ---------------------------------------------------------------
+    # ENVIO DE E-MAIL PARA SUPRIMENTO APÓS AVALIAÇÃO DE COORD/GER
+    # (Seu fluxo antigo – mantido exatamente igual)
+    # ---------------------------------------------------------------
+    if usuario.grupo in ['gerente', 'coordenador']:
+        try:
+            status_coord = bm.status_coordenador
+            status_ger = bm.status_gerente
 
-        # Só envia quando AMBOS já avaliaram
-        if status_coord != "pendente" and status_ger != "pendente":
+            if status_coord != "pendente" and status_ger != "pendente":
 
-            # Busca todos do grupo suprimento
-            usuarios_suprimento = User.objects.filter(grupo="suprimento")
-            lista_emails = [u.email for u in usuarios_suprimento if u.email]
+                usuarios_suprimento = User.objects.filter(grupo="suprimento")
+                lista_emails = [u.email for u in usuarios_suprimento if u.email]
 
-            if lista_emails:
+                if lista_emails:
 
-                # Ambos aprovaram
-                if status_coord == "aprovado" and status_ger == "aprovado":
-                    assunto = f"BM aprovado - Contrato {bm.contrato.num_contrato}"
-                    mensagem = (
-                        f"Olá, equipe de Suprimentos!\n\n"
-                        f"O Boletim de Medição foi APROVADO pelo coordenador e pelo gerente.\n\n"
-                        f"Projeto: {bm.contrato.cod_projeto}\n"
-                        f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
-                        f"Evento: {bm.evento.descricao}\n"
-                        f"Valor BM: R$ {bm.valor_pago}\n\n"
-                        f"Atenciosamente,\n"
-                        f"Sistema HIDROGestão"
+                    # Ambos aprovaram
+                    if status_coord == "aprovado" and status_ger == "aprovado":
+                        assunto = f"BM aprovado - Contrato {bm.contrato.num_contrato}"
+                        mensagem = (
+                            f"Olá, equipe de Suprimentos!\n\n"
+                            f"O Boletim de Medição foi APROVADO pelo coordenador e pelo gerente.\n\n"
+                            f"Projeto: {bm.contrato.cod_projeto}\n"
+                            f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
+                            f"Evento: {bm.evento.descricao}\n"
+                            f"Valor BM: R$ {bm.valor_pago}\n\n"
+                            f"Atenciosamente,\n"
+                            f"Sistema HIDROGestão"
+                        )
+
+                    # Algum reprovou
+                    else:
+                        assunto = f"BM reprovado - Contrato {bm.contrato.num_contrato}"
+                        mensagem = (
+                            f"Olá, equipe de Suprimentos!\n\n"
+                            f"O Boletim de Medição foi REPROVADO.\n\n"
+                            f"Projeto: {bm.contrato.cod_projeto}\n"
+                            f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
+                            f"Evento: {bm.evento.descricao}\n\n"
+                            f"Justificativas:\n"
+                            f"- Coordenador: {bm.justificativa_reprovacao_coordenador or 'Aprovou'}\n"
+                            f"- Gerente: {bm.justificativa_reprovacao_gerente or 'Aprovou'}\n\n"
+                            f"Atenciosamente,\n"
+                            f"Sistema HIDROGestão"
+                        )
+
+                    send_mail(
+                        assunto,
+                        mensagem,
+                        "hidro.gestao25@gmail.com",
+                        lista_emails,
+                        fail_silently=False,
                     )
 
-                # Algum reprovou
-                else:
-                    assunto = f"BM reprovado - Contrato {bm.contrato.num_contrato}"
-                    mensagem = (
-                        f"Olá, equipe de Suprimentos!\n\n"
-                        f"O Boletim de Medição foi REPROVADO.\n\n"
-                        f"Projeto: {bm.contrato.cod_projeto}\n"
-                        f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
-                        f"Evento: {bm.evento.descricao}\n\n"
-                        f"Justificativas:\n"
-                        f"- Coordenador: {bm.justificativa_reprovacao_coordenador or 'Aprovou'}\n"
-                        f"- Gerente: {bm.justificativa_reprovacao_gerente or 'Aprovou'}\n\n"
-                        f"Atenciosamente,\n"
-                        f"Sistema HIDROGestão"
-                    )
+        except Exception as e:
+            print("Erro ao enviar e-mail de avaliação:", e)
+            messages.error(request, "⚠ Não foi possível enviar o e-mail para Suprimentos.")
 
-                send_mail(
-                    assunto,
-                    mensagem,
-                    "hidro.gestao25@gmail.com",
-                    lista_emails,
-                    fail_silently=False,
-                )
 
-    except Exception as e:
-        print("Erro ao enviar e-mail de avaliação:", e)
-        messages.error(request, "⚠ Não foi possível enviar o e-mail para Suprimentos.")
-
-    # -------------------------------------------------------------------
-
+    # ---------------------------------------------------------------
+    # RETORNO JSON
+    # ---------------------------------------------------------------
     return JsonResponse({
         "success": True,
         "status_coordenador": bm.status_coordenador,
         "status_gerente": bm.status_gerente,
         "justificativa_reprovacao_coordenador": bm.justificativa_reprovacao_coordenador,
         "justificativa_reprovacao_gerente": bm.justificativa_reprovacao_gerente,
+        "aprovacao_pagamento": bm.aprovacao_pagamento,
+        "justificativa_reprovacao_diretor": bm.justificativa_reprovacao_diretor,
     })
 
 
@@ -1948,7 +2057,7 @@ def previsao_pagamentos(request):
         )
 
         # === SUPRIMENTO ===
-        if usuario.grupo == "suprimento":
+        if usuario.grupo in ["suprimento", "diretoria"]:
             eventos = Evento.objects.filter(filtros_base)
 
         # === GERENTE ===
@@ -2093,7 +2202,7 @@ def previsao_pagamentos(request):
         calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
                           .values_list('data_pagamento', flat=True))
 
-        # 🔸 filtra os projetos conforme coordenador (ou todos se não houver filtro)
+        # filtra os projetos conforme coordenador (ou todos se não houver filtro)
         if coordenador:
             projetos = list(Evento.objects.filter(
                 contrato_terceiro__coordenador=coordenador
@@ -2221,7 +2330,7 @@ def previsao_pagamentos(request):
             'evento'
         ).order_by('-data_pagamento')
 
-        # 🔹 Se o coordenador foi selecionado, filtra também os BMs
+        # Se o coordenador foi selecionado, filtra também os BMs
         if coordenador:
             bms = bms.filter(contrato__coordenador=coordenador)
 
@@ -2530,7 +2639,7 @@ def ranking_fornecedores(request):
             coordenador__in=coordenadores_mesmos_centros
         )
 
-    elif user.grupo == 'suprimento':
+    elif user.grupo in ['suprimento', 'diretoria', 'financeiro']:
         # Suprimento vê todos os contratos ativos
         pass
 
@@ -2680,7 +2789,7 @@ def cadastrar_nf(request, evento_id):
 
     else:
         form = NFForm(
-            evento=evento,   # 🔥 IMPORTANTE
+            evento=evento,
             initial={
                 "valor_pago": evento.valor_previsto,
                 "data_pagamento": evento.data_pagamento or None
@@ -2768,6 +2877,8 @@ def deletar_nf(request, nf_id):
 
     nf.delete()
     messages.success(request, "NF apagada com sucesso!")
+    if request.user.grupo == 'financeiro':
+        return redirect("detalhes_entrega", evento_id=evento_id)
     return redirect("registrar_entrega", pk=evento_id)
 
 
@@ -2775,6 +2886,7 @@ def deletar_nf(request, nf_id):
 def detalhes_entrega(request, evento_id):
     evento = get_object_or_404(Evento, id=evento_id)
     bms = BM.objects.filter(evento=evento).order_by('-data_pagamento')
+    notas_fiscais = evento.nota_fiscal.all()
 
     fornecedor = None
     if hasattr(evento, 'contrato_terceiro') and evento.contrato_terceiro.empresa_terceira:
@@ -2782,6 +2894,8 @@ def detalhes_entrega(request, evento_id):
 
     tem_reprovacao_coordenador = bms.filter(status_coordenador='reprovado').exists()
     tem_reprovacao_gerente = bms.filter(status_gerente='reprovado').exists()
+    tem_reprovacao_diretor = bms.filter(aprovacao_pagamento='reprovado').exists()
+
 
     return render(request, 'contratos/detalhes_entrega.html', {
         'evento': evento,
@@ -2789,6 +2903,8 @@ def detalhes_entrega(request, evento_id):
         'bms': bms,
         'tem_reprovacao_coordenador': tem_reprovacao_coordenador,
         'tem_reprovacao_gerente': tem_reprovacao_gerente,
+        'tem_reprovacao_diretor': tem_reprovacao_diretor,
+        'notas_fiscais':notas_fiscais,
     })
 
 @login_required

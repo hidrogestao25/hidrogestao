@@ -484,7 +484,7 @@ class Evento(models.Model):
         ('Aprovado', 'Aprovado'),
         ('Reprovado', 'Reprovado'),
     ]
-    empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
+    empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE, null=True, blank=True)
     prospeccao = models.ForeignKey(SolicitacaoProspeccao, on_delete=models.CASCADE, null=True, blank=True)
     contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, null=True, blank=True)
     arquivo = models.FileField(
@@ -492,6 +492,7 @@ class Evento(models.Model):
         verbose_name='Inserir arquivo para comprovação de entrega',
         null=True, blank=True
     )
+    caminho_evidencia = models.CharField(max_length=260, null=True, blank=True)
     descricao = models.TextField()
     justificativa = models.TextField(null=True, blank=True)
     avaliacao = models.CharField(max_length=30, choices=AVALIACAO_CHOICES, null=True, blank=True)
@@ -715,6 +716,9 @@ class BM(models.Model):
     status_gerente = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
     data_aprovacao_gerente = models.DateTimeField(null=True, blank=True)
 
+    aprovacao_pagamento = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    data_aprovacao_diretor = models.DateTimeField(null=True, blank=True)
+
     justificativa_reprovacao_coordenador = models.TextField(
         null=True, blank=True,
         verbose_name="Justificativa da Reprovação do Coordenador"
@@ -722,6 +726,11 @@ class BM(models.Model):
     justificativa_reprovacao_gerente = models.TextField(
         null=True, blank=True,
         verbose_name="Justificativa da Reprovação do Gerente"
+    )
+
+    justificativa_reprovacao_diretor = models.TextField(
+        null=True, blank=True,
+        verbose_name="Justificativa da Reprovação da Direção"
     )
 
     arquivo_bm = models.FileField(

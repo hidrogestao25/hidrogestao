@@ -308,12 +308,12 @@ class EventoEntregaForm(forms.ModelForm):
     class Meta:
         model = Evento
         fields = [
-            "observacao", "arquivo", "justificativa", "avaliacao",
+            "observacao", "caminho_evidencia", "justificativa", "avaliacao",
             "data_entrega", "realizado", "com_atraso",
             "valor_pago", "data_pagamento"
         ]
         widgets = {
-            "arquivo": forms.ClearableFileInput(attrs={"class": "form-control"}),
+            "caminho_evidencia": forms.Textarea(attrs={"class": "form-control", "rows": 1}),
             "justificativa": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "avaliacao": forms.Select(attrs={"class": "form-select"}),
             "data_entrega": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
