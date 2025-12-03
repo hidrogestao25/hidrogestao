@@ -7,7 +7,10 @@
     </div>
     <div class="card-body">
       <p><strong>Código do Projeto:</strong> {{ contrato.cod_projeto.cod_projeto }}</p>
-      <p><strong>Cliente:</strong> {{ contrato.cod_projeto.cliente }}</p>
+      <p><strong>Cliente:</strong>
+        <a href="{% url 'cliente_detalhe' contrato.cod_projeto.cliente.id %}" class="text-decoration-none">
+          {{ contrato.cod_projeto.cliente }}
+        </a></p>
       <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
       <p><strong>Contrato com Fornecedor:</strong> {{ contrato.num_contrato }}</p>
@@ -144,13 +147,25 @@
             {% endif %}
             <td>
               {% if evento.realizado %}
-                ✅ Realizado
+                {% if evento.valor_pago != evento.valor_previsto %}
+                  {% if not evento.valor_pago %}
+                    💳 Pagamento não realizado
+                  {% elif evento.valor_pago == 0 %}
+                    💳 Pagamento não realizado
+                  {% elif evento.valor_pago <= evento.valor_previsto %}
+                    💳 Pagamento abaixo do previsto
+                  {% elif evento.valor_pago >= evento.valor_previsto %}
+                    ✅ Finalizado
+                  {% endif %}
+                {% else %}
+                ✅ Finalizado
+                {% endif %}
               {% else %}
                 ⏳ Pendente
               {% endif %}
             </td>
             <td>
-              {% if  request.user.grupo == 'gerente' %}
+              {% if  request.user.grupo in 'gerente diretoria financeiro' %}
               <a href="{% url 'detalhes_entrega' evento.id %}" class="btn btn-sm btn-outline-info">
                 Detalhes da Entrega
               </a>
@@ -185,7 +200,7 @@
                     Registrar Entrega
                   </a>
 
-              {% elif request.user.grupo == 'suprimento' %}
+              {% elif request.user.grupo in "suprimento" %}
                   <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
                     Registrar Entrega
                   </a>

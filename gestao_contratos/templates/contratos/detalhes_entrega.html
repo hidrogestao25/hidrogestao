@@ -4,7 +4,11 @@
 <div class="container mt-4">
   <div class="card shadow-sm">
     <div class="card-header card-header-custom text-white">
-      <h5>📦 Detalhes da Entrega - {{ fornecedor.nome }}</h5>
+      <h5>
+        <a href="{% url 'contrato_fornecedor_detalhe' evento.contrato_terceiro.id %}" class="text-decoration-none">
+          📦 Detalhes da Entrega - {{ fornecedor.nome }}
+        </a>
+      </h5>
     </div>
     <div class="card-body">
       <p><strong>Descrição:</strong> {{ evento.descricao }}</p>
@@ -48,15 +52,17 @@
                 <th>Data do Pagamento</th>
                 <th>Valor do BM</th>
                 <th>Status Coordenador</th>
-                <th>Status Gerente</th>
-
                 {% if tem_reprovacao_coordenador %}
                   <th>Justificativa Coordenador</th>
                 {% endif %}
+                <th>Status Gerente</th>
                 {% if tem_reprovacao_gerente %}
                   <th>Justificativa Gerente</th>
                 {% endif %}
-
+                <th>Autorização Pagamento</th>
+                {% if tem_reprovacao_diretor %}
+                    <th>Justificativa Diretor</th>
+                {% endif %}
                 <th>Observações</th>
                 <th>Arquivo</th>
                 <th>Ações</th>
@@ -69,8 +75,13 @@
                   <td>{{ bm.numero_bm }}</td>
                   <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
                   <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
-                  <td class="status-coordenador">{{ bm.status_coordenador|default:"-" }}</td>
-                  <td class="status-gerente">{{ bm.status_gerente|default:"-" }}</td>
+                  {% if bm.status_coordenador == "aprovado" %}
+                    <td><span class="badge bg-success">Aprovado</span></td>
+                  {% elif bm.status_coordenador == "reprovado" %}
+                    <td><span class="badge bg-danger">Reprovado</span></td>
+                  {% else %}
+                    <td><span class="badge bg-secondary">Pendente</span></td>
+                  {% endif %}
 
                   {% if tem_reprovacao_coordenador %}
                     <td>
@@ -82,6 +93,14 @@
                     </td>
                   {% endif %}
 
+                  {% if bm.status_gerente == "aprovado" %}
+                    <td><span class="badge bg-success">Aprovado</span></td>
+                  {% elif bm.status_gerente == "reprovado" %}
+                    <td><span class="badge bg-danger">Reprovado</span></td>
+                  {% else %}
+                    <td><span class="badge bg-secondary">Pendente</span></td>
+                  {% endif %}
+
                   {% if tem_reprovacao_gerente %}
                     <td>
                       {% if bm.status_gerente == "reprovado" %}
@@ -90,6 +109,22 @@
                         -
                       {% endif %}
                     </td>
+                  {% endif %}
+                  {% if bm.aprovacao_pagamento == "aprovado" %}
+                    <td><span class="badge bg-success">Aprovado</span></td>
+                  {% elif bm.aprovacao_pagamento == "reprovado" %}
+                    <td><span class="badge bg-danger">Reprovado</span></td>
+                  {% else %}
+                    <td><span class="badge bg-secondary">Pendente</span></td>
+                  {% endif %}
+                  {% if tem_reprovacao_diretor %}
+                      <td>
+                          {% if bm.aprovacao_pagamento == "reprovado" %}
+                              {{ bm.justificativa_reprovacao_diretor|default:"-" }}
+                          {% else %}
+                              -
+                          {% endif %}
+                      </td>
                   {% endif %}
 
                   <td>{% if bm.observacao %}{{ bm.observacao }}{% else %}-{% endif %}</td>
@@ -104,27 +139,48 @@
                   </td>
                   <td>
                     {% if user.grupo == "coordenador" %}
-                      <div class="d-flex gap-1">
-                        <button type="button" class="btn btn-sm btn-success btn-aprovar"
-                                data-bm-id="{{ bm.id }}"
-                                {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>Aprovar</button>
-                        <button type="button" class="btn btn-sm btn-danger btn-reprovar"
-                                data-bm-id="{{ bm.id }}"
-                                {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>Reprovar</button>
-                      </div>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-success btn-aprovar"
+                                    data-bm-id="{{ bm.id }}"
+                                    {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>Aprovar</button>
+                            <button type="button" class="btn btn-sm btn-danger btn-reprovar"
+                                    data-bm-id="{{ bm.id }}"
+                                    {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>Reprovar</button>
+                        </div>
+
                     {% elif user.grupo == "gerente" %}
-                      <div class="d-flex gap-1">
-                        <button type="button" class="btn btn-sm btn-success btn-aprovar"
-                                data-bm-id="{{ bm.id }}"
-                                {% if bm.status_gerente != "pendente" %}disabled{% endif %}>Aprovar</button>
-                        <button type="button" class="btn btn-sm btn-danger btn-reprovar"
-                                data-bm-id="{{ bm.id }}"
-                                {% if bm.status_gerente != "pendente" %}disabled{% endif %}>Reprovar</button>
-                      </div>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-success btn-aprovar"
+                                    data-bm-id="{{ bm.id }}"
+                                    {% if bm.status_gerente != "pendente" %}disabled{% endif %}>Aprovar</button>
+                            <button type="button" class="btn btn-sm btn-danger btn-reprovar"
+                                    data-bm-id="{{ bm.id }}"
+                                    {% if bm.status_gerente != "pendente" %}disabled{% endif %}>Reprovar</button>
+                        </div>
+
+                    {% elif user.grupo == "diretoria" %}
+                        {% if bm.status_coordenador == "aprovado" and bm.status_gerente == "aprovado" %}
+                            <div class="d-flex gap-1">
+                                <button type="button" class="btn btn-sm btn-success btn-aprovar-pagamento"
+                                        data-bm-id="{{ bm.id }}"
+                                        {% if bm.aprovacao_pagamento != "pendente" %}disabled{% endif %}>
+                                    Aprovar Pagamento
+                                </button>
+
+                                <button type="button" class="btn btn-sm btn-danger btn-reprovar-pagamento"
+                                        data-bm-id="{{ bm.id }}"
+                                        {% if bm.aprovacao_pagamento != "pendente" %}disabled{% endif %}>
+                                    Reprovar Pagamento
+                                </button>
+                            </div>
+                        {% else %}
+                            <span class="text-muted">Aguardando aprovações</span>
+                        {% endif %}
+
                     {% else %}
-                      -
+                        -
                     {% endif %}
-                  </td>
+                </td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -133,6 +189,112 @@
           <p class="mt-3 text-muted">Nenhum Boletim de Medição cadastrado para este evento.</p>
         {% endif %}
       </div>
+
+      <hr>
+      <h5>Notas Fiscais Cadastradas</h5>
+
+      {% if notas_fiscais %}
+      <table class="table table-bordered table-striped align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>ID NF</th>
+            <th>BM</th>
+            <th>Parcela</th>
+            <th>Valor Pago</th>
+            <th>Data Pagamento</th>
+            <th>Observação</th>
+            <th>Arquivo</th>
+            {% if request.user.grupo in 'suprimento financeiro coordenador' %}
+              <th>Ações</th>
+            {% endif %}
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for nf in notas_fiscais %}
+          <tr>
+            <td>{{ nf.id }}</td>
+            <td>{{ nf.bm.numero_bm }}</td>
+            <td>{{ nf.parcela_paga }}</td>
+            <td>R$ {{ nf.valor_pago|floatformat:2 }}</td>
+            <td>{{ nf.data_pagamento|date:"d/m/Y" }}</td>
+            <td>{{ nf.observacao|default:"-" }}</td>
+            <td>
+              {% if nf.arquivo_nf %}
+                <a href="{{ nf.arquivo_nf.url }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                  Abrir/Download
+                </a>
+              {% else %}
+                <span class="text-muted">Sem arquivo</span>
+              {% endif %}
+            </td>
+
+            {% if request.user.grupo in 'suprimento financeiro' %}
+            <td>
+              <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-warning btn-editar-nf"
+                        data-nf-id="{{ nf.id }}"
+                        data-bs-toggle="modal"
+                        data-bs-target="#editarNFModal">
+                    Editar
+                </button>
+
+                <form method="post" action="{% url 'deletar_nf' nf.id %}"
+                      onsubmit="return confirm('Tem certeza que deseja apagar esta NF?');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
+                </form>
+              </div>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted">Nenhuma Nota Fiscal cadastrada para este evento.</p>
+      {% endif %}
+
+      {% if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
+          <button type="button" class="btn btn-info mt-3"
+                  data-bs-toggle="modal"
+                  data-bs-target="#nfModal">Cadastrar NF</button>
+
+          <!-- Modal NF -->
+          <div class="modal fade" id="nfModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+              <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                  <h5 class="modal-title">Cadastrar Nota Fiscal</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body" id="nfModalBody">
+                  <div class="text-center p-4">Carregando...</div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal Editar NF -->
+          <div class="modal fade" id="editarNFModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+              <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                  <h5 class="modal-title">Editar Nota Fiscal</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body" id="editarNFModalBody">
+                  <div class="text-center p-4">Carregando...</div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+      {% endif %}
+
 
       <div class="d-flex justify-content-end gap-2">
         <a href="javascript:history.back()" class="btn btn-custom">← Voltar</a>
@@ -160,11 +322,32 @@
     </div>
   </div>
 </div>
+<div class="modal fade" id="modalJustificativaDiretoria" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Justificativa da Reprovação do Pagamento</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Explique o motivo da reprovação:</label>
+        <textarea id="justificativaDiretor" class="form-control" rows="4"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-danger" id="btnConfirmarReprovarDiretoria">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
   const csrfToken = '{{ csrf_token }}';
   let bmReprovandoId = null;
+  let bmReprovandoDiretoria = null;
+
 
   function atualizarLinha(bmId, statusCoordenador, statusGerente) {
     const row = document.getElementById('bm-row-' + bmId);
@@ -194,6 +377,103 @@ document.addEventListener("DOMContentLoaded", function() {
       }
     });
   });
+
+  /* ------------------------
+      MODAL CADASTRO NF
+  ------------------------ */
+  const nfModal = document.getElementById("nfModal");
+
+  if (nfModal) {
+    nfModal.addEventListener("show.bs.modal", function() {
+
+      fetch("{% url 'cadastrar_nf' evento.id %}")
+        .then(r => r.text())
+        .then(html => {
+
+          document.getElementById("nfModalBody").innerHTML = html;
+
+          const nfForm = document.getElementById("nfForm");
+
+          nfForm.addEventListener("submit", function(e) {
+            e.preventDefault();
+
+            const fd = new FormData(nfForm);
+
+            fetch("{% url 'cadastrar_nf' evento.id %}", {
+              method: "POST",
+              body: fd,
+              headers: {"X-Requested-With": "XMLHttpRequest"}
+            })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success) {
+                bootstrap.Modal.getInstance(nfModal).hide();
+                location.reload();
+              } else {
+                alert(Object.values(data.errors).flat().join("\n"));
+              }
+            });
+          });
+
+        });
+    });
+  }
+
+  /* ------------------------
+        MODAL EDITAR NF
+  ------------------------ */
+
+  const editarNFModal = document.getElementById("editarNFModal");
+
+  document.querySelectorAll(".btn-editar-nf").forEach(btn => {
+    btn.addEventListener("click", function() {
+      const nfId = this.dataset.nfId;
+
+      fetch(`/evento/${nfId}/editar-nf/`)  // ou {% url 'editar_nf' 0 %}.replace("0", nfId)
+        .then(r => r.text())
+        .then(html => {
+          document.getElementById("editarNFModalBody").innerHTML = html;
+
+          const form = document.getElementById("formEditarNF");
+
+          document.getElementById("btnSalvarNF")?.addEventListener("click", function () {
+              const fd = new FormData(form);
+
+              fetch(`/evento/${nfId}/editar-nf/`, {
+                  method: "POST",
+                  body: fd
+              })
+              .then(r => r.json())
+              .then(data => {
+                  if (data.success) {
+                      bootstrap.Modal.getInstance(editarNFModal).hide();
+                      location.reload();
+                  } else {
+                      alert("Erro: " + JSON.stringify(data.errors));
+                  }
+              });
+          });
+        });
+    });
+  });
+
+  // Aprovar pagamento (diretoria)
+  document.querySelectorAll('.btn-aprovar-pagamento').forEach(button => {
+    button.addEventListener('click', function() {
+      const bmId = this.dataset.bmId;
+      enviarAvaliacao(bmId, 'aprovar_pagamento', '');
+    });
+  });
+
+  // Reprovar pagamento (diretoria)
+  document.querySelectorAll('.btn-reprovar-pagamento').forEach(button => {
+    button.addEventListener('click', function() {
+      bmReprovandoDiretoria = this.dataset.bmId;
+      const modal = new bootstrap.Modal(document.getElementById('modalJustificativaDiretoria'));
+      modal.show();
+    });
+  });
+
 
   function enviarAvaliacao(bmId, acao, justificativa) {
     fetch("{% url 'avaliar_bm' bm_id=0 %}".replace('0', bmId), {
@@ -227,6 +507,17 @@ document.addEventListener("DOMContentLoaded", function() {
     const modal = bootstrap.Modal.getInstance(document.getElementById('modalJustificativa'));
     modal.hide();
     enviarAvaliacao(bmReprovandoId, 'reprovar', justificativa);
+  });
+
+  document.getElementById('btnConfirmarReprovarDiretoria').addEventListener('click', function() {
+    const justificativa = document.getElementById('justificativaDiretor').value.trim();
+    if (!justificativa) {
+      alert('Por favor, insira uma justificativa.');
+      return;
+    }
+    const modal = bootstrap.Modal.getInstance(document.getElementById('modalJustificativaDiretoria'));
+    modal.hide();
+    enviarAvaliacao(bmReprovandoDiretoria, 'reprovar_pagamento', justificativa);
   });
 });
 </script>

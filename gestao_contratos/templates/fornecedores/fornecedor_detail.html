@@ -153,7 +153,11 @@
               <td>{{ contrato.coordenador }}</td>
               <td>{{ contrato.data_inicio|date:"d/m/Y" }}</td>
               <td>{{ contrato.data_fim|date:"d/m/Y" }}</td>
-              <td>R$ {{ contrato.valor_total|floatformat:2 }}</td>
+              {% if contrato.valor_total %}
+                <td>R$ {{ contrato.valor_total|floatformat:2 }}</td>
+              {% else %}
+                <td>Não informado</td>
+              {% endif %}
               <td>{{ contrato.get_status_display }}</td>
               <td>
                 <a href="{% url 'contrato_fornecedor_detalhe' contrato.pk %}" class="btn btn-sm btn-outline-primary">
