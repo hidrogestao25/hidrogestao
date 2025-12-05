@@ -785,6 +785,28 @@ class NF(models.Model):
     def __str__(self):
         return f"Nota Fiscal {self.id} - {self.evento.descricao} (id - {self.evento.id})"
 
+
+# -------------
+# Nota Fiscal para o Cliente
+#--------------
+class NFCliente(models.Model):
+    contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name="nota_fiscal")
+    valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    parcela_paga = models.PositiveIntegerField()
+    data_emissao = models.DateField(default=timezone.now)
+    data_pagamento = models.DateField(default=timezone.now)
+    arquivo_nf = models.FileField(
+        upload_to='NF/Cliente/',
+        verbose_name='Inserir arquivo da Nota Fiscal',
+        null=True, blank=True
+    )
+    observacao = models.TextField(null=True, blank=True)
+    inserido_por = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+
+    def __str__(self):
+        return f"Nota Fiscal {self.id} - Parcela {self.parcela_paga} - {self.contrato}"
+
+
 # -----------
 # Documentos (cliente)
 # -----------

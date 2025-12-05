@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load custom_tags %}
 {% block content %}
 <div class="container mt-4">
   <div class="card shadow-sm">
@@ -75,7 +76,7 @@
         </div>
 
         <div class="text-end">
-          <button type="submit" class="btn btn-custom">Salvar alterações</button>
+          <button type="submit" name="submit_contrato" class="btn btn-custom">Salvar alterações</button>
         </div>
       </form>
 
@@ -85,16 +86,214 @@
         <p>
           <strong>Pago:</strong> {{ resumo_percentual.pago }}% do valor total<br>
           <strong>Previsto:</strong> {{ resumo_percentual.previsto }}% do valor total<br>
-          <strong>Restante:</strong> {{ resumo_percentual.restante }}% 
+          <strong>Restante:</strong> {{ resumo_percentual.restante }}%
         </p>
 
         <div>
           {{ grafico_contrato|safe }}
         </div>
-      </div>
+        </div>
+
+        <hr>
+        <div class="mt-4">
+          <h5 class="mt-4">📄 Notas Fiscais Cadastradas</h5>
+          {% if nf_list %}
+            <table class="table table-striped mt-3">
+                <thead>
+                    <tr>
+                        <th>Id</th>
+                        <th>Emissão</th>
+                        <th>Pago em</th>
+                        <th>Valor</th>
+                        <th>Observações</th>
+                        <th>Arquivo</th>
+                        {% if request.user.grupo in "suprimento financeiro" %}
+                            <th>Ações</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for nf in nf_list %}
+                    <tr>
+                        <td>{{ nf.id }}</td>
+                        <td>{{ nf.data_emissao|date:"d/m/Y" }}</td>
+                        <td>{{ nf.data_pagamento|date:"d/m/Y" }}</td>
+                        <td>R$ {{ nf.valor_pago }}</td>
+                        {% if nf.observacao %}
+                          <td>{{ nf.observacao }}</td>
+                        {% else %}
+                          <td> - </td>
+                        {% endif %}
+                        <td>
+                            {% if nf.arquivo_nf %}
+                                <a href="{{ nf.arquivo_nf.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    Baixar
+                                </a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+
+                        {% if request.user.grupo in "suprimento financeiro" %}
+                        <td>
+                            <!-- BOTÃO EDITAR -->
+                            <button class="btn btn-warning btn-sm"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#editarNFModal{{ nf.id }}">
+                                Editar
+                            </button>
+
+                            <!-- BOTÃO EXCLUIR -->
+                            <button class="btn btn-danger btn-sm"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#excluirNFModal{{ nf.id }}">
+                                Excluir
+                            </button>
+                        </td>
+                        {% endif %}
+                    </tr>
+
+                    {% endfor %}
+                </tbody>
+            </table>
+          {% else %}
+              <p class="text-muted">Nenhuma Nota Fiscal cadastrada para este evento.</p>
+          {% endif %}
+          {% for nf in nf_list %}
+          <div class="modal fade" id="editarNFModal{{ nf.id }}" tabindex="-1">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header bg-warning">
+                  <h5 class="modal-title">Editar Nota Fiscal #{{ nf.id }}</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <form method="post" enctype="multipart/form-data" action="{% url 'editar_nf_cliente' nf.id %}">
+                  {% csrf_token %}
+                  <div class="modal-body">
+                      {{ forms_edit|dict_get:nf.id|as_p_form }}
+                  </div>
+
+                  <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-warning">Salvar Alterações</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+          {% for nf in nf_list %}
+          <div class="modal fade" id="excluirNFModal{{ nf.id }}" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                  <h5 class="modal-title">Excluir Nota Fiscal</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                  Tem certeza que deseja excluir a NF <strong>#{{ nf.numero_nf }}</strong>?
+                  Esta ação não pode ser desfeita.
+                </div>
+
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                  <a href="{% url 'excluir_nf_cliente' nf.id %}" class="btn btn-danger">Excluir</a>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+
+
+        </div>
+
+        {% if request.user.grupo == "suprimento" %}
+          <div class="mt-4 text-end">
+            <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#modalNFCliente">
+                Cadastrar Nota Fiscal
+            </button>
+          </div>
+        {% endif %}
     </div>
   </div>
 </div>
+
+<!-- Modal NF -->
+<div class="modal fade" id="modalNFCliente" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title">Cadastrar Nota Fiscal</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <form method="post" enctype="multipart/form-data" action="">
+        {% csrf_token %}
+        <div class="modal-body">
+          {# Aqui o form com erros (se houver) será mostrado #}
+          {{ form_nf.non_field_errors }}
+          <div class="row">
+            <div class="col-md-6">
+              {{ form_nf.valor_pago.label_tag }} {{ form_nf.valor_pago }}
+              {{ form_nf.valor_pago.errors }}
+            </div>
+            <div class="col-md-6">
+              {{ form_nf.parcela_paga.label_tag }} {{ form_nf.parcela_paga }}
+              {{ form_nf.parcela_paga.errors }}
+            </div>
+          </div>
+
+          <div class="row mt-2">
+            <div class="col-md-6">
+              {{ form_nf.data_emissao.label_tag }} {{ form_nf.data_emissao }}
+              {{ form_nf.data_emissao.errors }}
+            </div>
+            <div class="col-md-6">
+              {{ form_nf.data_pagamento.label_tag }} {{ form_nf.data_pagamento }}
+              {{ form_nf.data_pagamento.errors }}
+            </div>
+          </div>
+
+          <div class="row mt-2">
+            <div class="col-md-12">
+              {{ form_nf.arquivo_nf.label_tag }} {{ form_nf.arquivo_nf }}
+              {{ form_nf.arquivo_nf.errors }}
+            </div>
+          </div>
+
+          <div class="row mt-2">
+            <div class="col-md-12">
+              {{ form_nf.observacao.label_tag }} {{ form_nf.observacao }}
+              {{ form_nf.observacao.errors }}
+            </div>
+          </div>
+
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" name="submit_nf" class="btn btn-success">Salvar Nota Fiscal</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+
+
+
+
+{% if open_modal_nf %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var myModal = new bootstrap.Modal(document.getElementById('modalNFCliente'));
+    myModal.show();
+});
+</script>
+{% endif %}
 
 <!-- jQuery -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>

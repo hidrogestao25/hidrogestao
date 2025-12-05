@@ -1,5 +1,5 @@
 from django import forms
-from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF
+from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF, NFCliente
 from django.contrib import messages
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime
@@ -413,3 +413,22 @@ class NFForm(forms.ModelForm):
             self.fields["bm"].queryset = BM.objects.filter(evento=evento)
         else:
             self.fields["bm"].queryset = BM.objects.none()
+
+
+class NFClienteForm(forms.ModelForm):
+    class Meta:
+        model = NFCliente
+        fields = [
+            "valor_pago",
+            "parcela_paga",
+            "data_emissao",
+            "data_pagamento",
+            "arquivo_nf",
+            "observacao",
+        ]
+        widgets = {
+            "data_emissao": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
+            "data_pagamento": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
+            "arquivo_nf": forms.ClearableFileInput(attrs={"class": "form-control"}),
+            "observacao": forms.Textarea(attrs={"rows": 3}),
+        }
