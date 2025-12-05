@@ -53,6 +53,10 @@ urlpatterns = [
     path("nf/<int:nf_id>/deletar/", views.deletar_nf, name="deletar_nf"),
     path('evento/<int:evento_id>/avaliar/', views.avaliar_evento_fornecedor, name='avaliar_evento_fornecedor'),
 
+    path('contrato/<int:pk>/cadastrar-nf/', views.cadastrar_nf_cliente, name='cadastrar_nf_cliente'),
+    path("contrato/<int:pk>/editar-nf/", views.editar_nf_cliente, name="editar_nf_cliente"),
+    path("contrato/<int:pk>/excluir-nf/", views.excluir_nf_cliente, name="excluir_nf_cliente"),
+
     path("evento/<int:pk>/editar/", views.editar_evento, name="editar_evento"),
     path("evento_contrato/<int:pk>/editar/", views.editar_evento_contrato, name="editar_evento_contrato"),
     path("evento/<int:pk>/excluir/", views.excluir_evento, name="excluir_evento"),

@@ -4,7 +4,7 @@ from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 from .models import (
     User, Cliente, EmpresaTerceira, Proposta, Contrato, PropostaFornecedor,
     ContratoTerceiros, Evento,
-    AvaliacaoFornecedor, Indicadores,
+    AvaliacaoFornecedor, Indicadores, NFCliente,
     BM, DocumentoContrato, DocumentoContratoTerceiro,
     SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM, CalendarioPagamento, NF
 )
@@ -100,7 +100,7 @@ MODELOS_PADRAO = [
     Cliente, EmpresaTerceira, Proposta, Contrato, PropostaFornecedor,
     ContratoTerceiros, Evento,
     AvaliacaoFornecedor, Indicadores,
-    BM, DocumentoContrato, DocumentoContratoTerceiro,
+    BM, DocumentoContrato, DocumentoContratoTerceiro, NFCliente,
     SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM, CalendarioPagamento, NF
 ]
 

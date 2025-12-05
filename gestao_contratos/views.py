@@ -11,8 +11,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm
 
 import plotly.graph_objs as go
 import plotly.express as px
@@ -304,7 +304,8 @@ def lista_contratos(request):
     elif request.user.grupo == 'gerente':
         contratos = Contrato.objects.filter(coordenador__centros__in=request.user.centros.all())
     else:
-        return redirect('home')
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     search_query = request.GET.get('search', '').strip()
     if search_query:
@@ -338,7 +339,8 @@ def lista_clientes(request):
             contratos__coordenador__centros__in=request.user.centros.all()
         ).distinct()
     else:
-        return redirect('home')
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     # Campo de busca
     search_query = request.GET.get('search', '').strip()
@@ -374,7 +376,8 @@ def lista_contratos_fornecedor(request):
             coordenador__centros__in=request.user.centros.all()
         )
     else:
-        return redirect('home')
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     # Campo de busca
     search_query = request.GET.get('search', '').strip()
@@ -418,7 +421,8 @@ def lista_fornecedores(request):
             contratos__coordenador__centros__in=request.user.centros.all()
         ).distinct()
     else:
-        return redirect('home')
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     # Campo de busca
     search_query = request.GET.get('search', '').strip()
@@ -443,6 +447,29 @@ def lista_fornecedores(request):
     }
 
     return render(request, 'gestao_contratos/lista_fornecedores.html', context)
+
+
+@login_required
+def cadastrar_nf_cliente(request, pk):
+    if request.user.grupo not in ["financeiro", "suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    contrato = get_object_or_404(Contrato, pk=pk)
+
+    if request.method == "POST":
+        form = NFClienteForm(request.POST, request.FILES)
+        if form.is_valid():
+            nf = form.save(commit=False)
+            nf.contrato = contrato
+            nf.inserido_por = request.user
+            nf.save()
+
+            messages.success(request, "Nota Fiscal cadastrada com sucesso!")
+        else:
+            messages.error(request, "Erro ao salvar Nota Fiscal. Verifique os campos.")
+
+    return redirect("contrato_cliente_detalhe", pk=pk)
 
 
 @login_required
@@ -557,31 +584,128 @@ def contrato_cliente_detalhe(request, pk):
         'restante': round(perc_restante, 1)
     }
 
+    # ---- Listagem das NFs já cadastradas para esse contrato ----
+    open_modal_nf = False
+    form_nf = NFClienteForm()
+    nf_list = contrato.nota_fiscal.all().order_by("-data_emissao")
+
+
     # ---- Controle de edição ----
-    if request.user.grupo in ["suprimento"]:
-        if request.method == 'POST':
+    if request.user.grupo == "suprimento":
+        forms_edit = {}
+        for nf in nf_list:
+            forms_edit[nf.id] = NFClienteForm(instance=nf, prefix=f"edit_{nf.id}")
+        # POST vindo do modal de NF
+        if request.method == "POST" and request.user.is_authenticated and "submit_nf" in request.POST:
+            form_nf = NFClienteForm(request.POST, request.FILES)
+            if form_nf.is_valid():
+                nf = form_nf.save(commit=False)
+                nf.contrato = contrato
+                nf.inserido_por = request.user
+                nf.save()
+                messages.success(request, "Nota Fiscal cadastrada com sucesso!")
+                return redirect("contrato_cliente_detalhe", pk=pk)
+            else:
+                open_modal_nf = True
+                messages.error(request, "Erro ao cadastrar Nota Fiscal. Verifique os campos abaixo.")
+
+        # POST do formulário do contrato
+        if request.method == "POST" and request.user.is_authenticated and "submit_contrato" in request.POST:
             form = ContratoForm(request.POST, instance=contrato)
             if form.is_valid():
                 form.save()
-                messages.success(request, "Contrato do Cliente atualizado com sucesso!")
+                messages.success(request, "Contrato atualizado com sucesso!")
                 return redirect("lista_contratos")
             else:
-                messages.error(request, "❌ Ocorreu um erro ao atualizar o contrato. Verifique os campos e tente novamente.")
+                messages.error(request, "Erro ao atualizar contrato.")
         else:
             form = ContratoForm(instance=contrato)
+
         return render(request, 'contratos/contrato_detail_edit.html', {
             'form': form,
             'contrato': contrato,
             'grafico_contrato': grafico_contrato,
             'resumo_percentual': resumo_percentual,
+            'form_nf': form_nf,
+            'nf_list': nf_list,
+            'open_modal_nf': open_modal_nf,
+            'forms_edit': forms_edit,
+        })
+
+    if request.user.grupo in ["financeiro"]:
+        forms_edit = {}
+        for nf in nf_list:
+            forms_edit[nf.id] = NFClienteForm(instance=nf, prefix=f"edit_{nf.id}")
+        if request.method == "POST" and request.user.is_authenticated:
+            # executa validação do form vindo do modal
+            form_nf = NFClienteForm(request.POST, request.FILES)
+            if form_nf.is_valid():
+                nf = form_nf.save(commit=False)
+                nf.contrato = contrato
+                nf.inserido_por = request.user
+                nf.save()
+                messages.success(request, "Nota Fiscal cadastrada com sucesso!")
+                return redirect("contrato_cliente_detalhe", pk=pk)
+            else:
+                # manter o modal aberto e mostrar erros
+                open_modal_nf = True
+                messages.error(request, "Erro ao cadastrar Nota Fiscal. Verifique os campos e corrija os erros abaixo.")
+
+        return render(request, "contratos/contrato_detail.html", {
+            'contrato': contrato,
+            'grafico_contrato': grafico_contrato,
+            'resumo_percentual': resumo_percentual,
+            'form_nf': form_nf,
+            'nf_list': nf_list,
+            'open_modal_nf': open_modal_nf,
+            'forms_edit': forms_edit,
         })
 
     return render(request, "contratos/contrato_detail.html", {
         'contrato': contrato,
         'grafico_contrato': grafico_contrato,
         'resumo_percentual': resumo_percentual,
+        'nf_list': nf_list,
     })
 
+
+@login_required
+def editar_nf_cliente(request, pk):
+    nf = get_object_or_404(NFCliente, pk=pk)
+
+    if request.user.grupo not in ["suprimento","financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    if request.method == "POST":
+        prefix = f"edit_{nf.id}"
+        form = NFClienteForm(request.POST, request.FILES, instance=nf, prefix=prefix)
+
+        if form.is_valid():
+            form.save()
+            messages.success(request, "NF atualizada com sucesso!")
+        else:
+            print("ERROS AO EDITAR NF:", form.errors)
+            messages.error(request, "Erro ao atualizar a Nota Fiscal.")
+
+    return redirect("contrato_cliente_detalhe", pk=nf.contrato.pk)
+
+
+
+
+@login_required
+def excluir_nf_cliente(request, pk):
+    nf = get_object_or_404(NFCliente, pk=pk)
+
+    if request.user.grupo not in ["financeiro", "suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    contrato_pk = nf.contrato.pk
+    nf.delete()
+    messages.success(request, "Nota Fiscal excluída com sucesso!")
+
+    return redirect("contrato_cliente_detalhe", pk=contrato_pk)
 
 
 @login_required
@@ -807,7 +931,7 @@ def fornecedor_detalhe(request, pk):
 
 @login_required
 def nova_solicitacao_prospeccao(request):
-    if request.user.grupo == 'coordenador' or request.user.grupo == 'financeiro' or request.user.grupo == 'gerente':
+    if request.user.grupo in ['coordenador', 'financeiro', 'gerente']:
         if request.method == 'POST':
             form = SolicitacaoProspeccaoForm(request.POST, user=request.user)
             if form.is_valid():
@@ -847,7 +971,10 @@ def nova_solicitacao_prospeccao(request):
         else:
             form = SolicitacaoProspeccaoForm(user=request.user)
         return render(request, 'fornecedores/nova_solicitacao.html', {'form':form})
-    return redirect('home')
+
+    else:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
 
 @login_required
@@ -862,6 +989,9 @@ def lista_solicitacoes(request):
         solicitacoes = SolicitacaoProspeccao.objects.filter(
             coordenador__centros__in=centros_do_gerente
         ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
+    else:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     lista_solicitacoes = []
     for s in solicitacoes:
@@ -889,8 +1019,9 @@ def lista_solicitacoes(request):
 
 @login_required
 def aprovar_solicitacao(request, pk, acao):
-    if request.user.grupo != 'suprimento':
-        return redirect('home')
+    if request.user.grupo not in ["suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
     if acao == "aprovar":
@@ -908,8 +1039,9 @@ def aprovar_solicitacao(request, pk, acao):
 
 @login_required
 def triagem_fornecedores(request, pk):
-    if request.user.grupo != 'suprimento':
-        return redirect('home')
+    if request.user.grupo not in ["suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     condicoes_choices = PropostaFornecedor.CONDICOES_CHOICES
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk, aprovado=True)
@@ -1226,9 +1358,9 @@ def detalhes_solicitacao(request, pk):
         "Triagem realizada",
         "Fornecedor selecionado",
         "Fornecedor aprovado",
-        "Planejamento do Contrato", #Planejamento do Contrato
+        "Planejamento do Contrato",
         "Aprovação do Planejamento",
-        "Onboarding", #Onboarding
+        "Onboarding",
     ]
 
     fornecedor_escolhido = solicitacao.fornecedor_escolhido
@@ -1300,6 +1432,7 @@ def cadastrar_propostas(request, pk):
 
     # Apenas comercial pode cadastrar propostas
     if request.user.grupo != "Suprimento":
+        messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
     fornecedores = solicitacao.fornecedores_selecionados.all()
@@ -1356,7 +1489,6 @@ def elaboracao_contrato(request):
             "contrato": contrato
         })
 
-
     context = {"lista_solicitacoes": lista_solicitacoes}
     return render(request, "contratos/elaboracao_contrato.html", context)
 
@@ -1364,6 +1496,9 @@ def elaboracao_contrato(request):
 @login_required
 #@user_passes_test(is_financeiro)
 def cadastrar_contrato(request, solicitacao_id):
+    if request.user.grupo not in ["suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
     solicitacao = get_object_or_404(
         SolicitacaoProspeccao,
         id=solicitacao_id,
@@ -1606,9 +1741,9 @@ def nova_prospeccao(request, pk):
 def inserir_minuta_bm(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
-    # Garante que só o suprimento pode acessar
     if request.user.grupo != 'suprimento':
-        return redirect('home')
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     # Cria ou recupera a minuta ligada à solicitação
     documento_bm, created = DocumentoBM.objects.get_or_create(solicitacao=solicitacao)
@@ -1707,11 +1842,27 @@ def reprovar_bm(request, pk, papel):
     # Se alguém reprovou → exigir novo upload de minuta
     if bm.reprovado_por_alguem:
         messages.warning(request, "A minuta foi reprovada. Suprimentos deve reenviar um novo BM.")
+        #
+        #
+        #
+        #
+        #    Colocar e-mail de reprovação do bm para suprimentos
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+
 
     return redirect("detalhe_bm", pk=bm.pk)
 
 @login_required
 def cadastrar_evento(request, pk):
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
     if request.method == "POST":
@@ -1732,6 +1883,10 @@ def cadastrar_evento(request, pk):
 
 @login_required
 def cadastrar_evento_contrato(request, pk):
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
     #solicitacao = contrato.prospeccao
 
@@ -1756,6 +1911,10 @@ def cadastrar_evento_contrato(request, pk):
 
 @login_required
 def editar_evento(request, pk):
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     evento = get_object_or_404(Evento, pk=pk)
     if request.method == "POST":
         form = EventoPrevisaoForm(request.POST, request.FILES, instance=evento)
@@ -1769,6 +1928,10 @@ def editar_evento(request, pk):
 
 @login_required
 def editar_evento_contrato(request, pk):
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     evento = get_object_or_404(Evento, pk=pk)
     if request.method == "POST":
         form = EventoPrevisaoForm(request.POST, request.FILES, instance=evento)
@@ -1782,6 +1945,10 @@ def editar_evento_contrato(request, pk):
 
 @login_required
 def excluir_evento(request, pk):
+    if request.user.grupo not in ["suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     evento = get_object_or_404(Evento, pk=pk)
     if request.method == "POST":
         solicitacao_id = evento.prospeccao.id
@@ -1792,6 +1959,10 @@ def excluir_evento(request, pk):
 
 @login_required
 def excluir_evento_contrato(request, pk):
+    if request.user.grupo not in ["suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     evento = get_object_or_404(Evento, pk=pk)
     if request.method == "POST":
         contrato_id = evento.contrato_terceiro.pk
@@ -1802,6 +1973,10 @@ def excluir_evento_contrato(request, pk):
 
 @login_required
 def registrar_entrega(request, pk):
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     evento = get_object_or_404(Evento, pk=pk)
     contrato = evento.contrato_terceiro
     boletins = evento.boletins_medicao.all()
@@ -1833,17 +2008,18 @@ def registrar_entrega(request, pk):
     if request.method == "POST":
         form = EventoEntregaForm(request.POST, request.FILES, instance=evento)
 
-        valor_igual = request.POST.get("check_valor_igual") == "on"
-        if valor_igual:
-            form.data = form.data.copy()
-            form.data['valor_pago'] = str(evento.valor_previsto)
-
         if form.is_valid():
             if evento.contrato_terceiro.boletins_medicao.exists() and not form.cleaned_data['data_pagamento']:
                 form.add_error('data_pagamento', 'Preencha a Data de Pagamento, pois existem BMs cadastrados.')
             else:
+                if request.POST.get("valor_igual") == "on":
+                    ev = form.save(commit=False)
+                    ev.valor_pago = evento.valor_previsto
                 form.save()
+                messages.success(request, "Entrega Registrada com sucesso")
                 return redirect('contrato_fornecedor_detalhe', pk=contrato.pk)
+        else:
+            messages.error(request, "Erro ao registrar a entrega!")
     else:
         form = EventoEntregaForm(instance=evento)
 
@@ -1859,7 +2035,6 @@ def registrar_entrega(request, pk):
     })
 
 
-
 @login_required
 def avaliar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
@@ -1868,6 +2043,7 @@ def avaliar_bm(request, bm_id):
     # Verifica permissão
     if usuario.grupo not in ["coordenador", "gerente", "diretoria"]:
         messages.error(request, "⚠ Você não tem permissão para isso.")
+        return redirect("home")
 
     acao = request.POST.get("acao")
     justificativa = request.POST.get("justificativa", "").strip()
@@ -2030,6 +2206,9 @@ def avaliar_bm(request, bm_id):
 
 @login_required
 def previsao_pagamentos(request):
+    if request.user.grupo not in ["suprimento", "gerente", "diretoria", "financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
     form = FiltroPrevisaoForm(request.GET or None)
     pagamentos = []
     total_previsto = 0
@@ -2375,6 +2554,10 @@ def previsao_pagamentos(request):
 
 @login_required
 def download_bms_aprovados(request):
+    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     data_inicial_str = request.GET.get("data_inicial")
     data_limite_str = request.GET.get("data_limite")
     filtro_bm = request.GET.get("filtro_bm", "pagamento")  # pagto ou medicao
@@ -2462,6 +2645,10 @@ def download_bms_aprovados(request):
 
 @login_required
 def exportar_previsao_pagamentos_excel(request):
+    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     form = FiltroPrevisaoForm(request.GET or None)
 
     if not form.is_valid():
@@ -2622,6 +2809,10 @@ def exportar_previsao_pagamentos_excel(request):
 
 @login_required
 def ranking_fornecedores(request):
+    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     user = request.user
     contratos_ativos = ContratoTerceiros.objects.filter(status='ativo')
 
@@ -2687,6 +2878,10 @@ def ranking_fornecedores(request):
 
 @login_required
 def cadastrar_bm(request, contrato_id, evento_id):
+    if request.user.grupo not in ["suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     contrato = get_object_or_404(ContratoTerceiros, id=contrato_id)
     evento = get_object_or_404(Evento, id=evento_id)
 
@@ -2772,6 +2967,10 @@ def cadastrar_bm(request, contrato_id, evento_id):
 
 @login_required
 def cadastrar_nf(request, evento_id):
+    if request.user.grupo not in ["suprimento", "financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     evento = get_object_or_404(Evento, id=evento_id)
     contrato = get_object_or_404(ContratoTerceiros, id=evento.contrato_terceiro.id)
 
@@ -2782,6 +2981,48 @@ def cadastrar_nf(request, evento_id):
             nf.contrato = contrato
             nf.evento = evento
             nf.save()
+
+            # ==============================
+            # ENVIO DE E-MAIL AUTOMÁTICO
+            # ==============================
+            if request.user.grupo == "financeiro":
+
+                # E-mails do grupo suprimento
+                emails_suprimento = list(User.objects.filter(grupo='suprimento', is_active=True).values_list("email", flat=True))
+
+                # Coordenador do contrato
+                coordenador = contrato.coordenador
+                email_coordenador = [coordenador.email] if coordenador and coordenador.email else []
+
+                assunto = f"NF cadastrada para o evento #{evento.id}"
+                mensagem = (
+                    f"A nota fiscal do evento '{evento.descricao or 'Sem descrição'}'\n"
+                    f"do contrato: {contrato}\n\n"
+                    f"Foi cadastrada por: {request.user.get_full_name() or request.user.username} (Financeiro).\n\n"
+                    f"Data de pagamento: {evento.data_pagamento}\n"
+                    f"Valor: R$ {nf.valor_pago}"
+                )
+
+                # Enviar e-mail para suprimento
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao24@hmail.com",
+                        emails_suprimento,
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao24@hotmail.com",
+                        email_coordenador,
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para o coordenador: {e}")
 
             return JsonResponse({"success": True})
         else:
@@ -2825,6 +3066,10 @@ def editar_bm(request, bm_id):
 
 @login_required
 def editar_nf(request, nf_id):
+    if request.user.grupo not in ["suprimento", "financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     nf = get_object_or_404(NF, id=nf_id)
     evento = nf.evento
 
@@ -2860,7 +3105,8 @@ def deletar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
 
     if request.user.grupo != "suprimento":
-        messages.warning(request, "Você não tem permissão para isso!")
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
 
     evento_id = bm.evento.id
     bm.delete()
@@ -2871,6 +3117,10 @@ def deletar_bm(request, bm_id):
 
 @login_required
 def deletar_nf(request, nf_id):
+    if request.user.grupo not in ["suprimento", "financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
     nf = get_object_or_404(NF, id=nf_id)
     evento_id = nf.evento.id
 
@@ -2914,7 +3164,7 @@ def avaliar_evento_fornecedor(request, evento_id):
     fornecedor = contrato.empresa_terceira
 
     # Permissão
-    if request.user.grupo != "coordenador":
+    if request.user.grupo not in ["coordenador", "gerente"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -2934,7 +3184,7 @@ def avaliar_evento_fornecedor(request, evento_id):
             empresa_terceira=fornecedor,
             contrato_terceiro=contrato,
             evento=evento,
-            area_avaliadora="Coordenador",
+            area_avaliadora=request.user.grupo,
             avaliador=request.user,
             nota_gestao=nota_gestao,
             nota_tecnica=nota_tecnica,
