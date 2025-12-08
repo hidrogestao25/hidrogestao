@@ -303,7 +303,7 @@
         </div>
       </div>
       {% endif %}
-      {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+      {% if request.user.grupo == 'suprimento' %}
       <button type="button" class="btn btn-info mt-3"
               data-bs-toggle="modal"
               data-bs-target="#nfModal">Cadastrar NF</button>

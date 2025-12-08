@@ -4,8 +4,12 @@
 
 <div class="container mt-4">
   <div class="card shadow">
-    <div class="card-header bg-primary text-white">
-      <h5>Avaliar Evento do Fornecedor</h5>
+    <div class="card-header bg-primary">
+        <h5 class="m-0">
+            <a href="{% url 'contrato_fornecedor_detalhe' contrato.id %}" class="text-white text-decoration-none">
+                Avaliar Evento do Fornecedor
+            </a>
+        </h5>
     </div>
     <div class="card-body">
 

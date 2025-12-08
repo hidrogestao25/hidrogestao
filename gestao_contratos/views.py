@@ -182,12 +182,21 @@ def home(request):
             & Q(data_prevista__lt=hoje)
         ).order_by("data_prevista")
 
+        eventos_para_avaliar = (
+            Evento.objects.filter(
+                Q(contrato_terceiro__coordenador=user)
+                & Q(realizado=True)
+                & Q(avaliacoes__isnull=True)
+            ).order_by("data_entrega")
+        )
+
         context.update({
             "painel_titulo": "Painel do Coordenador",
             "solicitacoes_pendentes": solicitacoes_pendentes,
             "bms_pendentes": bms_pendentes,
             "eventos_proximos": eventos_proximos,
             "entregas_atrasadas": entregas_atrasadas,
+            "eventos_para_avaliar":eventos_para_avaliar,
         })
 
     # ==================== GERENTE ====================
