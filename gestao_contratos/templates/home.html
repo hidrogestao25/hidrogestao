@@ -26,53 +26,59 @@
 
         <div class="row">
 
-          {% if request.user.grupo == "diretoria" %}
-              <div class="col-md-6 mb-4 animated-card">
-                  <div class="card shadow-sm border-primary">
-                      <div class="card-header bg-primary text-white">
-                          <h5 class="mb-0">Aprovações de Pagamento Pendentes</h5>
-                      </div>
-                      <div class="card-body">
-                          {% if bms_pendentes_diretoria %}
-                              <ul class="list-group list-group-flush">
-                                  {% for bm in bms_pendentes_diretoria %}
-                                      <li class="list-group-item d-flex justify-content-between align-items-center">
-                                          <div>
-                                              <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
-                                              <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
-                                              <span class="badge bg-secondary">Data: {{ bm.data_pagamento|date:"d/m/Y" }}</span>
-                                          </div>
 
-                                          <a href="{% url 'detalhes_entrega' bm.evento.id %}" class="btn btn-outline-primary btn-sm">
-                                              Avaliar Pagamento
-                                          </a>
-                                      </li>
-                                  {% endfor %}
-                              </ul>
-                          {% else %}
-                              <p class="text-muted mb-0">Nenhum pagamento pendente.</p>
-                          {% endif %}
-                      </div>
-                  </div>
-              </div>
+            <!-- Diretoria -->
+            {% if request.user.grupo == "diretoria" %}
+            <div class="col-md-6 mb-4 animated-card">
+                <div class="card shadow-sm border-primary dashboard-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Aprovações de Pagamento Pendentes</h5>
+                    </div>
+
+                    <div class="card-body">
+                        {% if bms_pendentes_diretoria %}
+                            <ul class="list-group list-group-flush">
+                                {% for bm in bms_pendentes_diretoria %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
+                                            <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
+                                            <span class="badge bg-secondary">Data: {{ bm.data_pagamento|date:"d/m/Y" }}</span>
+                                        </div>
+
+                                        <a href="{% url 'detalhes_entrega' bm.evento.id %}" class="btn btn-outline-primary btn-sm">
+                                            Avaliar Pagamento
+                                        </a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted mb-0">Nenhum pagamento pendente.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
             {% endif %}
 
+
+            <!-- Financeiro -->
             {% if is_financeiro %}
-              <div class="animated-card">
-                <div class="card border-danger mb-3 shadow-sm">
+            <div class="col-md-6 mb-4 animated-card">
+                <div class="card border-danger shadow-sm dashboard-card">
                     <div class="card-header bg-danger text-white">
-                        📌 Eventos com BMs Aprovados Sem Nota Fiscal
+                        📌 Eventos com BMs Aprovados Sem Nota Fiscal Cadastrada
                     </div>
+
                     <div class="card-body">
                         {% if eventos_sem_nf %}
                             <ul class="list-group">
                                 {% for evento in eventos_sem_nf %}
                                     <li class="list-group-item d-flex justify-content-between align-items-center">
-                                      <div>
-                                          <strong>{{ evento.contrato.empresa_terceira }}</strong><br>
-                                          <small>Parcela {{ evento.parcela_paga }} — Valor: R$ {{ evento.valor_pago }}</small><br>
-                                          <span class="badge bg-secondary">Data: {{ evento.data_pagamento|date:"d/m/Y" }}</span>
-                                      </div>
+                                        <div>
+                                            <strong>{{ evento.contrato.empresa_terceira }}</strong><br>
+                                            <small>Parcela {{ evento.parcela_paga }} — Valor: R$ {{ evento.valor_pago }}</small><br>
+                                            <span class="badge bg-secondary">Data: {{ evento.data_pagamento|date:"d/m/Y" }}</span>
+                                        </div>
                                         <a href="{% url 'detalhes_entrega' evento.evento.id %}" class="btn btn-sm btn-outline-primary">
                                             Ver evento
                                         </a>
@@ -84,54 +90,61 @@
                         {% endif %}
                     </div>
                 </div>
-              </div>
-              {% endif %}
+            </div>
+            {% endif %}
 
 
-            <!--  Solicitações Pendentes -->
+            <!-- Solicitações de Prospecção -->
             {% if request.user.grupo in "suprimento coordenador gerente financeiro" %}
             <div class="col-md-6 mb-4 animated-card">
-                <div class="card shadow-sm">
+                <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-primary text-white">
                         <h5 class="mb-0">Solicitações de Prospecção Pendentes</h5>
                     </div>
+
                     <div class="card-body">
                         {% if solicitacoes_pendentes %}
                             <ul class="list-group list-group-flush">
                                 {% if request.user.grupo == 'gerente' %}
+
                                     {% for item in solicitacoes_pendentes %}
-                                        {% with solicitacao=item.solicitacao contrato=item.contrato %}
-                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                <div>
-                                                    <strong>Solicitação #{{ solicitacao.id }}</strong><br>
-                                                    {% if solicitacao.descricao %}
-                                                        <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
+                                    {% with solicitacao=item.solicitacao contrato=item.contrato %}
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>Solicitação #{{ solicitacao.id }}</strong><br>
+                                                {% if solicitacao.descricao %}
+                                                    <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
+                                                {% endif %}
+                                                <span class="badge bg-secondary">{{ solicitacao.status }}</span>
+                                            </div>
+
+                                            <div class="text-end">
+                                                {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
+                                                    <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm mb-1">
+                                                        Avaliar Fornecedor
+                                                    </a><br>
+                                                {% endif %}
+
+                                                {% if contrato and not contrato.aprovacao_gerencia %}
+                                                    <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-primary btn-sm mb-1">
+                                                        Avaliar Contrato
+                                                    </a><br>
+                                                {% endif %}
+
+                                                {% if solicitacao.minuta_boletins_medicao %}
+                                                    {% if solicitacao.minuta_boletins_medicao.status_gerente == 'pendente' %}
+                                                        <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-info btn-sm">
+                                                            Avaliar Minuta BM
+                                                        </a>
                                                     {% endif %}
-                                                    <span class="badge bg-secondary">{{ solicitacao.status }}</span>
-                                                </div>
-                                                <div class="text-end">
-                                                    {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
-                                                        <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm mb-1">
-                                                            Avaliar Fornecedor
-                                                        </a><br>
-                                                    {% endif %}
-                                                    {% if contrato and not contrato.aprovacao_gerencia %}
-                                                        <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-primary btn-sm mb-1">
-                                                            Avaliar Contrato
-                                                        </a><br>
-                                                    {% endif %}
-                                                    {% if solicitacao.minuta_boletins_medicao %}
-                                                        {% if solicitacao.minuta_boletins_medicao.status_gerente == 'pendente' %}
-                                                            <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-info btn-sm">
-                                                                Avaliar Minuta BM
-                                                            </a>
-                                                        {% endif %}
-                                                    {% endif %}
-                                                </div>
-                                            </li>
-                                        {% endwith %}
+                                                {% endif %}
+                                            </div>
+                                        </li>
+                                    {% endwith %}
                                     {% endfor %}
+
                                 {% else %}
+
                                     {% for solicitacao in solicitacoes_pendentes %}
                                         <li class="list-group-item d-flex justify-content-between align-items-center">
                                             <div>
@@ -141,13 +154,16 @@
                                                 {% endif %}
                                                 <span class="badge bg-secondary">{{ solicitacao.status }}</span>
                                             </div>
+
                                             {% if request.user.grupo == 'suprimento' %}
                                                 <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">Ver</a>
+
                                             {% elif request.user.grupo == 'coordenador' %}
                                                 {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" %}
                                                     <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">
                                                         Selecionar Fornecedor
                                                     </a>
+
                                                 {% elif solicitacao.minuta_boletins_medicao %}
                                                     {% if solicitacao.minuta_boletins_medicao.status_coordenador == 'pendente' %}
                                                         <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
@@ -168,21 +184,23 @@
             </div>
             {% endif %}
 
-            <!-- 2️⃣ Boletins Pendentes -->
+
+            <!-- Boletins Pendentes -->
             {% if request.user.grupo != 'financeiro' %}
-                {% if bms_pendentes %}
-                <div class="col-md-6 mb-4 animated-card">
-                    <div class="card shadow-sm">
-                        <div class="card-header bg-success text-white">
-                            <h5 class="mb-0">
-                                {% if request.user.grupo == 'coordenador' %}
-                                    Boletins de Medição Pendentes (Coordenador)
-                                {% else %}
-                                    Boletins de Medição Pendentes (Gerência)
-                                {% endif %}
-                            </h5>
-                        </div>
-                        <div class="card-body">
+            <div class="col-md-6 mb-4 animated-card">
+                <div class="card shadow-sm dashboard-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            {% if request.user.grupo == 'coordenador' %}
+                                Boletins de Medição Pendentes (Coordenador)
+                            {% else %}
+                                Boletins de Medição Pendentes (Gerência)
+                            {% endif %}
+                        </h5>
+                    </div>
+
+                    <div class="card-body">
+                        {% if bms_pendentes %}
                             <ul class="list-group list-group-flush">
                                 {% for bm in bms_pendentes %}
                                     <li class="list-group-item d-flex justify-content-between align-items-center">
@@ -191,57 +209,104 @@
                                             <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
                                             <span class="badge bg-secondary">Data: {{ bm.data_pagamento|date:"d/m/Y" }}</span>
                                         </div>
-                                        <a href="{% url 'detalhes_entrega' bm.evento.id %}" class="btn btn-outline-primary btn-sm">Avaliar BM</a>
+                                        <a href="{% url 'detalhes_entrega' bm.evento.id %}" class="btn btn-outline-primary btn-sm">
+                                            Avaliar BM
+                                        </a>
                                     </li>
                                 {% endfor %}
                             </ul>
-                        </div>
+                        {% else %}
+                          <p class="text-muted">Nenhum Boletim de Medição pendente.</p>
+                        {% endif %}
                     </div>
                 </div>
-                {% endif %}
+            </div>
             {% endif %}
 
-            <!-- 3️⃣ Entregas Atrasadas -->
+
+            <!-- Eventos finalizados aguardando avaliação (COORDENADOR) -->
+            {% if request.user.grupo == 'coordenador' %}
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm dashboard-card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">Eventos Finalizados Aguardando Avaliação</h5>
+                    </div>
+
+                    <div class="card-body">
+                        {% if eventos_para_avaliar %}
+                            <ul class="list-group">
+                                {% for evento in eventos_para_avaliar %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>
+                                            <strong>{{ evento.empresa_terceira }}</strong><br>
+                                            <small>{{ evento.descricao }} |
+                                            Realizado em: {{ evento.data_entrega|date:"d/m/Y" }}</small>
+                                        </span>
+                                        <a href="{% url 'avaliar_evento_fornecedor' evento.id %}"
+                                           class="btn btn-sm btn-secondary">
+                                            Avaliar
+                                        </a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted">Nenhum evento finalizado pendente de avaliação.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+
+            <!-- Entregas Atrasadas -->
             {% if request.user.grupo != 'financeiro' %}
-              <div class="col-md-6 mb-4 animated-card">
-                  <div class="card shadow-sm border-danger">
-                      <div class="card-header bg-danger text-white">
-                          <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
-                      </div>
-                      <div class="card-body">
-                          {% if entregas_atrasadas %}
-                              <ul class="list-group list-group-flush">
-                                  {% for e in entregas_atrasadas %}
-                                      <li class="list-group-item d-flex justify-content-between align-items-center">
-                                          <div>
-                                              <strong>{{ e.empresa_terceira }}</strong><br>
-                                              {% if e.descricao %}
-                                                  <small>{{ e.descricao|truncatechars:60 }}</small><br>
-                                              {% endif %}
-                                              <span class="badge bg-danger">Prevista: {{ e.data_prevista|date:"d/m/Y" }}</span>
-                                          </div>
-                                          {% if request.user.grupo == 'suprimento' %}
-                                              <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-danger">Registrar Entrega</a>
-                                          {% else %}
-                                              <a href="{% url 'detalhes_entrega' e.id %}" class="btn btn-sm btn-outline-danger">Ver</a>
-                                          {% endif %}
-                                      </li>
-                                  {% endfor %}
-                              </ul>
-                          {% else %}
-                              <p class="text-muted mb-0">Nenhuma entrega atrasada encontrada.</p>
-                          {% endif %}
-                      </div>
-                  </div>
-              </div>
+            <div class="col-md-6 mb-4 animated-card">
+                <div class="card shadow-sm dashboard-card">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
+                    </div>
+
+                    <div class="card-body">
+                        {% if entregas_atrasadas %}
+                            <ul class="list-group list-group-flush">
+                                {% for e in entregas_atrasadas %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>{{ e.empresa_terceira }}</strong><br>
+                                            {% if e.descricao %}
+                                                <small>{{ e.descricao|truncatechars:60 }}</small><br>
+                                            {% endif %}
+                                            <span class="badge bg-danger">Prevista: {{ e.data_prevista|date:"d/m/Y" }}</span>
+                                        </div>
+
+                                        {% if request.user.grupo == 'suprimento' %}
+                                            <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-danger">
+                                                Registrar Entrega
+                                            </a>
+                                        {% else %}
+                                            <a href="{% url 'detalhes_entrega' e.id %}" class="btn btn-sm btn-outline-danger">
+                                                Ver
+                                            </a>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted mb-0">Nenhuma entrega atrasada encontrada.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
             {% endif %}
 
-            <!-- 4️⃣ Próximas Entregas -->
+
+            <!-- Próximas Entregas -->
             <div class="col-md-6 mb-4 animated-card">
-                <div class="card shadow-sm">
+                <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-warning">
                         <h5 class="mb-0">Próximas Entregas (10 dias)</h5>
                     </div>
+
                     <div class="card-body">
                         {% if eventos_proximos %}
                             <ul class="list-group list-group-flush">
@@ -254,10 +319,15 @@
                                             {% endif %}
                                             <span class="badge bg-info">Entrega: {{ e.data_prevista|date:"d/m/Y" }}</span>
                                         </div>
+
                                         {% if request.user.grupo == 'suprimento' %}
-                                            <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-warning">Registrar Entrega</a>
+                                            <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-warning">
+                                                Registrar Entrega
+                                            </a>
                                         {% else %}
-                                            <a href="{% url 'detalhes_entrega' e.id %}" class="btn btn-sm btn-outline-warning">Ver</a>
+                                            <a href="{% url 'detalhes_entrega' e.id %}" class="btn btn-sm btn-outline-warning">
+                                                Ver
+                                            </a>
                                         {% endif %}
                                     </li>
                                 {% endfor %}
@@ -268,6 +338,8 @@
                     </div>
                 </div>
             </div>
+
+
         </div>
     </div>
 

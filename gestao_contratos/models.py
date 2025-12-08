@@ -16,7 +16,7 @@ class User(AbstractUser):
         ('diretoria', 'Diretoria'),
         ('financeiro', 'Financeiro'),
         ('suprimento', 'Suprimento'),
-        ('terceiro', 'Terceiro'),
+        ('fornecedor', 'Fornecedor'),
     ]
 
     grupo = models.CharField(max_length=20, choices=GRUPOS_CHOICES, blank=True, null=True)

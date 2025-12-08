@@ -183,7 +183,30 @@
           background-color: inherit !important;
         }
 
+      .dashboard-card {
+          height: 350px;
+          display: flex;
+          flex-direction: column;
+      }
 
+      .dashboard-card .card-body {
+          overflow-y: auto;
+          max-height: 300px;
+          padding-right: 10px;
+      }
+
+      .dashboard-card .card-body::-webkit-scrollbar {
+          width: 6px;
+      }
+
+      .dashboard-card .card-body::-webkit-scrollbar-thumb {
+          background-color: rgba(0,0,0,0.2);
+          border-radius: 4px;
+      }
+
+      .dashboard-card .card-body::-webkit-scrollbar-track {
+          background: transparent;
+      }
 
     </style>
 </head>
