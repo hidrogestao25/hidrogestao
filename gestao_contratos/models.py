@@ -12,7 +12,9 @@ from django.conf import settings
 class User(AbstractUser):
     GRUPOS_CHOICES = [
         ('coordenador', 'Coordenador de Contrato'),
+        ('lider_contrato','Lider de Contratos'),
         ('gerente', 'Gerente'),
+        ('gerente_contrato', 'Gerente de Contratos'),
         ('diretoria', 'Diretoria'),
         ('financeiro', 'Financeiro'),
         ('suprimento', 'Suprimento'),
@@ -162,6 +164,14 @@ class Contrato(models.Model):
         #limit_choices_to={'grupo': 'Coordenador de Contrato'},
         related_name="contratos_cliente_coordenados"  # evita conflito com contratos_coordenados
     )
+    lider_contrato = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={"grupo": "lider_contrato"},
+        related_name="contratos_liderados"
+    )
     data_inicio = models.DateField(null=True, blank=True)
     data_fim = models.DateField(null=True, blank=True)
     valor_total = models.DecimalField(max_digits=12, decimal_places=2)
@@ -190,6 +200,13 @@ class SolicitacaoProspeccao(models.Model):
 
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes')
     coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    lider_contrato = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={"grupo": "lider_contrato"},
+    )
     descricao = models.TextField(blank=True, null=True)
     requisitos = models.TextField(blank=True, null=True)
     previsto_no_orcamento = models.BooleanField(default=False)
@@ -372,6 +389,14 @@ class ContratoTerceiros(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL, null=True,
         related_name="contratos_coordenados",
+    )
+    lider_contrato = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={"grupo": "lider_contrato"},
+        related_name="contratos_liderados"
     )
     guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
     condicao_pagamento = models.CharField(max_length=80, null=True, blank=True)
