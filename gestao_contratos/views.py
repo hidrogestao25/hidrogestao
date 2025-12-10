@@ -282,7 +282,12 @@ def home(request):
 
     # ==================== FINANCEIRO ====================
     elif is_financeiro:
-        # Painel financeiro: eventos com BMs aprovados para pagamento, mas sem NF
+        solicitacoes_pendentes = SolicitacaoProspeccao.objects.filter(
+            Q(coordenador=user)
+            & (Q(triagem_realizada=True, status="Triagem realizada") |
+               Q(minuta_boletins_medicao__status_coordenador="pendente"))
+        ).distinct()
+
         eventos_sem_nf = BM.objects.filter(
             status_coordenador="aprovado",
             status_gerente="aprovado",
@@ -291,8 +296,14 @@ def home(request):
             Q(nota_fiscal__isnull=True)
         ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
 
+        eventos_proximos = Evento.objects.filter(
+            data_prevista__range=[hoje, limite]
+        ).order_by("data_prevista")
+
         context.update({
+            "solicitacoes_pendentes": solicitacoes_pendentes,
             "eventos_sem_nf": eventos_sem_nf,
+            "eventos_proximos": eventos_proximos,
         })
 
 
