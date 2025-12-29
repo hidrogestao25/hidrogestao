@@ -11,8 +11,12 @@
             <td>{{ solicitacao.contrato }}</td>
         </tr>
         <tr>
-            <th>Coordenador</th>
-            <td>{{ solicitacao.coordenador }}</td>
+            <th>Líder Técnico</th>
+            <td>{{ solicitacao.coordenador.get_full_name|default:solicitacao.coordenador }}</td>
+        </tr>
+        <tr>
+            <th>Líder de Contrato</th>
+            <td>{{ solicitacao.lider_contrato.get_full_name|default:solicitacao.lider_contrato }}</td>
         </tr>
         <tr>
             <th>Descrição</th>

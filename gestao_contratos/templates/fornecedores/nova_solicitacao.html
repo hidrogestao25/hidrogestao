@@ -17,6 +17,14 @@
         </div>
 
         <div class="mb-3">
+            <label for="{{ form.lider_contrato.id_for_label }}" class="form-label">Líder de Contrato</label>
+            {{ form.lider_contrato }}
+            {% if form.lider_contrato.errors %}
+              <div class="text-danger small">{{ form.lider_contrato.errors|striptags }}</div>
+            {% endif %}
+        </div>
+
+        <div class="mb-3">
             <label for="{{ form.descricao.id_for_label }}" class="form-label">Escopo de Contratação</label>
             {{ form.descricao }}
             {% if form.descricao.errors %}

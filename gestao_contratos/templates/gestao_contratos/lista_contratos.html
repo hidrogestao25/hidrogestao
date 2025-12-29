@@ -15,7 +15,7 @@
     <thead>
         <tr>
             <th>Código do Projeto</th>
-            <th>Coordenador</th>
+            <th>Líder Técnico</th>
             {% if user.grupo in "diretoria suprimento financeiro" %}
               <th>Centro</th>
             {% endif %}
@@ -27,7 +27,7 @@
         {% for contrato in page_obj %}
           <tr class="linha-hover" onclick="window.location='{% url 'contrato_cliente_detalhe' contrato.pk %}'">
             <td>{{ contrato.cod_projeto }}</td>
-            <td>{{ contrato.coordenador }}</td>
+            <td>{{ contrato.coordenador.get_full_name|default:contrato.coordenador }}</td>
             {% if user.grupo in "diretoria suprimento financeiro" %}
             <td>
               {% for centro in contrato.coordenador.centros.all %}

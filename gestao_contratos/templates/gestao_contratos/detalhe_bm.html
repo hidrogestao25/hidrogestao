@@ -15,7 +15,7 @@
 
     <h4>Status das aprovações</h4>
     <ul>
-        <li>Coordenador:
+        <li>Líder de Contrato:
             {% if bm.status_coordenador == 'aprovado' %}
                 <span class="badge bg-success">Aprovado</span>
             {% elif bm.status_coordenador == 'reprovado' %}
@@ -24,7 +24,7 @@
                 <span class="badge bg-secondary">Pendente</span>
             {% endif %}
         </li>
-        <li>Gerência:
+        <li>Gerência de Contrato:
             {% if bm.status_gerente == 'aprovado' %}
                 <span class="badge bg-success">Aprovado</span>
             {% elif bm.aprovado_gerente == 'reprovado' %}
@@ -35,7 +35,7 @@
         </li>
     </ul>
 
-    {% if request.user.grupo == "coordenador" and bm.status_coordenador == 'pendente' %}
+    {% if request.user.grupo == "lider_contrato" and bm.status_coordenador == 'pendente' %}
         <form method="post">
             {% csrf_token %}
             <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
@@ -43,7 +43,7 @@
         </form>
     {% endif %}
 
-    {% if request.user.grupo == "gerente" and bm.status_gerente == 'pendente' %}
+    {% if request.user.grupo == "gerente_contrato" and bm.status_gerente == 'pendente' %}
         <form method="post">
             {% csrf_token %}
             <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>

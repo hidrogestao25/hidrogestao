@@ -42,7 +42,8 @@ document.addEventListener("DOMContentLoaded", function() {
 <div class="card mb-3">
     <div class="card-body">
         <p><strong>Contrato:</strong> {{ solicitacao.contrato }}</p>
-        <p><strong>Coordenador:</strong> {{ solicitacao.coordenador }}</p>
+        <p><strong>Líder Técnico:</strong> {{ solicitacao.coordenador.get_full_name|default:solicitacao.coordenador }}</p>
+        <p><strong>Líder de Contrato:</strong> {{ solicitacao.lider_contrato }}</p>
         <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
         <p><strong>Previsto no Orçamento:</strong>
             {% if solicitacao.previsto_no_orcamento %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}
@@ -198,9 +199,11 @@ document.addEventListener("DOMContentLoaded", function() {
           {% else %}
               <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
           {% endif %}
-          {% if request.user.grupo == 'suprimento' %}
+          {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_contrato' %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
           {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de prospecção" %}
+              <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+          {% elif request.user.grupo == 'lider_contrato' and solicitacao.status == "Solicitação de prospecção" %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
           {% elif request.user.grupo == 'coordenador' and solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>

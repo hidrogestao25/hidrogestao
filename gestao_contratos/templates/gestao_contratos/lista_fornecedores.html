@@ -7,9 +7,42 @@
     {% endif %}
 </div>
 
-<form method="get" class="mb-3 d-flex">
-    <input type="text" name="search" value="{{ request.GET.search }}" class="form-control me-2" placeholder="Buscar fornecedores...">
-    <button type="submit" class="btn btn-primary">Buscar</button>
+<form method="get" class="mb-3">
+    <div class="row g-2 align-items-end">
+
+        <div class="col-md-6">
+            <input
+                type="text"
+                name="search"
+                value="{{ search_query }}"
+                class="form-control"
+                placeholder="Buscar contratos..."
+            >
+        </div>
+
+        <div class="col-md-4">
+            <div class="form-check mt-2">
+                <input
+                    class="form-check-input"
+                    type="checkbox"
+                    name="guarda_chuva"
+                    value="1"
+                    id="guardaChuvaCheck"
+                    {% if guarda_chuva == '1' %}checked{% endif %}
+                >
+                <label class="form-check-label" for="guardaChuvaCheck">
+                    Mostrar apenas contratos guarda-chuva
+                </label>
+            </div>
+        </div>
+
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">
+                Buscar
+            </button>
+        </div>
+
+    </div>
 </form>
 
 <table id="tabela-fornecedores" class="table table-striped">

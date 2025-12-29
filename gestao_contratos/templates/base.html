@@ -221,7 +221,7 @@
                 {% if user.is_authenticated %}
                 <div class="d-flex flex-wrap align-items-center mt-1" style="font-size: 0.9rem;">
                     <span class="badge bg-primary me-1">Usuário: {{ user.get_full_name|default:user.username }}</span>
-                    <span class="badge bg-success me-1">Grupo: {{ user.grupo|title }}</span>
+                    <span class="badge bg-success me-1">Grupo: {{ user.get_grupo_display }}</span>
                     {% if user.centros.exists %}
                         {% for centro in user.centros.all %}
                             <span class="badge bg-warning text-dark me-1">{{ centro.nome }}</span>
@@ -253,11 +253,15 @@
                           <ul class="dropdown-menu">
                               {% if request.user.grupo == 'coordenador' %}
                                 <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-plus-square-fill"></i> Solicitação de Prospecção</a></li>
+                                <li><a class="dropdown-item" href="{% url 'solicitar_os' %}"><i class="bi bi-node-plus-fill"></i> Nova Ordem de Serviço</a></li>
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Minhas Solicitações</a></li>
-                              {% elif request.user.grupo == 'financeiro' or request.user.grupo == 'gerente' %}
+                              {% elif request.user.grupo == 'gerente' %}
                                 <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-plus-square-fill"></i> Solicitação de Prospecção</a></li>
+                                <li><a class="dropdown-item" href="{% url 'solicitar_os' %}"><i class="bi bi-node-plus-fill"></i> Nova Ordem de Serviço</a></li>
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Solicitações</a></li>
                                 <!-- <li><a class="dropdown-item" href="{% url 'elaboracao_contrato' %}"><i class="bi bi-feather"></i> Elaboração de Contrato</a></li> -->
+                              {% elif request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' %}
+                                <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Solicitações</a></li>
                               {% endif %}
                               {% if request.user.grupo == 'suprimento' %}
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Lista de Solicitações</a></li>
@@ -275,7 +279,8 @@
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{% url 'lista_contratos' %}"><i class="bi bi-person-lines-fill"></i> Contratos com Clientes</a></li>
                             <li><a class="dropdown-item" href="{% url 'lista_contratos_fornecedores' %}"><i class="bi bi-people-fill"></i> Contratos com Fornecedores</a></li>
-                            {% if request.user.grupo in 'suprimento gerente diretoria financeiro' %}
+                            <li><a class="dropdown-item" href="{% url 'lista_ordens_servico' %}"><i class="bi bi-gear-wide-connected"></i> Ordens de Serviços</a></li>
+                            {% if request.user.grupo in 'suprimento gerente diretoria financeiro gerente_contrato' %}
                                 <li><a class="dropdown-item" href="{% url 'previsao_pagamentos' %}"><i class="bi bi-cash-coin"></i> Previsão de Pagamentos</a></li>
                             {% endif %}
                             <!-- <li><a class="dropdown-item" href="#"><i class="bi bi-pencil-square"></i> Aditivos</a></li> -->
@@ -305,10 +310,10 @@
                             {% if request.user.grupo == 'suprimento' %}
                               <li><a class="dropdown-item" href="{% url 'novo_fornecedor' %}"><i class="bi bi-plus-square-fill"></i> Novo Fornecedor</a></li>
                               <li><a class="dropdown-item" href="{% url 'ranking_fornecedores' %}"><i class="bi bi-bar-chart-fill"></i> Ranking de Fornecedores</a></li>
-                            {% elif request.user.grupo in 'gerente diretoria financeiro' %}
+                            {% elif request.user.grupo in 'gerente diretoria financeiro gerente_contrato' %}
                               <li><a class="dropdown-item" href="{% url 'ranking_fornecedores' %}"><i class="bi bi-bar-chart-fill"></i> Ranking de Fornecedores</a></li>
                             {% endif %}
-                            {% if request.user.grupo == 'coordenador' %}
+                            {% if request.user.grupo == 'coordenador' or request.user.grupo == 'lider_contrato' %}
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-search"></i> Solicitação de Prospecção</a></li>
                             {% endif %}
                             <!-- <li><a class="dropdown-item" href="#"><i class="bi bi-star-fill"></i> Avaliações</a></li> -->

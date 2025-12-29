@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm">
+
+    <!-- HEADER -->
+    <div class="card-header card-header-custom text-white">
+      <h5>Detalhes da Ordem de Serviço</h5>
+    </div>
+
+    <!-- BODY -->
+    <div class="card-body">
+
+      <p><strong>OS Nº:</strong> {{ os.id }}</p>
+
+      <p><strong>Contrato:</strong>
+        <a href="{% url 'contrato_fornecedor_detalhe' os.contrato.id %}" class="text-decoration-none">
+          {{ os.contrato }}
+        </a>
+      </p>
+
+      <p><strong>Fornecedor:</strong> {{ os.contrato.empresa_terceira }}</p>
+
+      <p><strong>Líder de Contrato:</strong>
+        {{ os.contrato.lider_contrato.get_full_name|default:os.contrato.lider_contrato }}
+      </p>
+
+      <p><strong>Solicitante:</strong>
+        {{ os.coordenador.get_full_name|default:os.coordenador }}
+      </p>
+
+      <p><strong>Data de Abertura:</strong>
+        {{ os.criado_em|date:"d/m/Y H:i" }}
+      </p>
+
+      {% if os.prazo_execucao %}
+        <p><strong>Prazo de Execução:</strong>
+          {{ os.prazo_execucao|date:"d/m/Y" }}
+        </p>
+      {% endif %}
+
+      <p>
+        <strong>Status:</strong>
+        {{ os.get_status_display }}
+      </p>
+
+      {% if os.titulo %}
+        <p><strong>Título:</strong> {{ os.titulo }}</p>
+      {% endif %}
+
+      {% if os.descricao %}
+        <p><strong>Descrição:</strong><br>{{ os.descricao|linebreaks }}</p>
+      {% endif %}
+
+      {% if os.valor_previsto %}
+        <p>
+          <strong>Valor Previsto:</strong>
+          R$ {{ os.valor_previsto|floatformat:2 }}
+        </p>
+      {% endif %}
+
+      {% if os.arquivo_os %}
+        <p>
+          <a href="{{ os.arquivo_os.url }}" class="btn btn-sm btn-outline-primary">
+            📎 Baixar Contrato da OS
+          </a>
+        </p>
+      {% endif %}
+
+      <hr>
+
+      <!-- INDICADORES DO FORNECEDOR -->
+      <h5>📊 Indicadores do Fornecedor</h5>
+
+      <div class="row mt-3">
+
+        <!-- Indicadores deste fornecedor -->
+        <div class="col-md-6">
+          <div class="card shadow-sm mb-3">
+            <div class="card-header bg-primary text-white">
+              Indicadores do Fornecedor
+            </div>
+            <div class="card-body">
+
+              <p><strong>Contratos Ativos:</strong> {{ contratos_ativos }}</p>
+
+              <!-- IQ -->
+              <div class="d-flex align-items-center mb-2">
+                <strong class="me-2" style="min-width: 220px;">Índice de Qualidade:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores.IQ|floatformat:2 }}%</span>
+                <div class="progress flex-grow-1" style="height:14px;">
+                  <div class="progress-bar
+                    {% if indicadores.IQ < 50 %}bg-danger
+                    {% elif indicadores.IQ < 80 %}bg-warning
+                    {% else %}bg-success{% endif %}"
+                    style="width: {{ indicadores.IQ }}%;">
+                  </div>
+                </div>
+              </div>
+
+              <!-- IP -->
+              <div class="d-flex align-items-center mb-2">
+                <strong class="me-2" style="min-width: 220px;">Índice de Pontualidade:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores.IP|floatformat:2 }}%</span>
+                <div class="progress flex-grow-1" style="height:14px;">
+                  <div class="progress-bar
+                    {% if indicadores.IP < 50 %}bg-danger
+                    {% elif indicadores.IP < 80 %}bg-warning
+                    {% else %}bg-success{% endif %}"
+                    style="width: {{ indicadores.IP }}%;">
+                  </div>
+                </div>
+              </div>
+
+              <!-- INC -->
+              <div class="d-flex align-items-center mb-2">
+                <strong class="me-2" style="min-width: 220px;">Entregas Não Conformes:</strong>
+                <span class="me-2" style="width:70px;">{{ indicadores.INC|floatformat:2 }}%</span>
+                <div class="progress flex-grow-1" style="height:14px;">
+                  <div class="progress-bar
+                    {% if indicadores.INC < 50 %}bg-danger
+                    {% elif indicadores.INC < 80 %}bg-warning
+                    {% else %}bg-success{% endif %}"
+                    style="width: {{ indicadores.INC }}%;">
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {% if os.realizado %}
+      <hr>
+        <div class="card mt-4 shadow-sm border-success">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Entrega Registrada</h5>
+            </div>
+
+            <div class="card-body">
+                <div class="row mb-2">
+                    <div class="col-md-4">
+                        <strong>Data da Entrega:</strong><br>
+                        {{ os.data_entrega|default:"—" }}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Avaliação:</strong><br>
+                        {{ os.avaliacao|default:"—" }}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Status:</strong><br>
+                        {% if os.com_atraso %}
+                            <span class="badge bg-warning text-dark">Com atraso</span>
+                        {% else %}
+                            <span class="badge bg-success">No prazo</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="row mb-2">
+                    <div class="col-md-4">
+                        <strong>Valor Pago:</strong><br>
+                        {% if os.valor_pago %}
+                            R$ {{ os.valor_pago|floatformat:2 }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Data do Pagamento:</strong><br>
+                        {{ os.data_pagamento|default:"—" }}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Evidência:</strong><br>
+                        {{ os.caminho_evidencia|default:"—" }}
+                    </div>
+                </div>
+
+                {% if os.observacao %}
+                <hr>
+                <p class="mb-0">
+                    <strong>Observações:</strong><br>
+                    {{ os.observacao }}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="card-footer text-end">
+      <div class="d-flex justify-content-end gap-2">
+        {% if request.user.grupo in "gerente,coordenador,suprimento" %}
+        <a href="{% url 'registrar_entrega_os' os.id %}" class="btn btn-success">
+          {% if os.realizado or os.avaliacao %}
+            Editar Entrega
+          {% else %}
+            Registrar Entrega
+          {% endif %}
+        </a>
+        {% endif %}
+        <a href="{% url 'lista_ordens_servico' %}" class="btn btn-secondary">
+            Voltar
+        </a>
+    </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
