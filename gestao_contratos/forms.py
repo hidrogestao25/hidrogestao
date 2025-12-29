@@ -1,5 +1,5 @@
 from django import forms
-from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF, NFCliente
+from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF, NFCliente, SolicitacaoOrdemServico, OS
 from django.contrib import messages
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime
@@ -59,6 +59,7 @@ class ContratoForm(forms.ModelForm):
             'proposta': forms.Select(attrs={'class': 'form-select'}),
             'cliente': forms.Select(attrs={'class': 'form-select'}),
             'coordenador': forms.Select(attrs={'class': 'form-select'}),
+            'lider_contrato': forms.Select(attrs={'class': 'form-select'}),
             'valor_total': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_valor_total'}),
             'objeto':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'status': forms.Select(attrs={'class': 'form-select'}),
@@ -70,6 +71,9 @@ class ContratoForm(forms.ModelForm):
         # Filtra apenas usuários que estão no grupo "Coordenador de Contrato"
         self.fields['coordenador'].queryset = (
             User.objects.filter(grupo='coordenador', is_active=True)
+        )
+        self.fields['lider_contrato'].queryset = (
+            User.objects.filter(grupo__in=['lider_contrato', 'gerente_contrato'], is_active=True)
         )
         self.fields['proposta'].queryset = (
             Proposta.objects.all()
@@ -165,6 +169,7 @@ class ContratoFornecedorForm(forms.ModelForm):
             'prospeccao': forms.Select(attrs={'class': 'form-select'}),
             'empresa_terceira': forms.Select(attrs={'class': 'form-select'}),
             'coordenador': forms.Select(attrs={'class': 'form-select'}),
+            'lider_contrato': forms.Select(attrs={'class': 'form-select'}),
             'valor_total': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_valor_total'}),
             'objeto':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'status': forms.Select(attrs={'class': 'form-select'}),
@@ -178,6 +183,9 @@ class ContratoFornecedorForm(forms.ModelForm):
         # Filtra apenas usuários que estão no grupo "Coordenador de Contrato"
         self.fields['coordenador'].queryset = (
             User.objects.filter(grupo='coordenador', is_active=True)
+        )
+        self.fields['lider_contrato'].queryset = (
+            User.objects.filter(grupo__in=['lider_contrato','gerente_contrato'], is_active=True)
         )
         self.fields['prospeccao'].queryset = (
             SolicitacaoProspeccao.objects.all().exclude(status='Finalizada')
@@ -209,7 +217,7 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
     )
     class Meta:
         model = SolicitacaoProspeccao
-        fields = ['contrato', 'descricao', 'requisitos','previsto_no_orcamento', 'valor_provisionado', 'cronograma']
+        fields = ['contrato', 'lider_contrato', 'descricao', 'requisitos','previsto_no_orcamento', 'valor_provisionado', 'cronograma']
         widgets = {
             'valor_provisionado': forms.TextInput(attrs ={
                 'class': 'form-control money',
@@ -226,12 +234,13 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
 
         if user and user.grupo == 'coordenador':
             self.fields['contrato'].queryset = Contrato.objects.filter(coordenador=user)
-        elif user and user.grupo == 'financeiro':
-            self.fields['contrato'].queryset = Contrato.objects.all()
+        #elif user and user.grupo == 'financeiro':
+        #    self.fields['contrato'].queryset = Contrato.objects.all()
         elif user and user.grupo == 'gerente':
             self.fields['contrato'].queryset = Contrato.objects.filter(coordenador__centros__in=user.centros.all())
         else:
             self.fields['contrato'].queryset = Contrato.objects.none()
+        self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato'], is_active=True)
 
     def clean_valor_provisionado(self):
         valor = self.cleaned_data.get('valor_provisionado')
@@ -244,6 +253,39 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
                 raise forms.ValidationError("Informe um valor numérico válido (ex: 1.234,56)")
         return valor
 
+
+class SolicitacaoOrdemServicoForm(forms.ModelForm):
+    class Meta:
+        model = SolicitacaoOrdemServico
+        fields = [
+            'contrato',
+            'cod_projeto',
+            'titulo',
+            'descricao',
+            'valor_previsto',
+            'prazo_execucao',
+            'lider_contrato'
+        ]
+        widgets = {
+            "prazo_execucao": ISODateInput(attrs={ "class": "form-control"}),
+            'descricao': forms.Textarea(attrs={'rows': 4}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(guarda_chuva=True)
+        self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato'], is_active=True)
+        if user and user.grupo == 'coordenador':
+            self.fields['cod_projeto'].queryset = Contrato.objects.filter(coordenador=user)
+        elif user and user.grupo == 'gerente':
+            self.fields['cod_projeto'].queryset = Contrato.objects.filter(coordenador__centros__in=user.centros.all())
+
+class UploadContratoOSForm(forms.ModelForm):
+    class Meta:
+        model = SolicitacaoOrdemServico
+        fields = ['arquivo_os']
 
 
 class DocumentoContratoTerceiroForm(forms.ModelForm):
@@ -430,5 +472,25 @@ class NFClienteForm(forms.ModelForm):
             "data_emissao": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "data_pagamento": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "arquivo_nf": forms.ClearableFileInput(attrs={"class": "form-control"}),
+            "observacao": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class RegistroEntregaOSForm(forms.ModelForm):
+    class Meta:
+        model = OS
+        fields = [
+            "caminho_evidencia",
+            "avaliacao",
+            "data_entrega",
+            "realizado",
+            "com_atraso",
+            "valor_pago",
+            "data_pagamento",
+            "observacao",
+        ]
+        widgets = {
+            "data_entrega": forms.DateInput(attrs={"type": "date"}),
+            "data_pagamento": forms.DateInput(attrs={"type": "date"}),
             "observacao": forms.Textarea(attrs={"rows": 3}),
         }

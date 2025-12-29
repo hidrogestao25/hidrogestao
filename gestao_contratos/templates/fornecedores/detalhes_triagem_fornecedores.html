@@ -25,12 +25,12 @@
                         {% with prop=propostas_dict|dict_get:f.id %}
                         <tr>
                             <td>
-                                {% if request.user == solicitacao.coordenador %}
+                                {% if request.user == solicitacao.lider_contrato %}
                                 <input type="radio" name="fornecedor_escolhido" value="{{ f.id }}"
                                     {% if solicitacao.fornecedor_escolhido == f %}checked{% endif %}>
                                 {% endif %}
-                                {% if request.user.grupo == "gerente" and solicitacao.fornecedor_escolhido == f %}
-                                    ✅ Escolhido pelo coordenador
+                                {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido == f %}
+                                    ✅ Escolhido pelo líder de contrato
                                 {% endif %}
                             </td>
                             <td>{{ f.nome }}</td>
@@ -64,7 +64,7 @@
 
 
 
-            {% if request.user == solicitacao.coordenador %}
+            {% if request.user == solicitacao.lider_contrato %}
             <div class="mb-3">
                 <label for="justificativa_fornecedor_escolhido" class="form-label">
                     Justificativa pela escolha do fornecedor:
@@ -81,14 +81,14 @@
         <p>Nenhum fornecedor selecionado na triagem.</p>
     {% endif %}
 
-    {% if request.user.grupo == "gerente" and solicitacao.justificativa_fornecedor_escolhido %}
+    {% if request.user.grupo == "gerente_contrato" and solicitacao.justificativa_fornecedor_escolhido %}
     <div class="alert alert-info mt-4">
-        <strong>Justificativa do Coordenador:</strong><br>
+        <strong>Justificativa do Líder de Contrato:</strong><br>
         {{ solicitacao.justificativa_fornecedor_escolhido }}
     </div>
     {% endif %}
 
-    {% if request.user.grupo == "gerente" and solicitacao.fornecedor_escolhido %}
+    {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido %}
       <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
           {% csrf_token %}
           <button type="submit" name="acao" value="aprovar" class="btn btn-success">
@@ -101,7 +101,7 @@
     {% endif %}
 
     <div class="mt-4">
-        {% if not solicitacao.nenhum_fornecedor_ideal and request.user == solicitacao.coordenador %}
+        {% if not solicitacao.nenhum_fornecedor_ideal and request.user == solicitacao.lider_contrato %}
         <form method="post" action="{% url 'nenhum_fornecedor_ideal' solicitacao.id %}" style="display:inline;">
             {% csrf_token %}
             <button type="submit" class="btn btn-warning btn-sm">

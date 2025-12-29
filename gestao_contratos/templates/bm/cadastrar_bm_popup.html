@@ -1,11 +1,9 @@
 <form method="post" enctype="multipart/form-data" id="bmForm">
-  {% csrf_token %}
+    {% csrf_token %}
+    {{ form.as_p }}
 
-  <!-- Usa todo o form do Django -->
-  {{ form.as_p }}
-
-  <div class="d-flex justify-content-end gap-2">
-    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-    <button type="submit" class="btn btn-success">Salvar BM</button>
-  </div>
+    <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-success">Salvar BM</button>
+    </div>
 </form>

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-warning">
+            <h4 class="mb-0">Editar Ordem de Serviço #{{ os.id }}</h4>
+        </div>
+
+        <div class="card-body">
+
+            <form method="post">
+                {% csrf_token %}
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Contrato</label>
+                        {{ form.contrato }}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Líder do Contrato</label>
+                        {{ form.lider_contrato }}
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Título</label>
+                    {{ form.titulo }}
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Descrição</label>
+                    {{ form.descricao }}
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Valor Previsto</label>
+                        {{ form.valor_previsto }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Prazo de Execução</label>
+                        {{ form.prazo_execucao }}
+                    </div>
+                    
+                </div>
+
+                <hr>
+
+                <div class="d-flex gap-2">
+                    <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-secondary">
+                        Cancelar
+                    </a>
+
+                    <button type="submit" class="btn btn-success">
+                        Salvar Alterações
+                    </button>
+                </div>
+
+            </form>
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}

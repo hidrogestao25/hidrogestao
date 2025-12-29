@@ -17,16 +17,25 @@
         <div class="mb-3">
           <label class="form-label fw-bold" for="id_caminho_evidencia">Caminho da Evidência</label>
           {{ form.caminho_evidencia }}
+          {% if form.caminho_evidencia.errors %}
+            <div class="text-danger small">{{ form.caminho_evidencia.errors }}</div>
+          {% endif %}
         </div>
 
         <div class="mb-3">
           <label class="form-label fw-bold" for="id_avaliacao">Avaliação</label>
           {{ form.avaliacao }}
+          {% if form.avaliacao.errors %}
+            <div class="text-danger small">{{ form.avaliacao.errors }}</div>
+          {% endif %}
         </div>
 
         <div class="mb-3">
           <label class="form-label fw-bold" for="id_data_entrega">Data de Entrega</label>
           {{ form.data_entrega }}
+          {% if form.data_entrega.errors %}
+            <div class="text-danger small">{{ form.data_entrega.errors }}</div>
+          {% endif %}
         </div>
 
         <div class="mb-3 form-check">
@@ -34,6 +43,9 @@
           <label class="form-check-label fw-bold" for="id_realizado">
             Completamente Finalizado
           </label>
+          {% if form.realizado.errors %}
+            <div class="text-danger small">{{ form.realizado.errors }}</div>
+          {% endif %}
         </div>
 
         <div class="mb-3 form-check">
@@ -41,11 +53,17 @@
           <label class="form-check-label fw-bold" for="id_com_atraso">
             Entregue com Atraso
           </label>
+          {% if form.com_atraso.errors %}
+            <div class="text-danger small">{{ form.com_atraso.errors }}</div>
+          {% endif %}
         </div>
 
         <div class="mb-3">
           <label class="form-label fw-bold" for="id_data_pagamento">Data de Pagamento</label>
           {{ form.data_pagamento }}
+          {% if form.data_pagamento.errors %}
+            <div class="text-danger small">{{ form.data_pagamento.errors }}</div>
+          {% endif %}
         </div>
 
         <div class="mb-3">
@@ -64,17 +82,26 @@
           <div class="mb-3">
             <label class="form-label fw-bold" for="id_valor_pago">Valor Pago</label>
             {{ form.valor_pago }}
+            {% if form.valor_pago.errors %}
+              <div class="text-danger small">{{ form.valor_pago.errors }}</div>
+            {% endif %}
           </div>
 
           <div class="mb-3">
             <label class="form-label fw-bold" for="id_justificativa">Justificativa</label>
             {{ form.justificativa }}
+            {% if form.justificativa.errors %}
+              <div class="text-danger small">{{ form.justificativa.errors }}</div>
+            {% endif %}
           </div>
         </div>
 
         <div class="mb-3">
           <label class="form-label fw-bold" for="id_observacao">Observação</label>
           {{ form.observacao }}
+          {% if form.observacao.errors %}
+            <div class="text-danger small">{{ form.observacao.errors }}</div>
+          {% endif %}
         </div>
 
         <div class="d-flex justify-content-end gap-2">
@@ -97,12 +124,10 @@
               <th>Valor Pago</th>
               <th>Data Pagamento</th>
               <th>Status Coordenador</th>
-              <th>Status Gerente</th>
-
               {% if has_reprovacao_coordenador %}
                 <th>Justificativa Coordenador</th>
               {% endif %}
-
+              <th>Status Gerente</th>
               {% if has_reprovacao_gerente %}
                 <th>Justificativa Gerente</th>
               {% endif %}
@@ -125,8 +150,13 @@
                 <td>R$ {{ item.bm.valor_pago|floatformat:2 }}</td>
                 <td>{{ item.bm.data_pagamento|date:"d/m/Y" }}</td>
 
-                <td class="status-coordenador">{{ item.bm.status_coordenador|capfirst }}</td>
-                <td class="status-gerente">{{ item.bm.status_gerente|capfirst }}</td>
+                {% if bm.status_coordenador == "aprovado" %}
+                  <td><span class="badge bg-success">Aprovado</span></td>
+                {% elif bm.status_coordenador == "reprovado" %}
+                  <td><span class="badge bg-danger">Reprovado</span></td>
+                {% else %}
+                  <td><span class="badge bg-secondary">Pendente</span></td>
+                {% endif %}
 
                 {% if has_reprovacao_coordenador %}
                   <td>
@@ -134,6 +164,14 @@
                       {{ item.bm.justificativa_reprovacao_coordenador }}
                     {% else %}-{% endif %}
                   </td>
+                {% endif %}
+
+                {% if bm.status_gerente == "aprovado" %}
+                  <td><span class="badge bg-success">Aprovado</span></td>
+                {% elif bm.status_gerente == "reprovado" %}
+                  <td><span class="badge bg-danger">Reprovado</span></td>
+                {% else %}
+                  <td><span class="badge bg-secondary">Pendente</span></td>
                 {% endif %}
 
                 {% if has_reprovacao_gerente %}

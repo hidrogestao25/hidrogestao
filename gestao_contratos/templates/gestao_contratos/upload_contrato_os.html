@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-success text-white">
+            <h4 class="mb-0">Anexar Contrato da Ordem de Serviço</h4>
+            <small>OS #{{ os.id }}</small>
+        </div>
+
+        <div class="card-body">
+
+            <p>
+                <strong>Status atual:</strong>
+                <span class="badge bg-warning">Pendente Suprimento</span>
+            </p>
+
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+
+                <div class="mb-3">
+                    <label class="form-label">Arquivo do Contrato</label>
+                    {{ form.arquivo_os }}
+                </div>
+
+                <div class="d-flex gap-2">
+                    <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-secondary">
+                        Cancelar
+                    </a>
+
+                    <button type="submit" class="btn btn-success">
+                        Anexar Contrato
+                    </button>
+                </div>
+            </form>
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}

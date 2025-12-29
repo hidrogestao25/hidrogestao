@@ -206,6 +206,7 @@ class SolicitacaoProspeccao(models.Model):
         null=True,
         blank=True,
         limit_choices_to={"grupo": "lider_contrato"},
+        related_name="solicitacoes_lideradas",
     )
     descricao = models.TextField(blank=True, null=True)
     requisitos = models.TextField(blank=True, null=True)
@@ -297,78 +298,6 @@ class TriagemFornecedor(models.Model):
     selecionado = models.BooleanField(default=False)
 
 
-"""# --------------------------
-# Solicitação de Contratação
-# --------------------------
-class SolicitacaoContratacaoTerceiro(models.Model):
-    AREA_CHOICES = [
-        ('Inovação', 'Inovação'),
-        ('Geotecnia', 'Geotecnia'),
-        ('Recursos Hídricos', 'Recursos Hídricos'),
-        ('Saneamento', 'Saneamento'),
-        ('Sustentabilidade', 'Sustentabilidade'),
-    ]
-
-    solicitante_nome = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='solicitacoes_contratacao_terceiros'
-    )
-    area_solicitante = models.CharField(max_length=30, choices=AREA_CHOICES)
-    responsavel_sumprimento = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        limit_choices_to={'groups__name': 'Suprimento'},
-        related_name='solicitacoes_comerciais'
-    )
-    empresa_1 = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
-    numero_proposta_1 = models.ForeignKey(
-        PropostaFornecedor,
-        on_delete=models.CASCADE,
-        related_name="solicitacoes_como_proposta_1"
-    )
-
-    empresa_2 = models.ForeignKey(
-        EmpresaTerceira,
-        on_delete=models.SET_NULL, blank=True, null=True,
-        related_name='contratos_empresa_2'
-    )
-    numero_proposta_2 = models.ForeignKey(
-        PropostaFornecedor,
-        on_delete=models.SET_NULL, blank=True, null=True,
-        related_name="solicitacoes_como_proposta_2"
-    )
-
-    empresa_3 = models.ForeignKey(
-        EmpresaTerceira,
-        on_delete=models.SET_NULL, blank=True, null=True,
-        related_name='contratos_empresa_3'
-    )
-    numero_proposta_3 = models.ForeignKey(
-        PropostaFornecedor,
-        on_delete=models.SET_NULL, blank=True, null=True,
-        related_name="solicitacoes_como_proposta_3"
-    )
-
-    justificativa = models.TextField(null=True, blank=True)
-    valor_vendido_ao_cliente = models.FloatField()
-    cod_projeto = models.ForeignKey(Contrato, on_delete=models.SET_NULL, null=True, blank=True)
-    prazo_contratual = models.TextField()
-    inicio_contrato = models.DateField()
-    termino_contrato = models.DateField()
-    indicacao_proposta_vencedora = models.FileField(
-        upload_to='proposta_vencedora/',
-        verbose_name='Inserir indicação clara da proposta vencedora em PDF'
-    )
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.solicitante_nome} -> {self.cod_projeto}"
-"""
-
 # --------------------------
 # Contrato com terceiro
 # --------------------------
@@ -396,7 +325,7 @@ class ContratoTerceiros(models.Model):
         null=True,
         blank=True,
         limit_choices_to={"grupo": "lider_contrato"},
-        related_name="contratos_liderados"
+        related_name="contratos_liderados_terceiros"
     )
     guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
     condicao_pagamento = models.CharField(max_length=80, null=True, blank=True)
@@ -499,6 +428,117 @@ class ContratoTerceiros(models.Model):
         media = soma_notas / total_avaliacoes
         return (media / 5) * 100
 
+
+# ---------------------------
+# Solicitação de Ordens de Serviços para Contratos Guarda-chuvas
+# ---------------------------
+class SolicitacaoOrdemServico(models.Model):
+    STATUS_CHOICES = [
+        ('solicitacao_os', 'Solicitação de OS'),
+        ('pendente_lider', 'Pendente Líder'),
+        ('pendente_gerente', 'Pendente Gerente'),
+        ('pendente_suprimento', 'Pendente Suprimento'),
+        ('aprovada', 'Aprovada'),
+        ('reprovada', 'Reprovada'),
+        ('finalizada', 'Finalizada'),
+    ]
+
+    contrato = models.ForeignKey(
+        ContratoTerceiros,
+        on_delete=models.CASCADE,
+        related_name='ordens_servico',
+        limit_choices_to={'guarda_chuva': True}
+    )
+    cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE, null=True, blank=True)
+    solicitante = models.ForeignKey(User, on_delete=models.CASCADE, related_name="ordens_solicitantes")
+    lider_contrato = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={"grupo": "lider_contrato"},
+        related_name="ordens_liderados_terceiros"
+    )
+    titulo = models.CharField(max_length=200)
+    descricao = models.TextField()
+    valor_previsto = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    prazo_execucao = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='solicitacao_os')
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    aprovacao_lider = models.CharField(max_length=100, null=True, blank=True)
+    aprovado_lider_em =models.DateTimeField(null=True, blank=True)
+    justificativa_reprovacao_lider = models.TextField(null=True, blank=True)
+
+    arquivo_os = models.FileField(
+        upload_to='OS/',
+        verbose_name='Inserir arquivo da Ordem de Serviço',
+        null=True, blank=True
+    )
+    aprovacao_gerente = models.CharField(max_length=100, null=True, blank=True)
+    aprovado_gerente_em =models.DateTimeField(null=True, blank=True)
+    justificativa_reprovacao_gerente = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Solicitação {self.id} - {self.titulo} - {self.contrato.empresa_terceira}"
+
+
+# ---------------------------
+# ordem de Serviço
+# ---------------------------
+class OS(models.Model):
+    STATUS_CHOICES = [
+        ('em_execucao', "Em Execução"),
+        ('paralizada', "Paralizada"),
+        ('cancelada', "Cancelada"),
+        ('finalizada', "Finalizada")
+    ]
+    AVALIACAO_CHOICES = [
+        ('Aprovado', 'Aprovado'),
+        ('Reprovado', 'Reprovado'),
+    ]
+
+    contrato = models.ForeignKey(
+        ContratoTerceiros,
+        on_delete=models.CASCADE,
+        related_name='os_cadastrada',
+        limit_choices_to={'guarda_chuva': True}
+    )
+    solicitacao = models.ForeignKey(SolicitacaoOrdemServico, on_delete=models.CASCADE, null=True, blank=True)
+    cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE)
+    coordenador = models.ForeignKey(User, on_delete=models.CASCADE, related_name="ordens_coordenador")
+    lider_contrato = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={"grupo": "lider_contrato"},
+        related_name="ordens"
+    )
+    titulo = models.CharField(max_length=200)
+    descricao = models.TextField()
+    valor = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    prazo_execucao = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_execucao')
+    criado_em = models.DateTimeField(auto_now_add=True)
+    arquivo_os = models.FileField(
+        upload_to='OS/',
+        verbose_name='Inserir arquivo da Ordem de Serviço',
+        null=True, blank=True
+    )
+
+    # registro da entrega
+    caminho_evidencia = models.CharField(max_length=260, null=True, blank=True)
+    avaliacao = models.CharField(max_length=30, choices=AVALIACAO_CHOICES, null=True, blank=True)
+    data_entrega = models.DateField(null=True, blank=True)
+    realizado = models.BooleanField(default=False)
+    com_atraso = models.BooleanField(default=False)
+    valor_pago = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    data_pagamento = models.DateField(null=True, blank=True)
+    observacao = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        return f"OS {self.id} - {self.titulo} - {self.contrato.empresa_terceira}"
 
 
 # ---------------------------
@@ -787,6 +827,7 @@ class BM(models.Model):
                 self.data_aprovacao_coordenador = None
                 self.data_aprovacao_gerente = None
         super().save(*args, **kwargs)
+
 
 # -------------
 # Nota Fiscal

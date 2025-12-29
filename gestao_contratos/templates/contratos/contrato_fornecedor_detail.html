@@ -11,7 +11,8 @@
         <a href="{% url 'cliente_detalhe' contrato.cod_projeto.cliente.id %}" class="text-decoration-none">
           {{ contrato.cod_projeto.cliente }}
         </a></p>
-      <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
+      <p><strong>Líder Técnico:</strong> {{ contrato.coordenador.get_full_name|default:contrato.coordenador }}</p>
+      <p><strong>Líder de Contrato:</strong> {{ contrato.lider_contrato.get_full_name|default:contrato.lider_contrato }}</p>
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
       <p><strong>Contrato com Fornecedor:</strong> {{ contrato.num_contrato }}</p>
       {% if contrato.guarda_chuva == True %}
@@ -237,6 +238,64 @@
   {% if request.user.grupo == 'suprimento' %}
       <a href="{% url 'cadastrar_evento_contrato' contrato.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
   {% endif %}
+
+  {% if contrato.guarda_chuva %}
+    <hr>
+
+    <h5>🧾 Ordens de Serviço Vinculadas</h5>
+
+    {% if ordens_servico %}
+      <table class="table table-striped table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Título</th>
+            <th>Descrição</th>
+            <th>Prazo da Execução</th>
+            <th>Valor Previsto</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for os in ordens_servico %}
+            <tr class="linha-hover"
+                style="cursor: pointer;"
+                onclick="window.location='{% url 'detalhes_os' os.id %}'">
+
+              <td>{{ os.id }}</td>
+              <td>{{ os.titulo }}</td>
+              <td>{{ os.descricao }}</td>
+              <td>
+                  {{ os.prazo_execucao|date:"d/m/Y" }}
+              </td>
+              <td>{{ os.valor }}</td>
+              <td>
+                {% if os.status == 'em_execucao' %}
+                  <span class="badge bg-primary">Em execução</span>
+                {% elif os.status == 'paralizada' %}
+                  <span class="badge bg-warning">Paralisada</span>
+                {% elif os.status == 'cancelada' %}
+                  <span class="badge bg-danger">Cancelada</span>
+                {% elif os.status == 'finalizada' %}
+                  <span class="badge bg-success">Finalizada</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p><em>Nenhuma Ordem de Serviço cadastrada para este contrato.</em></p>
+    {% endif %}
+    <!-- {% if user.grupo in "coordenador,gerente,gerente_contrato,lider_contrato" %}
+      <div class="text-end">
+        <a href="{% url 'solicitar_os' %}" class="btn btn-custom">
+            + Solicitar Nova OS
+        </a>
+      </div>
+    {% endif %} -->
+  {% endif %}
+
 
   <hr>
 

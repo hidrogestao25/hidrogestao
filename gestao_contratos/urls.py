@@ -71,4 +71,14 @@ urlpatterns = [
     path('download_bms_aprovados/', views.download_bms_aprovados, name='download_bms_aprovados'),
 
     path('ranking-fornecedores/', views.ranking_fornecedores, name='ranking_fornecedores'),
+
+    path('nova/', views.solicitar_os, name='solicitar_os'),
+    path('ordem-servico/<int:pk>/', views.detalhe_os, name='detalhe_ordem_servico'),
+    path('ordem-servico/<int:pk>/editar/', views.editar_ordem_servico, name='editar_ordem_servico'),
+    path('ordem-servico/<int:pk>/lider/<str:acao>/', views.aprovar_os_lider, name='aprovar_os_lider'),
+    path('ordem-servico/<int:pk>/upload-contrato/', views.upload_contrato_os, name='upload_contrato_os'),
+    path('ordem-servico/<int:pk>/gerente-contrato/<str:acao>/', views.aprovar_os_gerente_contrato, name='aprovar_os_gerente_contrato'),
+    path('ordens-servico/', views.lista_ordens_servico, name='lista_ordens_servico'),
+    path("ordem-servicos/<int:pk>/", views.detalhes_os, name="detalhes_os"),
+    path("ordem-servico/<int:pk>/registrar-entrega/", views.registrar_entrega_os, name="registrar_entrega_os"),
 ]

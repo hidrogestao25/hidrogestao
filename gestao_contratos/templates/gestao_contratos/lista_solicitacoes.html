@@ -7,13 +7,14 @@
     {% elif request.user.grupo == 'gerente' %}
         <h2>Solicitações de Prospecção - Gerência</h2>
     {% else %}
-        <h2>Minhas Solicitações de Prospecção</h2>
+        <h2>Solicitações de Prospecção</h2>
     {% endif %}
 
     {% if page_obj %}
         <table class="table table-striped text-center">
             <thead>
                 <tr>
+                    <th>ID</th>
                     <th>Contrato</th>
                     <th>Descrição</th>
                     <th>Data</th>
@@ -21,7 +22,7 @@
                     <th>Valor Provisionado</th>
                     <th>Status</th>
                     <th>Aprovação do Fornecedor - Gerência</th>
-                    {% if request.user.grupo in 'suprimento,coordenador,gerente' %}
+                    {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato' %}
                         <th>Ações</th>
                     {% endif %}
                 </tr>
@@ -29,6 +30,7 @@
             <tbody>
                 {% for solicitacao in page_obj %}
                     <tr class="linha-hover" onclick="window.location='{% url 'detalhes_solicitacao' solicitacao.id %}'">
+                        <td>#{{ solicitacao.id }}</td>
                         <td>{{ solicitacao.contrato }}</td>
                         <td>{{ solicitacao.descricao }}</td>
                         <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>
@@ -101,7 +103,7 @@
                                 {% endif %}
                             {% endif %}
 
-                            {% if request.user.grupo == 'gerente' %}
+                            {% if request.user.grupo == 'gerente_contrato' %}
                                 {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                                     <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Avaliar Fornecedor</a>
                                 {% endif %}
@@ -127,13 +129,13 @@
                                         </a>
                                     {% else %}
                                         <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning btn-sm">
-                                            Reavaliar Minuta BM
+                                            Revisar Minuta BM
                                         </a>
                                     {% endif %}
                                 {% endif %}
                             {% endif %}
 
-                            {% if request.user.grupo == 'coordenador' %}
+                            {% if request.user.grupo == 'lider_contrato' %}
                               {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" %}
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                               {% endif %}
@@ -144,7 +146,7 @@
                                       </a>
                                   {% else %}
                                       <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning btn-sm">
-                                          Reavaliar Minuta BM
+                                          Revisar Minuta BM
                                       </a>
                                   {% endif %}
                               {% endif %}
@@ -169,8 +171,133 @@
                 {% endif %}
             </ul>
         </nav>
+
     {% else %}
         <p>Nenhuma solicitação encontrada.</p>
     {% endif %}
+
+    <hr class="my-5">
+
+    <h3 class="mb-3">Solicitação de Ordens de Serviço</h3>
+
+    {% if ordens_servico_page %}
+    <table class="table table-striped text-center">
+        <thead class="table-light">
+            <tr>
+                <th>ID</th>
+                <th>Contrato</th>
+                <th>Título</th>
+                {% if request.user.grupo != "coordenador" %}
+                  <th>Solicitante</th>
+                {% endif %}
+                <th>Líder do Contrato</th>
+                <th>Valor Previsto</th>
+                <th>Prazo</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for os in ordens_servico_page %}
+            <tr class="linha-hover" onclick="window.location='{% url 'detalhe_ordem_servico' os.id %}'">
+                <td>#{{ os.id }}</td>
+                <td>{{ os.contrato }}</td>
+                <td>{{ os.titulo }}</td>
+                {% if request.user.grupo != "coordenador" %}
+                  <td>{{ os.solicitante.get_full_name|default:os.solicitante.username }}</td>
+                {% endif %}
+                <td>
+                    {% if os.lider_contrato %}
+                        {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>
+                    {% if os.valor_previsto %}
+                        R$ {{ os.valor_previsto|floatformat:2 }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>
+                    {% if os.prazo_execucao %}
+                        {{ os.prazo_execucao|date:"d/m/Y" }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>
+                    {% if os.status == 'rascunho' %}
+                        <span class="badge bg-secondary">Rascunho</span>
+                    {% elif 'pendente' in os.status %}
+                        <span class="badge bg-warning">Pendente</span>
+                    {% elif os.status == 'aprovada' %}
+                        <span class="badge bg-success">Aprovada</span>
+                    {% elif os.status == 'reprovada' %}
+                        <span class="badge bg-danger">Reprovada</span>
+                    {% elif os.status == 'finalizada' %}
+                        <span class="badge bg-dark">Finalizada</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-sm btn-outline-primary">
+                        Detalhes
+                    </a>
+
+                    {% if request.user.grupo in 'gerente,gerente_contrato,suprimento' %}
+                        <a href="{% url 'editar_ordem_servico' os.id %}" class="btn btn-sm btn-outline-warning">
+                            Editar
+                        </a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- PAGINAÇÃO ORDENS DE SERVIÇO -->
+    <nav>
+        <ul class="pagination">
+            {% if ordens_servico_page.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page_os=1{% if page_obj.number %}&page={{ page_obj.number }}{% endif %}">
+                        « Primeiro
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page_os={{ ordens_servico_page.previous_page_number }}{% if page_obj.number %}&page={{ page_obj.number }}{% endif %}">
+                        Anterior
+                    </a>
+                </li>
+            {% endif %}
+
+            <li class="page-item disabled">
+                <span class="page-link">
+                    Página {{ ordens_servico_page.number }} de {{ ordens_servico_page.paginator.num_pages }}
+                </span>
+            </li>
+
+            {% if ordens_servico_page.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page_os={{ ordens_servico_page.next_page_number }}{% if page_obj.number %}&page={{ page_obj.number }}{% endif %}">
+                        Próximo
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page_os={{ ordens_servico_page.paginator.num_pages }}{% if page_obj.number %}&page={{ page_obj.number }}{% endif %}">
+                        Último »
+                    </a>
+                </li>
+            {% endif %}
+
+        </ul>
+    </nav>
+
+
+    {% else %}
+    <p class="text-muted">Nenhuma Ordem de Serviço encontrada.</p>
+    {% endif %}
+
 </div>
 {% endblock %}

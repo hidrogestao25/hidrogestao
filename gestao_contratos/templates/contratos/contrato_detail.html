@@ -9,7 +9,8 @@
     <div class="card-body">
       <p><strong>Código do Projeto:</strong> {{ contrato.cod_projeto }}</p>
       <p><strong>Cliente:</strong> {{ contrato.cliente }}</p>
-      <p><strong>Coordenador:</strong> {{ contrato.coordenador }}</p>
+      <p><strong>Líder Técnico:</strong> {{ contrato.coordenador }}</p>
+      <p><strong>Líder de Contrato:</strong> {{ contrato.lider_contrato }}</p>
       <p><strong>Data Início:</strong> {{ contrato.data_inicio|date:"d/m/Y" }}</p>
       <p><strong>Data Fim:</strong> {{ contrato.data_fim|date:"d/m/Y" }}</p>
       <p><strong>Valor Total:</strong> R$ {{ contrato.valor_total|floatformat:2 }}</p>

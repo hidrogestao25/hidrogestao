@@ -24,8 +24,8 @@
 
       <div class="col-md-4">
         <label for="{{ form.coordenador.id_for_label }}" class="form-label">
-          Coordenador
-          <i class="bi bi-info-circle" title="Filtra apenas os contratos associados ao coordenador selecionado. Deixe em branco para incluir todos."></i>
+          Líder Técnico
+          <i class="bi bi-info-circle" title="Filtra apenas os contratos associados ao líder técnico selecionado. Deixe em branco para incluir todos."></i>
         </label>
         {{ form.coordenador }}
       </div>
@@ -84,7 +84,7 @@
       <tr>
         <th>Projeto</th>
         <th>Fornecedor</th>
-        <th>Coordenador</th>
+        <th>Líder Técnico</th>
         <th>Nº BM</th>
         <th>Período de Medição</th>
         <th>Valor Previsto</th>
@@ -99,7 +99,7 @@
         <tr>
           <td>{{ bm.contrato.cod_projeto.cod_projeto }}</td>
           <td>{{ bm.contrato.empresa_terceira.nome }}</td>
-          <td>{{ bm.contrato.coordenador.first_name }} {{ bm.contrato.coordenador.last_name }} </td>
+          <td>{{ bm.contrato.coordenador.get_full_name }}</td>
           <td>{{ bm.numero_bm }}</td>
           <td>
               {% if bm.data_inicial_medicao and bm.data_final_medicao %}
@@ -121,9 +121,9 @@
 
           <td>
               {% if bm.data_aprovacao_coordenador %}
-                  <strong>Coord.:</strong> {{ bm.data_aprovacao_coordenador|date:"d/m/Y H:i" }}<br>
+                  <strong>Líder:</strong> {{ bm.data_aprovacao_coordenador|date:"d/m/Y H:i" }}<br>
               {% else %}
-                  <strong>Coord.:</strong> <span class="text-warning">Pendente</span><br>
+                  <strong>Líder:</strong> <span class="text-warning">Pendente</span><br>
               {% endif %}
 
               {% if bm.data_aprovacao_gerente %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">
+                Registrar Entrega – OS #{{ os.id }}
+            </h5>
+        </div>
+
+        <div class="card-body">
+            <p class="text-muted">
+                <strong>Fornecedor:</strong> {{ os.contrato.empresa_terceira }}<br>
+                <strong>Título:</strong> {{ os.titulo }}<br>
+                <strong>Prazo:</strong> {{ os.prazo_execucao|default:"Não definido" }}
+            </p>
+
+            <hr>
+
+            <form method="post">
+                {% csrf_token %}
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Caminho da Evidência</label>
+                        {{ form.caminho_evidencia }}
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Avaliação</label>
+                        {{ form.avaliacao }}
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Data da Entrega</label>
+                        {{ form.data_entrega }}
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Valor Pago</label>
+                        {{ form.valor_pago }}
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Data do Pagamento</label>
+                        {{ form.data_pagamento }}
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-3 mb-3 form-check">
+                        {{ form.realizado }}
+                        <label class="form-check-label">Serviço Realizado</label>
+                    </div>
+
+                    <div class="col-md-3 mb-3 form-check">
+                        {{ form.com_atraso }}
+                        <label class="form-check-label">Executado com atraso</label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Observações</label>
+                    {{ form.observacao }}
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="{% url 'detalhes_os' os.id %}" class="btn btn-secondary">
+                        Cancelar
+                    </a>
+                    <button type="submit" class="btn btn-success">
+                        Salvar Entrega
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

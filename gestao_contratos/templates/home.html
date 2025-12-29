@@ -95,7 +95,7 @@
 
 
             <!-- Solicitações de Prospecção -->
-            {% if request.user.grupo in "suprimento coordenador gerente financeiro" %}
+            {% if request.user.grupo in "suprimento coordenador gerente financeiro lider_contrato gerente_contrato" %}
             <div class="col-md-6 mb-4 animated-card">
                 <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-primary text-white">
@@ -105,7 +105,7 @@
                     <div class="card-body">
                         {% if solicitacoes_pendentes %}
                             <ul class="list-group list-group-flush">
-                                {% if request.user.grupo == 'gerente' %}
+                                {% if request.user.grupo == 'gerente_contrato' %}
 
                                     {% for item in solicitacoes_pendentes %}
                                     {% with solicitacao=item.solicitacao contrato=item.contrato %}
@@ -143,6 +143,23 @@
                                     {% endwith %}
                                     {% endfor %}
 
+                                {% elif request.user.grupo == 'gerente' %}
+                                    {% for item in solicitacoes_pendentes %}
+                                        {% with solicitacao=item.solicitacoes_pendentes contrato=item.contrato %}
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <strong>Solicitação #{{ solicitacao.id }}</strong><br>
+                                                    {% if solicitacao.descricao %}
+                                                        <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
+                                                    {% endif %}
+                                                    <span class="badge bg-secondary">{{ solicitacao.status }}</span>
+                                                </div>
+
+                                                <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">Ver</a>
+
+                                        {% endwith %}
+                                    {% endfor %}
+
                                 {% else %}
 
                                     {% for solicitacao in solicitacoes_pendentes %}
@@ -154,24 +171,53 @@
                                                 {% endif %}
                                                 <span class="badge bg-secondary">{{ solicitacao.status }}</span>
                                             </div>
-
-                                            {% if request.user.grupo == 'suprimento' %}
-                                                <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">Ver</a>
-
-                                            {% elif request.user.grupo == 'coordenador' %}
-                                                {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" %}
-                                                    <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">
-                                                        Selecionar Fornecedor
-                                                    </a>
-
-                                                {% elif solicitacao.minuta_boletins_medicao %}
-                                                    {% if solicitacao.minuta_boletins_medicao.status_coordenador == 'pendente' %}
-                                                        <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
-                                                            Avaliar Minuta BM
+                                            <div class="d-grid gap-2">
+                                                {% if request.user.grupo == 'suprimento' %}
+                                                    {% if solicitacao.aprovacao_fornecedor_gerente == 'aprovado' and not solicitacao.aprovacao_gerencia %}
+                                                      {% if solicitacao.minuta_boletins_medicao %}
+                                                        <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-warning">
+                                                          Revisar Minuta do BM
                                                         </a>
+                                                      {% else %}
+                                                        <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-primary">
+                                                          Inserir Minuta do BM
+                                                        </a>
+                                                      {% endif %}
+                                                    {% else %}
+                                                        <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">Ver</a>
                                                     {% endif %}
+
+                                                    {% if solicitacao.status == "Fornecedor aprovado" or solicitacao.status == "Planejamento do Contrato" %}
+                                                        {% with contrato=solicitacao.contrato_relacionado %}
+                                                            {% if contrato %}
+                                                                <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">Revisar Contrato</a>
+                                                            {% else %}
+                                                                <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-primary btn-sm">Cadastrar Contrato</a>
+                                                            {% endif %}
+                                                        {% endwith %}
+                                                    {% endif %}
+
+                                                {% elif request.user.grupo == 'coordenador' %}
+                                                    <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">Ver</a>
+
+
+                                                {% elif request.user.grupo == 'lider_contrato' %}
+                                                    {% if solicitacao.status == "Solicitação de prospecção" %}
+                                                        <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">Ver</a>
+                                                    {% elif solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" %}
+                                                        <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">
+                                                            Selecionar Fornecedor
+                                                        </a>
+                                                    {% elif solicitacao.minuta_boletins_medicao %}
+                                                        {% if solicitacao.minuta_boletins_medicao.status_coordenador == 'pendente' %}
+                                                            <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
+                                                                Avaliar Minuta BM
+                                                            </a>
+                                                        {% endif %}
+                                                    {% endif %}
+
                                                 {% endif %}
-                                            {% endif %}
+                                             </div>
                                         </li>
                                     {% endfor %}
                                 {% endif %}
@@ -193,6 +239,8 @@
                         <h5 class="mb-0">
                             {% if request.user.grupo == 'coordenador' %}
                                 Boletins de Medição Pendentes (Coordenador)
+                            {% elif request.user.grupo == 'lider_contrato' %}
+                                Boletins de Medição Pendentes (Lider de Contratos)
                             {% else %}
                                 Boletins de Medição Pendentes (Gerência)
                             {% endif %}
@@ -225,7 +273,7 @@
 
 
             <!-- Eventos finalizados aguardando avaliação (COORDENADOR) -->
-            {% if request.user.grupo == 'coordenador' %}
+            {% if request.user.grupo == 'coordenador lider_contrato' %}
             <div class="col-md-6 mb-4">
                 <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-secondary text-white">
@@ -279,7 +327,7 @@
                                             <span class="badge bg-danger">Prevista: {{ e.data_prevista|date:"d/m/Y" }}</span>
                                         </div>
 
-                                        {% if request.user.grupo == 'suprimento' %}
+                                        {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'coordenador' %}
                                             <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-danger">
                                                 Registrar Entrega
                                             </a>
@@ -320,7 +368,7 @@
                                             <span class="badge bg-info">Entrega: {{ e.data_prevista|date:"d/m/Y" }}</span>
                                         </div>
 
-                                        {% if request.user.grupo == 'suprimento' %}
+                                        {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'coordenador' %}
                                             <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-warning">
                                                 Registrar Entrega
                                             </a>

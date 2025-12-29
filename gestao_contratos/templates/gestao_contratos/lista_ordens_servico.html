@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Ordens de Serviço Cadastradas</h2>
+
+    {% if user.grupo in "coordenador lider_contrato" %}
+        <a href="{% url 'solicitar_os' %}" class="btn btn-custom">
+            + Solicitar Nova OS
+        </a>
+    {% endif %}
+</div>
+
+<form method="get" class="mb-3 d-flex">
+    <input
+        type="text"
+        name="search"
+        value="{{ request.GET.search }}"
+        class="form-control me-2"
+        placeholder="Buscar OS..."
+    >
+    <button type="submit" class="btn btn-primary">Buscar</button>
+</form>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Projeto</th>
+            <th>Título</th>
+            {% if request.user.grupo != "coordenador" %}
+              <th>Solicitante</th>
+            {% endif %}
+            {% if request.user.grupo != "lider_contrato" %}
+              <th>Líder</th>
+            {% endif %}
+            <th>Valor Previsto</th>
+            <th>Status</th>
+            <th>Prazo de Execução</th>
+        </tr>
+    </thead>
+
+    <tbody>
+        {% for os in page_obj %}
+            <tr class="linha-hover"
+                onclick="window.location='{% url 'detalhes_os' os.id %}'"
+                style="cursor:pointer;"
+            >
+                <td>{{ os.id }}</td>
+                <td>{{ os.contrato.cod_projeto }}</td>
+                <td>{{ os.titulo|truncatechars:40 }}</td>
+                {% if request.user.grupo != "coordenador" %}
+                  <td>
+                      {{ os.solicitante.get_full_name|default:os.solicitante.username }}
+                  </td>
+                {% endif %}
+                {% if request.user.grupo != "lider_contrato" %}
+                  <td>
+                      {% if os.lider_contrato %}
+                          {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
+                      {% else %}
+                          —
+                      {% endif %}
+                  </td>
+                {% endif %}
+                <td>{{ os.valor }}</td>
+                <td>
+                    {% if os.status == 'paralizada' %}
+                        <span class="badge bg-warning text-dark">Paralizada</span>
+                    {% elif os.status == 'em_execucao' %}
+                        <span class="badge bg-success">Em execução</span>
+                    {% elif os.status == 'cancelada' %}
+                        <span class="badge bg-danger">Cancelada</span>
+                    {% elif os.status == 'finalizada' %}
+                        <span class="badge bg-dark">Finalizada</span>
+                    {% endif %}
+                </td>
+                <td>{{ os.prazo_execucao|date:"d/m/Y" }}</td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="7" class="text-center">
+                    Nenhuma Ordem de Serviço cadastrada.
+                </td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- 📄 Paginação -->
+<nav aria-label="Navegação de páginas">
+    <ul class="pagination">
+
+        {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1">&laquo; Primeiro</a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
+                    Anterior
+                </a>
+            </li>
+        {% endif %}
+
+        <li class="page-item disabled">
+            <span class="page-link">
+                Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+            </span>
+        </li>
+
+        {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}">
+                    Próxima
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">
+                    Última &raquo;
+                </a>
+            </li>
+        {% endif %}
+
+    </ul>
+</nav>
+
+{% endblock %}
