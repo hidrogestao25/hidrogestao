@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card shadow-sm">
+        <div class="card-header card-header-custom text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Nova Ordem de Serviço</h5>
+        </div>
+
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger">
+                        {{ form.non_field_errors }}
+                    </div>
+                {% endif %}
+
+                <!-- Contrato e Solicitação -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Contrato</label>
+                        {{ form.contrato }}
+                        {{ form.contrato.errors }}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Solicitação de OS</label>
+                        {{ form.solicitacao }}
+                        {{ form.solicitacao.errors }}
+                    </div>
+                </div>
+
+                <!-- Código do Projeto -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Código do Projeto</label>
+                        {{ form.cod_projeto }}
+                        {{ form.cod_projeto.errors }}
+                    </div>
+                </div>
+
+                <!-- Coordenador e Líder -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Coordenador</label>
+                        {{ form.coordenador }}
+                        {{ form.coordenador.errors }}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Líder do Contrato</label>
+                        {{ form.lider_contrato }}
+                        {{ form.lider_contrato.errors }}
+                    </div>
+                </div>
+
+                <!-- Título -->
+                <div class="mb-3">
+                    <label class="form-label">Título</label>
+                    {{ form.titulo }}
+                    {{ form.titulo.errors }}
+                </div>
+
+                <!-- Descrição -->
+                <div class="mb-3">
+                    <label class="form-label">Descrição</label>
+                    {{ form.descricao }}
+                    {{ form.descricao.errors }}
+                </div>
+
+                <!-- Valor, Prazo e Status -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Valor</label>
+                        {{ form.valor }}
+                        {{ form.valor.errors }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Prazo de Execução</label>
+                        {{ form.prazo_execucao }}
+                        {{ form.prazo_execucao.errors }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Status</label>
+                        {{ form.status }}
+                        {{ form.status.errors }}
+                    </div>
+                </div>
+
+                <!-- Arquivo -->
+                <div class="mb-4">
+                    <label class="form-label">Arquivo da OS</label>
+                    {{ form.arquivo_os }}
+                    {{ form.arquivo_os.errors }}
+                </div>
+
+                <!-- Botões -->
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="{% url 'lista_ordens_servico' %}" class="btn btn-secondary">
+                        Cancelar
+                    </a>
+                    <button type="submit" class="btn btn-success">
+                        Salvar Ordem de Serviço
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

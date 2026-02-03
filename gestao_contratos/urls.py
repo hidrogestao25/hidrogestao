@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, ContratoFornecedorCreateView
+from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, ContratoFornecedorCreateView, OSCreateView
 
 urlpatterns = [
     path('contratos/', views.lista_contratos, name='lista_contratos'),
@@ -80,5 +80,6 @@ urlpatterns = [
     path('ordem-servico/<int:pk>/gerente-contrato/<str:acao>/', views.aprovar_os_gerente_contrato, name='aprovar_os_gerente_contrato'),
     path('ordens-servico/', views.lista_ordens_servico, name='lista_ordens_servico'),
     path("ordem-servicos/<int:pk>/", views.detalhes_os, name="detalhes_os"),
+    path('ordem-servicos/novo/', OSCreateView.as_view(), name='nova_os'),
     path("ordem-servico/<int:pk>/registrar-entrega/", views.registrar_entrega_os, name="registrar_entrega_os"),
 ]

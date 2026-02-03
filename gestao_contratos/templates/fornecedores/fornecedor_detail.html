@@ -171,11 +171,56 @@
     {% else %}
       <p class="text-muted">Nenhum contrato vinculado a este fornecedor.</p>
     {% endif %}
+  </div>
 
+  <hr>
 
-    <div class="card-footer text-end">
-      <a href="{% url 'lista_fornecedores' %}" class="btn btn-custom">← Voltar</a>
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom text-white">
+      <h5>Ordens de Serviços Vinculadas</h5>
     </div>
+
+    {% if os %}
+      <table class="table table-striped mt-3">
+        <thead>
+          <tr>
+            <th>Projeto</th>
+            <th>Coordenador</th>
+            <th>Prazo de Execução</th>
+            <th>Valor Total</th>
+            <th>Status</th>
+            <th>Arquivo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ordem in os %}
+            <tr>
+              <td>{{ ordem.cod_projeto }}</td>
+              <td>{{ ordem.coordenador }}</td>
+              <td>{{ ordem.prazo_execucao|date:"d/m/Y" }}</td>
+              {% if ordem.valor %}
+                <td>R$ {{ ordem.valor|floatformat:2 }}</td>
+              {% else %}
+                <td>Não informado</td>
+              {% endif %}
+              <td>{{ ordem.get_status_display }}</td>
+              <td>
+                <a href="{{ ordem.arquivo_os.url }}" class="btn btn-sm btn-outline-primary">
+                  Arquivo OS
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-muted">Nenhuma OS vinculada a este fornecedor.</p>
+    {% endif %}
+  </div>
+
+  <hr>
+  <div class="card-footer text-end">
+    <a href="{% url 'lista_fornecedores' %}" class="btn btn-custom">← Voltar</a>
   </div>
 </div>
 {% endblock %}
