@@ -33,7 +33,7 @@ class User(AbstractUser):
     user_permissions = models.ManyToManyField(Permission, related_name="+", blank=True)
 
     def __str__(self):
-        return self.username
+        return self.get_full_name() or self.username
 
 
 class CentroDeTrabalho(models.Model):

@@ -53,7 +53,7 @@ class ContratoForm(forms.ModelForm):
 
     class Meta:
         model = Contrato
-        fields = ['observacao', 'cod_projeto', 'cliente', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta']
+        fields = ['observacao', 'cod_projeto', 'cliente', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta', 'lider_contrato']
         widgets = {
             'cod_projeto': forms.TextInput(attrs={'class': 'form-control'}),
             'proposta': forms.Select(attrs={'class': 'form-select'}),
@@ -277,9 +277,9 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
 
         self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(guarda_chuva=True)
         self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato'], is_active=True)
-        if user and user.grupo == 'coordenador':
+        if user.grupo == 'coordenador':
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(coordenador=user)
-        elif user and user.grupo == 'gerente':
+        elif user.grupo == 'gerente':
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(coordenador__centros__in=user.centros.all())
 
 class UploadContratoOSForm(forms.ModelForm):
@@ -494,3 +494,39 @@ class RegistroEntregaOSForm(forms.ModelForm):
             "data_pagamento": forms.DateInput(attrs={"type": "date"}),
             "observacao": forms.Textarea(attrs={"rows": 3}),
         }
+
+
+class OrdemServicoForm(forms.ModelForm):
+    class Meta:
+        model = OS
+        fields = [
+            'contrato',
+            'solicitacao',
+            'cod_projeto',
+            'coordenador',
+            'lider_contrato',
+            'titulo',
+            'descricao',
+            'valor',
+            'prazo_execucao',
+            'status',
+            'arquivo_os'
+        ]
+        widgets = {
+            "prazo_execucao": ISODateInput(attrs={ "class": "form-control"}),
+            'descricao': forms.Textarea(attrs={"class": "form-control", 'rows': 4}),
+            'titulo': forms.Textarea(attrs={"class": "form-control", "rows": 1}),
+            'valor': forms.NumberInput(attrs={"class": "form-control", "step": "0.01"}),
+            'status': forms.Select(attrs={'class': 'form-select'}),
+            'arquivo_os':forms.ClearableFileInput(attrs={'class': 'form-control'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        self.fields['coordenador'].queryset = User.objects.filter(grupo__in=['gerente', 'coordenador'], is_active=True)
+        self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(guarda_chuva=True)
+        self.fields['solicitacao'].queryset = SolicitacaoOrdemServico.objects.filter(status__in=['solicitacao_os', 'pendente_lider', 'pendente_gerente', 'pendente_suprimento', 'aprovada'])
+        self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato'], is_active=True)
+        self.fields['cod_projeto'].queryset = Contrato.objects.filter(status='ativo')

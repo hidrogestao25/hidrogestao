@@ -12,7 +12,7 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm
 
 import plotly.graph_objs as go
 import plotly.express as px
@@ -105,6 +105,21 @@ class ContratoFornecedorCreateView(LoginRequiredMixin, UserPassesTestMixin, Crea
         print("==========================")
 
         return response
+
+
+class OSCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
+    model = OS
+    form_class = OrdemServicoForm
+    template_name = 'forms/os_form.html'
+    success_url = reverse_lazy('lista_ordens_servico')
+
+    def test_func(self):
+        # Só permite se for grupo suprimento
+        return self.request.user.grupo == "suprimento"
+
+    def handle_no_permission(self):
+        # Redireciona para a home
+        return redirect('home')
 
 
 #def is_financeiro(user):
@@ -1054,14 +1069,19 @@ def fornecedor_detalhe(request, pk):
     indicadores_geral = Indicadores(empresa_terceira=fornecedor)
     if request.user.grupo in ["suprimento", "financeiro"]:
         contratos = fornecedor.contratos.all()
+        os = OS.objects.filter(contrato__empresa_terceira=fornecedor)
     elif request.user.grupo == "coordenador":
         contratos = fornecedor.contratos.filter(coordenador=request.user)
+        os = OS.objects.filter(contrato__empresa_terceira=fornecedor, coordenador=request.user)
     elif request.user.grupo == "lider_contrato":
         contratos = fornecedor.contratos.filter(lider_contrato=request.user)
+        os = OS.objects.filter(contrato__empresa_terceira=fornecedor, lider_contrato=request.user)
     elif request.user.grupo == "gerente_contrato":
-        contratos = fornecedor.contratos.filter(lider_contrato__grupo='lider_contrato')
+        contratos = fornecedor.contratos.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato'])
+        os = OS.objects.filter(contrato__empresa_terceira=fornecedor, lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato'])
     elif request.user.grupo == "gerente":
         contratos = fornecedor.contratos.filter(coordenador__centros__in=request.user.centros.all())
+        os = OS.objects.filter(contrato__empresa_terceira=fornecedor, coordenador__centros__in=request.user.centros.all())
     else:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
@@ -1085,6 +1105,7 @@ def fornecedor_detalhe(request, pk):
                 'fornecedor': fornecedor,
                 'contratos': contratos,
                 'indicadores_geral': indicadores_geral,
+                'os': os.distinct(),
                 }
         )
 
@@ -1095,6 +1116,7 @@ def fornecedor_detalhe(request, pk):
             'fornecedor': fornecedor,
             'contratos': contratos,
             'indicadores_geral': indicadores_geral,
+            'os': os.distinct(),
             }
     )
 
@@ -1158,7 +1180,7 @@ def nova_solicitacao_prospeccao(request):
 
 @login_required
 def solicitar_os(request):
-    if request.user.grupo != 'coordenador':
+    if request.user.grupo not in ['coordenador', 'gerente']:
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
@@ -1206,7 +1228,7 @@ def solicitar_os(request):
             messages.success(request, "Ordem de Serviço enviada para aprovação.")
             return redirect("home")
     else:
-        form = SolicitacaoOrdemServicoForm()
+        form = SolicitacaoOrdemServicoForm(user=request.user)
 
     return render(request, 'fornecedores/solicitar_os.html', {'form': form})
 
@@ -2913,15 +2935,24 @@ def previsao_pagamentos(request):
             Q(data_pagamento__range=[data_inicio_filtro, data_limite])
         )
 
+        filtros_os = Q(
+            Q(data_pagamento__range=[data_inicio_filtro, data_limite])
+        )
+
         # === SUPRIMENTO ===
         if usuario.grupo in ["suprimento", "diretoria"]:
             eventos = Evento.objects.filter(filtros_base)
+            os_queryset = OS.objects.filter(filtros_os)
 
         # === GERENTE ===
         elif usuario.grupo == "gerente":
             eventos = Evento.objects.filter(
                 filtros_base,
                 contrato_terceiro__coordenador__centros__in=usuario.centros.all()
+            )
+            os_queryset = OS.objects.filter(
+                filtros_os,
+                coordenador__centros__in=usuario.centros.all()
             )
 
         # === GERENTE DE CONTRATO ===
@@ -2930,6 +2961,10 @@ def previsao_pagamentos(request):
                 filtros_base,
                 contrato_terceiro__lider_contrato__grupo="lider_contrato",
             )
+            os_queryset = OS.objects.filter(
+                filtros_os,
+                lider_contrato__grupo="lider_contrato"
+            )
 
         else:
             return redirect('home')
@@ -2937,6 +2972,7 @@ def previsao_pagamentos(request):
         # Aplica o filtro do coordenador se foi selecionado
         if coordenador:
             eventos = eventos.filter(contrato_terceiro__coordenador=coordenador)
+            os_queryset = os_queryset.filter(coordenador=coordenador)
 
         eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
 
@@ -2951,43 +2987,64 @@ def previsao_pagamentos(request):
             'valor_pago'
         )
 
-        total_previsto = sum(item['valor_previsto'] or 0 for item in pagamentos)
-        total_pago = sum(item['valor_pago'] or 0 for item in pagamentos)
+        #total_previsto = sum(item['valor_previsto'] or 0 for item in pagamentos)
+        total_previsto_eventos = sum(item['valor_previsto'] or 0 for item in pagamentos)
+        total_previsto_os = os_queryset.aggregate(
+            total=Coalesce(Sum("valor"), Decimal("0.00"))
+        )["total"]
 
-        # ==== GRÁFICO 1: LINHA ACUMULADA ====
-        eventos_previstos = eventos.filter(data_prevista_pagamento__isnull=False) \
-            .annotate(valor=Coalesce('valor_previsto', 0, output_field=DecimalField())) \
-            .order_by('data_prevista_pagamento')
+        total_previsto = total_previsto_eventos + total_previsto_os
 
-        pagamentos_por_data_prevista = eventos_previstos.values('data_prevista_pagamento') \
-            .annotate(total=Sum('valor')) \
-            .order_by('data_prevista_pagamento')
+        #total_pago = sum(item['valor_pago'] or 0 for item in pagamentos)
+        total_pago_eventos = sum(item['valor_pago'] or 0 for item in pagamentos)
+        total_pago_os = os_queryset.aggregate(
+            total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
+        )["total"]
+
+        total_pago = total_pago_eventos + total_pago_os
+
+
+        # ==== GRÁFICO 1: LINHA ACUMULADA (EVENTOS + OS) ====
+
+        from collections import defaultdict
+
+        acumulado_previsto_por_data = defaultdict(Decimal)
+        acumulado_pago_por_data = defaultdict(Decimal)
+
+        # EVENTOS
+        for e in eventos:
+            if e.data_prevista_pagamento:
+                acumulado_previsto_por_data[e.data_prevista_pagamento] += e.valor_previsto or 0
+            if e.data_pagamento:
+                acumulado_pago_por_data[e.data_pagamento] += e.valor_pago or 0
+
+        # OS
+        for os in os_queryset:
+            if os.data_pagamento:
+                acumulado_previsto_por_data[os.data_pagamento] += os.valor or 0
+                acumulado_pago_por_data[os.data_pagamento] += os.valor_pago or 0
+
+        datas = sorted(set(acumulado_previsto_por_data.keys()) | set(acumulado_pago_por_data.keys()))
 
         datas_prevista = []
         acumulado_previsto = []
-        total_acumulado = 0
-        for item in pagamentos_por_data_prevista:
-            datas_prevista.append(item['data_prevista_pagamento'])
-            total_acumulado += item['total']
-            acumulado_previsto.append(total_acumulado)
-
-        eventos_pagos = eventos.filter(data_pagamento__isnull=False) \
-            .annotate(valor=Coalesce('valor_pago', 0, output_field=DecimalField())) \
-            .order_by('data_pagamento')
-
-        pagamentos_por_data_pago = eventos_pagos.values('data_pagamento') \
-            .annotate(total=Sum('valor')) \
-            .order_by('data_pagamento')
-
         datas_pago = []
         acumulado_pago = []
-        total_acumulado_pago = 0
-        for item in pagamentos_por_data_pago:
-            datas_pago.append(item['data_pagamento'])
-            total_acumulado_pago += item['total']
-            acumulado_pago.append(total_acumulado_pago)
 
-        if datas_prevista or datas_pago:
+        total_prev = Decimal("0.00")
+        total_pg = Decimal("0.00")
+
+        for d in datas:
+            total_prev += acumulado_previsto_por_data.get(d, 0)
+            total_pg += acumulado_pago_por_data.get(d, 0)
+
+            datas_prevista.append(d)
+            acumulado_previsto.append(total_prev)
+
+            datas_pago.append(d)
+            acumulado_pago.append(total_pg)
+
+        if datas:
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=datas_prevista,
@@ -3006,13 +3063,14 @@ def previsao_pagamentos(request):
                 marker=dict(size=6)
             ))
             fig.update_layout(
-                title='Previsão x Pagamentos Acumulados',
+                title='Previsão x Pagamentos Acumulados (Eventos + OS)',
                 xaxis_title='Data',
                 yaxis_title='Valor Acumulado (R$)',
-                xaxis_tickformat='%d/%m/%Y',
                 hovermode='x unified'
             )
+
             grafico_html = plot(fig, auto_open=False, output_type='div')
+
 
         # ==== GRÁFICO 2: POR COORDENADOR ====
         calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
@@ -3136,7 +3194,8 @@ def previsao_pagamentos(request):
 
         grafico_barras_projeto = plot(fig_barra_proj, output_type='div')
 
-        # ==== GRÁFICO 3: PREVISTO x PAGO ====
+        # ==== GRÁFICO 3: PREVISTO x PAGO (EVENTOS + OS) ====
+
         calendario = list(
             CalendarioPagamento.objects.order_by("data_pagamento")
             .values_list("data_pagamento", flat=True)
@@ -3147,35 +3206,44 @@ def previsao_pagamentos(request):
         data_inicio = None
 
         for data_fim in calendario:
-            filtro_prev = Q(data_prevista_pagamento__lte=data_fim)
-            filtro_pago = Q(data_pagamento__lte=data_fim)
+            filtro_prev_evento = Q(data_prevista_pagamento__lte=data_fim)
+            filtro_pago_evento = Q(data_pagamento__lte=data_fim)
+            filtro_os = Q(data_pagamento__lte=data_fim)
+
             if data_inicio:
-                filtro_prev &= Q(data_prevista_pagamento__gt=data_inicio)
-                filtro_pago &= Q(data_pagamento__gt=data_inicio)
+                filtro_prev_evento &= Q(data_prevista_pagamento__gt=data_inicio)
+                filtro_pago_evento &= Q(data_pagamento__gt=data_inicio)
+                filtro_os &= Q(data_pagamento__gt=data_inicio)
 
             if coordenador:
-                filtro_prev &= Q(contrato_terceiro__coordenador=coordenador)
-                filtro_pago &= Q(contrato_terceiro__coordenador=coordenador)
+                filtro_prev_evento &= Q(contrato_terceiro__coordenador=coordenador)
+                filtro_pago_evento &= Q(contrato_terceiro__coordenador=coordenador)
+                filtro_os &= Q(coordenador=coordenador)
 
             if request.user.grupo == 'gerente_contrato':
-                total_previsto_periodo = Evento.objects.filter(filtro_prev, contrato_terceiro__lider_contrato__grupo='lider_contrato').aggregate(
-                    total=Coalesce(Sum("valor_previsto"), Decimal("0.00"))
-                )["total"]
+                filtro_prev_evento &= Q(contrato_terceiro__lider_contrato__grupo='lider_contrato')
+                filtro_pago_evento &= Q(contrato_terceiro__lider_contrato__grupo='lider_contrato')
+                filtro_os &= Q(lider_contrato__grupo='lider_contrato')
 
-                total_pago_periodo = Evento.objects.filter(filtro_pago, contrato_terceiro__lider_contrato__grupo='lider_contrato').aggregate(
-                    total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
-                )["total"]
-            else:
-                total_previsto_periodo = Evento.objects.filter(filtro_prev).aggregate(
-                    total=Coalesce(Sum("valor_previsto"), Decimal("0.00"))
-                )["total"]
+            total_prev_eventos = Evento.objects.filter(filtro_prev_evento).aggregate(
+                total=Coalesce(Sum("valor_previsto"), Decimal("0.00"))
+            )["total"]
 
-                total_pago_periodo = Evento.objects.filter(filtro_pago).aggregate(
-                    total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
-                )["total"]
+            total_pago_eventos = Evento.objects.filter(filtro_pago_evento).aggregate(
+                total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
+            )["total"]
 
-            y_previstos.append(total_previsto_periodo)
-            y_pagos.append(total_pago_periodo)
+            total_prev_os = os_queryset.filter(filtro_os).aggregate(
+                total=Coalesce(Sum("valor"), Decimal("0.00"))
+            )["total"]
+
+            total_pago_os = os_queryset.filter(filtro_os).aggregate(
+                total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
+            )["total"]
+
+            y_previstos.append(total_prev_eventos + total_prev_os)
+            y_pagos.append(total_pago_eventos + total_pago_os)
+
             data_inicio = data_fim
 
         fig_barra_final = go.Figure(data=[
@@ -3185,7 +3253,7 @@ def previsao_pagamentos(request):
 
         fig_barra_final.update_layout(
             barmode="group",
-            title="Pagamentos Previsto x Pago (Calendário de pagamento)",
+            title="Pagamentos Previsto x Pago (Eventos + OS)",
             xaxis_title="Data",
             yaxis_title="Valor (R$)",
             template="plotly_white",
@@ -3193,6 +3261,7 @@ def previsao_pagamentos(request):
         )
 
         grafico_barra = plot(fig_barra_final, output_type="div")
+
 
         # ==== TABELA DE BMs ====
         # === FILTRO DE BM (Pagamento OU Período de Medição) ===
@@ -3955,7 +4024,7 @@ def registrar_entrega_os(request, pk):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("detalhes_os", pk=os.id)
 
-    elif request.user.grupo != 'suprimento':
+    elif request.user.grupo not in ['suprimento', 'gerente', 'coordenador']:
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("detalhes_os", pk=os.id)
 
