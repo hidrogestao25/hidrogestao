@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <div class="card shadow-sm">
+
+    <div class="card-header card-header-custom text-white">
+      <h5>Nova Solicitação de Contratação</h5>
+    </div>
+
+    <div class="card-body">
+
+      <form method="post">
+          {% csrf_token %}
+
+          <div class="mb-3">
+              <label for="{{ form.contrato.id_for_label }}" class="form-label">Contrato</label>
+              {{ form.contrato }}
+              {% if form.contrato.errors %}
+                <div class="text-danger small">{{ form.contrato.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.fornecedor_escolhido.id_for_label }}" class="form-label">Escolha de fornecedor</label>
+              {{ form.fornecedor_escolhido }}
+              {% if form.fornecedor_escolhido.errors %}
+                <div class="text-danger small">{{ form.fornecedor_escolhido.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.lider_contrato.id_for_label }}" class="form-label">Líder de Contrato</label>
+              {{ form.lider_contrato }}
+              {% if form.lider_contrato.errors %}
+                <div class="text-danger small">{{ form.lider_contrato.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.descricao.id_for_label }}" class="form-label">Escopo de Contratação</label>
+              {{ form.descricao }}
+              {% if form.descricao.errors %}
+                <div class="text-danger small">{{ form.descricao.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.requisitos.id_for_label }}" class="form-label">Requisitos</label>
+              {{ form.requisitos }}
+              {% if form.requisitos.errors %}
+                <div class="text-danger small">{{ form.requisitos.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.previsto_no_orcamento.id_for_label }}" class="form-label">Previsto no Orçamento</label>
+              {{ form.previsto_no_orcamento }}
+              {% if form.previsto_no_orcamento.errors %}
+                <div class="text-danger small">{{ form.previsto_no_orcamento.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.valor_provisionado.id_for_label }}" class="form-label">Valor Provisionado</label>
+              {{ form.valor_provisionado }}
+              {% if form.valor_provisionado.errors %}
+                <div class="text-danger small">{{ form.valor_provisionado.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <button type="submit" class="btn btn-primary">Enviar Solicitação</button>
+          <a href="{% url 'lista_contratos' %}" class="btn btn-secondary">Cancelar</a>
+      </form>
+    </div>  
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
+<script>
+$(document).ready(function(){
+    $('.money').mask('000.000.000.000.000,00', {reverse: true});
+});
+</script>
+{% endblock %}

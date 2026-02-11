@@ -1,5 +1,5 @@
 from django import forms
-from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF, NFCliente, SolicitacaoOrdemServico, OS
+from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato
 from django.contrib import messages
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime
@@ -204,6 +204,73 @@ class ContratoFornecedorForm(forms.ModelForm):
             return Decimal(valor_str)
         except InvalidOperation:
             raise forms.ValidationError(f"{valor_str} Informe um valor válido no formato R$ 0,00.")
+
+
+from decimal import Decimal
+from django import forms
+
+class SolicitacaoContratoForm(forms.ModelForm):
+    valor_provisionado = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Provisionado",
+        required=True
+    )
+
+    class Meta:
+        model = SolicitacaoContrato
+        fields = [
+            'fornecedor_escolhido',
+            'contrato',
+            'lider_contrato',
+            'descricao',
+            'requisitos',
+            'previsto_no_orcamento',
+            'valor_provisionado',
+            'cronograma'
+        ]
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        self.fields['descricao'].label = "Escopo de Contratação"
+        self.fields['requisitos'].label = "Requisitos Mínimos"
+
+        if user and user.grupo == 'coordenador':
+            self.fields['contrato'].queryset = Contrato.objects.filter(coordenador=user)
+        elif user and user.grupo == 'gerente':
+            self.fields['contrato'].queryset = Contrato.objects.filter(
+                coordenador__centros__in=user.centros.all()
+            )
+        else:
+            self.fields['contrato'].queryset = Contrato.objects.none()
+
+        self.fields['lider_contrato'].queryset = User.objects.filter(
+            grupo__in=['gerente_contrato', 'lider_contrato'],
+            is_active=True
+        )
+
+        self.fields['fornecedor_escolhido'].queryset = EmpresaTerceira.objects.all().order_by('nome')
+
+    def clean_valor_provisionado(self):
+        valor = self.cleaned_data.get('valor_provisionado')
+
+        if valor:
+            valor = (
+                valor.replace('R$', '')
+                     .replace('.', '')
+                     .replace(',', '.')
+                     .strip()
+            )
+            try:
+                return Decimal(valor)
+            except:
+                raise forms.ValidationError("Informe um valor monetário válido.")
+
+        return valor
 
 
 class SolicitacaoProspeccaoForm(forms.ModelForm):

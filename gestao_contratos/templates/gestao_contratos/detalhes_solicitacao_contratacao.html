@@ -1,0 +1,269 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="container mt-4">
+    <h2>Detalhes da Solicitação</h2>
+
+<div class="timeline">
+    <!-- barra de progresso -->
+     <div id="timeline-progress" class="timeline-progress"></div>
+
+    {% for status in status_order %}
+        {% if forloop.counter0 < current_index %}
+            <div class="step completed">
+                <div class="circle">{{ forloop.counter }}</div>
+                <span>{{ status }}</span>
+            </div>
+        {% elif forloop.counter0 == current_index %}
+            <div class="step active">
+                <div class="circle">{{ forloop.counter }}</div>
+                <span>{{ status }}</span>
+            </div>
+        {% else %}
+            <div class="step">
+                <div class="circle">{{ forloop.counter }}</div>
+                <span>{{ status }}</span>
+            </div>
+        {% endif %}
+    {% endfor %}
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const progressBar = document.getElementById("timeline-progress");
+    const targetWidth = "{{ progress_percent }}%"; // vindo da view
+    setTimeout(() => {
+        progressBar.style.width = targetWidth;
+    }, 200); // atraso pequeno para garantir a animação
+});
+</script>
+
+<!-- Dados gerais da solicitação -->
+<div class="card mb-3">
+    <div class="card-body">
+        <p><strong>Contrato:</strong> {{ solicitacao.contrato }}</p>
+        <p><strong>Líder Técnico:</strong> {{ solicitacao.coordenador.get_full_name|default:solicitacao.coordenador }}</p>
+        <p><strong>Líder de Contrato:</strong> {{ solicitacao.lider_contrato }}</p>
+        <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
+        <p><strong>Previsto no Orçamento:</strong>
+            {% if solicitacao.previsto_no_orcamento %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}
+        </p>
+        <p><strong>Valor Provisionado:</strong> {{ solicitacao.valor_provisionado }}</p>
+        <p><strong>Valor Vendido:</strong> {{ solicitacao.valor_vendido }}</p>
+        <p><strong>Data da Solicitação:</strong> {{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</p>
+        <p><strong>Status:</strong> {{ solicitacao.status }}</p>
+
+        <p><strong>Arquivo do Contrato:</strong>
+            {% if solicitacao.contrato and solicitacao.contrato.arquivo_contrato %}
+                <a href="{{ solicitacao.contrato.arquivo_contrato.url }}" target="_blank">Ver PDF</a>
+            {% else %}
+                -
+            {% endif %}
+        </p>
+        <p><strong>Justificativa da Gerência:</strong> {{ solicitacao.justificativa_gerencia }}</p>
+    </div>
+</div>
+
+<!-- Fornecedor escolhido -->
+{% if solicitacao.fornecedor_escolhido %}
+<div class="card mb-3">
+    <div class="card-header">Fornecedor Escolhido</div>
+    <div class="card-body">
+        <p><strong>Nome:</strong> {{ solicitacao.fornecedor_escolhido.nome }}</p>
+        <p><strong>Setor de Atuação:</strong> {{ solicitacao.fornecedor_escolhido.setor_de_atuacao }}</p>
+
+        {% if proposta_escolhida %}
+            <p><strong>Valor Total da Proposta:</strong> R$ {{ proposta_escolhida.valor_proposta|floatformat:2 }}</p>
+            <p><strong>Prazo de Validade:</strong> {{ proposta_escolhida.prazo_validade|date:"d/m/Y" }}</p>
+            {% if proposta_escolhida.arquivo_proposta %}
+                <p><a href="{{ proposta_escolhida.arquivo_proposta.url }}" target="_blank" class="btn btn-sm btn-outline-primary">Ver Proposta em PDF</a></p>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<!-- Indicadores -->
+<div class="card mb-3">
+    <div class="card-header">Indicadores do Fornecedor Escolhido</div>
+    <div class="card-body">
+        {% if indicadores %}
+            <ul>
+                {% for ind in indicadores %}
+                    <li>Entregas Totais: {{ ind.entregas_total }}</li>
+                    <li>Entregas Conformes: {{ ind.entregas_conformes }}</li>
+                    <li>Entregas Não Conformes: {{ ind.entregas_nao_conformes }}</li>
+                    <li>IQ: {{ ind.IQ|floatformat:2 }}%</li>
+                    <li>Entregas Pontuais: {{ ind.entregas_pontuais }}</li>
+                    <li>IP: {{ ind.IP|floatformat:2 }}%</li>
+                    <li>INC: {{ ind.INC|floatformat:2 }}%</li>
+                    <li>IS: {{ ind.IS|floatformat:2 }}%</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p><em>Nenhum indicador cadastrado para este fornecedor.</em></p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+
+<!-- Aprovação e Justificativa da Gerência -->
+<div class="card mb-3">
+    <div class="card-header">Avaliação da solicitação de contratação</div>
+    <div class="card-body">
+        <p><strong>Aprovação da Gerência:</strong>
+            {% if solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
+                <span class="badge bg-success me-1">✔️ Aprovado</span>
+            {% elif solicitacao.aprovacao_fornecedor_gerente == "reprovado" %}
+                <span class="badge bg-warning text-dark me-1">✖ Reprovado</span>
+            {% else %}
+              <span class="badge bg-secondary me-1">Em analise</span>
+            {% endif %}
+        </p>
+
+        {% if solicitacao.aprovacao_fornecedor_gerente == "reprovado" %}
+          <p><strong>Justificativa da Gerência:</strong>
+              {{ solicitacao.justificativa_gerencia|default:"-" }}
+          </p>
+        {% endif %}
+
+        <p><strong>Aprovação da Diretoria:</strong>
+            {% if solicitacao.aprovacao_fornecedor_diretor == "aprovado" %}
+                <span class="badge bg-success me-1">✔️ Aprovado</span>
+            {% elif solicitacao.aprovacao_fornecedor_diretor == "reprovado" %}
+                <span class="badge bg-warning text-dark me-1">✖ Reprovado</span>
+            {% else %}
+              <span class="badge bg-secondary me-1">Em analise</span>
+            {% endif %}
+        </p>
+
+        {% if solicitacao.aprovacao_fornecedor_diretor == "reprovado" %}
+          <p><strong>Justificativa da Gerência:</strong>
+              {{ solicitacao.justificativa_diretoria|default:"-" }}
+          </p>
+        {% endif %}
+
+    </div>
+</div>
+
+<!-- Eventos -->
+
+  <div class="card mb-3">
+      <div class="card-header">Eventos da Solicitação</div>
+      <div class="card-body">
+          {% if eventos %}
+              <table class="table table-striped">
+                  <thead>
+                      <tr>
+                          <th>Descrição</th>
+                          <th>Data Prevista</th>
+                          <th>Valor Previsto</th>
+                          <th>Realizado</th>
+                          <th>Com Atraso</th>
+                          <th>Valor Pago</th>
+                          <th>Ações</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      {% for evento in eventos %}
+                      <tr>
+                          <td>{{ evento.descricao }}</td>
+                          <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
+                          <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
+                          <td>{% if evento.realizado %}✔️{% else %}✖{% endif %}</td>
+                          <td>{% if evento.com_atraso %}✔️{% else %}✖{% endif %}</td>
+                          <td>R$ {{ evento.valor_pago|default:"-" }}</td>
+                          <td>
+                            {% if request.user.grupo == 'suprimento' %}
+                              <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
+                              <a href="{% url 'excluir_evento' evento.id %}" class="btn btn-sm btn-danger"
+                                 onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                                 Apagar
+                              </a>
+                            {% endif %}
+                          </td>
+                      </tr>
+                      {% endfor %}
+                  </tbody>
+              </table>
+          {% else %}
+              <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
+          {% endif %}
+          {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_contrato' %}
+              <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+          {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de contratação" %}
+              <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+          {% elif request.user.grupo == 'lider_contrato' and solicitacao.status == "Solicitação de contratação" %}
+              <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+          {% elif request.user.grupo == 'coordenador' and solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
+              <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+          {% endif %}
+      </div>
+  </div>
+
+<hr>
+  <h4>Histórico</h4>
+
+  {% if origem %}
+      <p><strong>Solicitação de Origem:</strong>
+         <a href="{% url 'detalhes_contrato' origem.pk %}">{{ origem.contrato }}</a>
+      </p>
+  {% endif %}
+
+  {% if revisoes %}
+      <p><strong>Revisões criadas a partir desta:</strong></p>
+      <ul>
+          {% for revisao in revisoes %}
+              <li>
+                  <a href="{% url 'detalhes_contrato' revisao.pk %}">
+                      {{ revisao.contrato }} - Criada em {{ revisao.criado_em|date:"d/m/Y H:i" }}
+                  </a>
+              </li>
+          {% endfor %}
+      </ul>
+  {% else %}
+      <p>Sem revisões relacionadas.</p>
+  {% endif %}
+
+{% if request.user.grupo == 'suprimento' %}
+  {% if solicitacao.reprovacao_gerencia  %}
+    <div class="card mb-3">
+      <a href="{% url 'nova_prospeccao' solicitacao.id %}" class="btn btn-sm btn-primary">Nova Prospecção</a>
+      <a href="{% url 'renegociar_valor' solicitacao.id %}" class="btn btn-sm btn-warning">Renegociar Valor</a>
+      <a href="{% url 'renegociar_prazo' solicitacao.id %}" class="btn btn-sm btn-info">Renegociar Prazo</a>
+    </div>
+  {% endif %}
+{% endif %}
+
+<!-- Botões de aprovação para gerente -->
+{% if request.user.grupo == 'gerente_contrato' and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
+    <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
+            <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
+        </div>
+        <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
+        <button type="submit" name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+    </form>
+{% endif %}
+
+<!-- Botões de aprovação para gerente -->
+{% if request.user.grupo == 'diretoria' and solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
+    <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
+            <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
+        </div>
+        <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
+        <button type="submit" name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+    </form>
+{% endif %}
+
+<a href="{% url 'lista_solicitacoes' %}" class="btn btn-secondary mt-3">Voltar</a>
+
+
+</div>
+
+{% endblock %}

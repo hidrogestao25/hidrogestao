@@ -244,7 +244,6 @@
 
                     {% if user.is_authenticated %}
 
-                    {% if user.grupo != 'diretoria' %}
                       <!-- Solicitações Dropdown -->
                       <li class="nav-item dropdown">
                           <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
@@ -252,10 +251,12 @@
                           </a>
                           <ul class="dropdown-menu">
                               {% if request.user.grupo == 'coordenador' %}
+                                <li><a class="dropdown-item" href="{% url 'nova_solicitacao_contrato' %}"><i class="bi bi-file-earmark-person-fill"></i> Solicitação de Contratação</a></li>
                                 <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-plus-square-fill"></i> Solicitação de Prospecção</a></li>
                                 <li><a class="dropdown-item" href="{% url 'solicitar_os' %}"><i class="bi bi-node-plus-fill"></i> Nova Ordem de Serviço</a></li>
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Minhas Solicitações</a></li>
                               {% elif request.user.grupo == 'gerente' %}
+                                <li><a class="dropdown-item" href="{% url 'nova_solicitacao_contrato' %}"><i class="bi bi-file-earmark-person-fill"></i> Solicitação de Contratação</a></li>
                                 <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-plus-square-fill"></i> Solicitação de Prospecção</a></li>
                                 <li><a class="dropdown-item" href="{% url 'solicitar_os' %}"><i class="bi bi-node-plus-fill"></i> Nova Ordem de Serviço</a></li>
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Solicitações</a></li>
@@ -263,13 +264,12 @@
                               {% elif request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' %}
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Solicitações</a></li>
                               {% endif %}
-                              {% if request.user.grupo == 'suprimento' %}
+                              {% if request.user.grupo in 'suprimento diretoria' %}
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Lista de Solicitações</a></li>
                                 <!-- <li><a class="dropdown-item" href="{% url 'elaboracao_contrato' %}"><i class="bi bi-feather"></i> Elaboração de Contrato</a></li> -->
                               {% endif %}
                           </ul>
                       </li>
-                    {% endif %}
 
                     <!-- Contratos Dropdown -->
                     <li class="nav-item dropdown">

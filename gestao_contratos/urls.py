@@ -28,27 +28,32 @@ urlpatterns = [
     path('fornecedores/solicitacoes/<int:pk>', views.detalhes_triagem_fornecedores, name='detalhes_triagem_fornecedores'),
 
     path('solicitacoes/<int:pk>/detalhes/', views.detalhes_solicitacao, name='detalhes_solicitacao'),
+    path('contrato/<int:pk>/detalhes/', views.detalhes_solicitacao_contrato, name='detalhes_solicitacao_contrato'),
     path("solicitacao/<int:pk>/evento/novo/", views.cadastrar_evento, name="cadastrar_evento"),
+    path("solicitacao_contrato/<int:pk>/evento/novo/", views.cadastrar_evento_solicitacao, name="cadastrar_evento_solicitacao"),
     path("contrato/<int:pk>/evento/novo/", views.cadastrar_evento_contrato, name="cadastrar_evento_contrato"),
     path('solicitacoes/<int:pk>/propostas/', views.propostas_fornecedores, name='propostas_fornecedores'),
     path("solicitacao/<int:pk>/renegociar-valor/", views.renegociar_valor, name="renegociar_valor"),
     path("solicitacao/<int:pk>/renegociar-prazo/", views.renegociar_prazo, name="renegociar_prazo"),
     path("solicitacao/<int:pk>/nova-prospeccao/", views.nova_prospeccao, name="nova_prospeccao"),
+    path('fornecedores/solicitar_contratacao/', views.nova_solicitacao_contrato, name='nova_solicitacao_contrato'),
 
     path('elaboracao_contrato/', views.elaboracao_contrato, name='elaboracao_contrato'),
     path('elaboracao_contrato/<int:solicitacao_id>/cadastrar/', views.cadastrar_contrato, name='cadastrar_contrato'),
+    path('elaboracao_minuta_contrato/<int:solicitacao_id>/cadastrar/', views.cadastrar_minuta_contrato, name='cadastrar_minuta_contrato'),
     path('detalhes_contrato/<int:pk>/', views.detalhes_contrato, name='detalhes_contrato'),
+    path('detalhes_minuta_contrato/<int:pk>/', views.detalhes_minuta_contrato, name='detalhes_minuta_contrato'),
 
     path("solicitacoes/<int:pk>/inserir-minuta-bm/", views.inserir_minuta_bm, name="inserir_minuta_bm"),
+    path("solicitacoes/<int:pk>/inserir-minuta-bm-contrato/", views.inserir_minuta_bm_contrato, name="inserir_minuta_bm_contrato"),
 
     path("bm/<int:pk>/detalhe/", views.detalhe_bm, name="detalhe_bm"),
+    path("bm_contrato/<int:pk>/detalhe/", views.detalhe_bm_contrato, name="detalhe_bm_contrato"),
     path("bm/<int:pk>/aprovar/<str:papel>/", views.aprovar_bm, name="aprovar_bm"),
     path("bm/<int:pk>/reprovar/<str:papel>/", views.reprovar_bm, name="reprovar_bm"),
     path('bms/<int:bm_id>/avaliar/', views.avaliar_bm, name='avaliar_bm'),
     path("bm/<int:bm_id>/editar/", views.editar_bm, name="editar_bm"),
-    path("bm/<int:bm_id>/deletar/", views.deletar_bm, name="deletar_bm"),
-
-    path("evento/<int:evento_id>/cadastrar-nf/", views.cadastrar_nf, name="cadastrar_nf"),
+     path("evento/<int:evento_id>/cadastrar-nf/", views.cadastrar_nf, name="cadastrar_nf"),
     path("evento/<int:nf_id>/editar-nf/", views.editar_nf, name="editar_nf"),
     path("nf/<int:nf_id>/deletar/", views.deletar_nf, name="deletar_nf"),
     path('evento/<int:evento_id>/avaliar/', views.avaliar_evento_fornecedor, name='avaliar_evento_fornecedor'),
@@ -82,4 +87,6 @@ urlpatterns = [
     path("ordem-servicos/<int:pk>/", views.detalhes_os, name="detalhes_os"),
     path('ordem-servicos/novo/', OSCreateView.as_view(), name='nova_os'),
     path("ordem-servico/<int:pk>/registrar-entrega/", views.registrar_entrega_os, name="registrar_entrega_os"),
+
+
 ]
