@@ -184,6 +184,76 @@ class Contrato(models.Model):
 
 
 # ---------------------------------------
+# Solicitação de Contratação de fornecedor
+# ---------------------------------------
+class SolicitacaoContrato(models.Model):
+    ACAO_CHOICES = [
+        ('renegociar_valor', 'Renegociar Valor'),
+        ('renegociar_prazo', 'Renegociar Prazo'),
+        ('alterar_fornecedor', 'Selecionar outro Fornecedor'),
+    ]
+    APROVACAO_CHOICES = [
+        ("pendente", "Pendente"),
+        ("aprovado", "Aprovado"),
+        ("reprovado", "Reprovado")
+    ]
+
+    contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes_contratos')
+    coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    lider_contrato = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato"]},
+        related_name="solicitacoes_lideradas_contratos",
+    )
+    descricao = models.TextField(blank=True, null=True)
+    requisitos = models.TextField(blank=True, null=True)
+    previsto_no_orcamento = models.BooleanField(default=False)
+    valor_provisionado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    data_solicitacao = models.DateTimeField(auto_now_add=True)
+    guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
+    cronograma = models.FileField(
+        upload_to='cronograma/',
+        verbose_name='Inserir cronograma',
+        null=True, blank=True
+    )
+
+    aprovacao_fornecedor_gerente =  models.CharField(max_length=20, choices=APROVACAO_CHOICES, default="pendente")
+    aprocacao_fornecedor_gerente_em = models.DateTimeField(null=True, blank=True)
+    aprovacao_fornecedor_diretor =  models.CharField(max_length=20, choices=APROVACAO_CHOICES, default="pendente")
+    aprocacao_fornecedor_diretor_em = models.DateTimeField(null=True, blank=True)
+
+    aprovacao_gerencia = models.BooleanField(default=False)
+    reprovacao_gerencia = models.BooleanField(default=False)
+    aprovacao_diretoria = models.BooleanField(default=False)
+    reprovacao_diretoria = models.BooleanField(default=False)
+    justificativa_gerencia = models.TextField(null=True, blank=True)
+    justificativa_diretoria = models.TextField(null=True, blank=True)
+    acao_gerencia = models.CharField(max_length=100, null=True, blank=True, choices=ACAO_CHOICES)
+    acao_diretoria = models.CharField(max_length=100, null=True, blank=True, choices=ACAO_CHOICES)
+
+    #boletim_flag = models.BooleanField(default=False)
+    observacao = models.TextField(null=True, blank=True)
+
+    fornecedor_escolhido = models.ForeignKey(
+        EmpresaTerceira,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='escolhido_contrato'
+    )
+    justificativa_fornecedor_escolhido = models.TextField(null=True, blank=True)
+
+    status = models.CharField(max_length=100, default='Em análise')
+
+    def __str__(self):
+        return f"Solicitação para {self.contrato}"
+
+
+# ---------------------------------------
 # Solicitação de Prospecção de fornecedor
 # ---------------------------------------
 class SolicitacaoProspeccao(models.Model):
@@ -271,7 +341,8 @@ class PropostaFornecedor(models.Model):
         ('A definir', 'A definir'),
     ]
 
-    solicitacao = models.ForeignKey(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="propostas")
+    solicitacao = models.ForeignKey(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="propostas", null=True, blank=True)
+    solicitacao_contrato = models.ForeignKey(SolicitacaoContrato, on_delete=models.CASCADE, related_name="proposta", null=True, blank=True)
     fornecedor = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
     valor_proposta = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     condicao_pagamento = models.CharField(max_length=30, choices=CONDICOES_CHOICES, blank=True, null=True)
@@ -313,6 +384,7 @@ class ContratoTerceiros(models.Model):
     cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE)
     num_contrato = models.CharField(max_length=30, null=True, blank=True)
     prospeccao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.SET_NULL, null=True, blank=True)
+    solicitacao = models.OneToOneField(SolicitacaoContrato, on_delete=models.SET_NULL, null=True, blank=True)
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE, related_name='contratos')
     coordenador = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -551,6 +623,7 @@ class Evento(models.Model):
     ]
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE, null=True, blank=True)
     prospeccao = models.ForeignKey(SolicitacaoProspeccao, on_delete=models.CASCADE, null=True, blank=True)
+    solicitacao_contrato = models.ForeignKey(SolicitacaoContrato, on_delete=models.CASCADE, null=True, blank=True)
     contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, null=True, blank=True)
     arquivo = models.FileField(
         upload_to='produto_do_fornecedor/',
@@ -722,7 +795,8 @@ class DocumentoBM(models.Model):
         ('aprovado', 'Aprovado'),
         ('reprovado', 'Reprovado'),
     ]
-    solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="minuta_boletins_medicao")
+    solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="minuta_boletins_medicao", null=True, blank=True)
+    solicitacao_contrato = models.OneToOneField(SolicitacaoContrato, on_delete=models.CASCADE, related_name="minuta_boletins_medicao_contrato", null=True, blank=True)
     minuta_boletim = models.FileField(
         upload_to='Minuta boletim/',
         blank=True,
@@ -749,7 +823,13 @@ class DocumentoBM(models.Model):
     atualizado_em = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Boletim de Medição - {self.solicitacao.contrato.cod_projeto}"
+        if self.solicitacao and self.solicitacao.contrato:
+            return f"Boletim de Medição - {self.solicitacao.contrato.cod_projeto}"
+
+        if self.solicitacao_contrato and self.solicitacao_contrato.contrato:
+            return f"Boletim de Medição - {self.solicitacao_contrato.contrato.cod_projeto}"
+
+        return "Boletim de Medição"
 
     @property
     def aprovado_por_ambos(self):
@@ -895,7 +975,8 @@ class DocumentoContrato(models.Model):
 # Documentos (terceiros)
 # -----------
 class DocumentoContratoTerceiro(models.Model):
-    solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="contrato_relacionado")
+    solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="contrato_relacionado", null=True, blank=True)
+    solicitacao_contrato = models.OneToOneField(SolicitacaoContrato, on_delete=models.CASCADE, related_name="minuta_contrato", null=True, blank=True)
     numero_contrato = models.CharField(max_length=100, unique=True)
     objeto = models.TextField()
     prazo_inicio = models.DateField()
@@ -910,7 +991,14 @@ class DocumentoContratoTerceiro(models.Model):
     criado_em = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Contrato {self.numero_contrato} - {self.solicitacao.contrato}"
+        if self.solicitacao and self.solicitacao.contrato:
+            return f"Contrato {self.numero_contrato} - {self.solicitacao.contrato}"
+
+        if self.solicitacao_contrato and self.solicitacao_contrato.contrato:
+            return f"Contrato {self.numero_contrato} - {self.solicitacao_contrato.contrato}"
+
+        return f"Contrato {self.numero_contrato}"
+
 
 
 class CalendarioPagamento(models.Model):
