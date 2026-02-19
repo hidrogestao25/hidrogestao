@@ -49,6 +49,7 @@
     <thead>
         <tr>
             <th>Nome</th>
+            <th>Setor de Atuação</th>
             <th>CPF/CNPJ</th>
             <th>E-mail</th>
 
@@ -58,6 +59,7 @@
         {% for fornecedor in page_obj %}
         <tr class="linha-hover" onclick="window.location='{% url 'fornecedor_detalhe' fornecedor.pk %}'">
             <td>{{ fornecedor.nome }}</td>
+            <td>{{ fornecedor.setor_de_atuacao }}</td>
             <td>{{ fornecedor.cpf_cnpj }}</td>
             <td>{{ fornecedor.email }}</td>
         </tr>

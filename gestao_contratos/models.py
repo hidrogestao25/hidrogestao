@@ -275,7 +275,7 @@ class SolicitacaoProspeccao(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={"grupo": "lider_contrato"},
+        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato"]},
         related_name="solicitacoes_lideradas",
     )
     descricao = models.TextField(blank=True, null=True)
@@ -299,6 +299,8 @@ class SolicitacaoProspeccao(models.Model):
     triagem_realizada = models.BooleanField(default=False)
     aprovacao_fornecedor_gerente =  models.CharField(max_length=20, choices=APROVACAO_CHOICES, default="pendente")
     aprocacao_fornecedor_gerente_em = models.DateTimeField(null=True, blank=True)
+    aprovacao_fornecedor_diretor =  models.CharField(max_length=20, choices=APROVACAO_CHOICES, default="pendente")
+    aprocacao_fornecedor_diretor_em = models.DateTimeField(null=True, blank=True)
 
     nenhum_fornecedor_ideal = models.BooleanField(default=False)
 

@@ -1773,7 +1773,7 @@ def lista_solicitacoes(request):
             coordenador__centros__in=centros_do_gerente
         ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
         solicitacoes_c = SolicitacaoContrato.objects.filter(coordenador__centros__in=centros_do_gerente).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = OS.objects.filter(solicitante__centros__in=centros_do_gerente).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
+        os = OS.objects.filter(coordenador__centros__in=centros_do_gerente).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
     elif request.user.grupo == 'gerente_contrato':
         solicitacoes = SolicitacaoProspeccao.objects.filter(
             lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato']
@@ -2108,6 +2108,7 @@ def aprovar_fornecedor_gerente(request, pk):
 
     if request.method == "POST":
         acao = request.POST.get("acao")
+        justificativa = request.POST.get("justificativa", "")
 
         # Busca todos os usuários do grupo 'suprimento'
         emails_suprimentos = list(
@@ -2128,7 +2129,7 @@ def aprovar_fornecedor_gerente(request, pk):
 
         # --- Caso APROVADO ---
         if acao == "aprovar":
-            solicitacao.status = "Fornecedor aprovado"
+
             solicitacao.aprovacao_fornecedor_gerente = "aprovado"
             solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
             solicitacao.save()
@@ -2138,17 +2139,34 @@ def aprovar_fornecedor_gerente(request, pk):
                 f"Fornecedor {solicitacao.fornecedor_escolhido.nome} aprovado pelo gerente de contrato."
             )
 
-            assunto = f"Fornecedor {solicitacao.fornecedor_escolhido.nome} aprovado pela gerência de contrato"
-            mensagem = (
-                f"Prezados,\n\n"
-                f"O gerente {request.user.username} "
-                f"aprovou o fornecedor {solicitacao.fornecedor_escolhido.nome} "
-                f"na solicitação #{solicitacao.id}.\n\n"
-                f"Contrato: {solicitacao.contrato.cod_projeto}\n"
-                f"Cliente: {solicitacao.contrato.cliente.nome}\n"
-                f"Status atual: {solicitacao.status}\n\n"
-                f"Acesse o sistema para mais detalhes."
-            )
+            if solicitacao.aprovacao_fornecedor_diretor == "aprovado":
+                solicitacao.status = "Fornecedor aprovado"
+                solicitacao.save()
+
+                assunto = f"Fornecedor {solicitacao.fornecedor_escolhido.nome} aprovado pela gerência de contrato"
+                mensagem = (
+                    f"Prezados,\n\n"
+                    f"O gerente {request.user.username} "
+                    f"aprovou o fornecedor {solicitacao.fornecedor_escolhido.nome} "
+                    f"na solicitação #{solicitacao.id}.\n\n"
+                    f"Contrato: {solicitacao.contrato.cod_projeto}\n"
+                    f"Cliente: {solicitacao.contrato.cliente.nome}\n"
+                    f"Status atual: {solicitacao.status}\n\n"
+                    f"Acesse o sistema para mais detalhes."
+                )
+
+                # Envia o e-mail para todos os destinatários (se houver)
+                if emails_suprimentos:
+                    try:
+                        send_mail(
+                            assunto,
+                            mensagem,
+                            "hidro.gestao25@gmail.com",
+                            list(set(emails_suprimentos)),  # remove duplicados
+                            fail_silently=False,
+                        )
+                    except Exception as e:
+                        messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
 
         # --- Caso REPROVADO ---
         elif acao == "reprovar":
@@ -2158,6 +2176,7 @@ def aprovar_fornecedor_gerente(request, pk):
             solicitacao.fornecedor_escolhido = None
             solicitacao.triagem_realizada = False
             solicitacao.fornecedores_selecionados.clear()
+            solicitacao.justificativa_gerencia = justificativa
             solicitacao.save()
 
             messages.warning(request, "Fornecedor reprovado. Nova triagem necessária pelo suprimento.")
@@ -2173,22 +2192,142 @@ def aprovar_fornecedor_gerente(request, pk):
                 f"Acesse o sistema para mais detalhes."
             )
 
+            # Envia o e-mail para todos os destinatários (se houver)
+            if emails_suprimentos:
+                try:
+                    send_mail(
+                        assunto,
+                        mensagem,
+                        "hidro.gestao25@gmail.com",
+                        list(set(emails_suprimentos)),  # remove duplicados
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
         else:
             messages.error(request, "Ação inválida.")
             return redirect('detalhes_triagem_fornecedores', pk=pk)
 
-        # Envia o e-mail para todos os destinatários (se houver)
-        if emails_suprimentos:
-            try:
-                send_mail(
-                    assunto,
-                    mensagem,
-                    "hidro.gestao25@gmail.com",
-                    list(set(emails_suprimentos)),  # remove duplicados
-                    fail_silently=False,
+        return redirect('lista_solicitacoes')
+
+    return redirect('detalhes_triagem_fornecedores', pk=pk)
+
+
+@login_required
+def aprovar_fornecedor_diretor(request, pk):
+    solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+
+    # Somente gerente pode aprovar
+    if request.user.grupo != "diretoria":
+        messages.error(request, "Você não tem permissão para aprovar.")
+        return redirect('home')
+
+    # Verifica se o coordenador já escolheu um fornecedor
+    if not solicitacao.fornecedor_escolhido:
+        messages.warning(request, "Coordenador ainda não escolheu um fornecedor.")
+        return redirect('detalhes_triagem_fornecedores', pk=pk)
+
+    if request.method == "POST":
+        acao = request.POST.get("acao")
+        justificativa = request.POST.get("justificativa", "")
+
+        # Busca todos os usuários do grupo 'suprimento'
+        emails_suprimentos = list(
+            User.objects.filter(grupo="suprimento")
+            .exclude(email__isnull=True)
+            .exclude(email__exact="")
+            .values_list("email", flat=True)
+        )
+
+        # Adiciona o e-mail do coordenador do projeto (se existir)
+        if solicitacao.coordenador and solicitacao.coordenador.email:
+            emails_suprimentos.append(solicitacao.coordenador.email)
+        if solicitacao.lider_contrato and solicitacao.lider_contrato.email:
+            emails_suprimentos.append(solicitacao.lider_contrato.email)
+
+        assunto = ""
+        mensagem = ""
+
+        # --- Caso APROVADO ---
+        if acao == "aprovar":
+            solicitacao.aprovacao_fornecedor_diretor = "aprovado"
+            solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
+            solicitacao.save()
+
+            messages.success(
+                request,
+                f"Fornecedor {solicitacao.fornecedor_escolhido.nome} aprovado pela diretoria de contrato."
+            )
+
+            if solicitacao.aprovacao_fornecedor_gerente == "aprovado":
+                solicitacao.status = "Fornecedor aprovado"
+                solicitacao.save()
+                assunto = f"Fornecedor {solicitacao.fornecedor_escolhido.nome} aprovado pela diretoria de contrato"
+                mensagem = (
+                    f"Prezados,\n\n"
+                    f"O diretor {request.user.username} "
+                    f"aprovou o fornecedor {solicitacao.fornecedor_escolhido.nome} "
+                    f"na solicitação #{solicitacao.id}.\n\n"
+                    f"Contrato: {solicitacao.contrato.cod_projeto}\n"
+                    f"Cliente: {solicitacao.contrato.cliente.nome}\n"
+                    f"Status atual: {solicitacao.status}\n\n"
+                    f"Acesse o sistema para mais detalhes."
                 )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
+                # Envia o e-mail para todos os destinatários (se houver)
+                if emails_suprimentos:
+                    try:
+                        send_mail(
+                            assunto,
+                            mensagem,
+                            "hidro.gestao25@gmail.com",
+                            list(set(emails_suprimentos)),  # remove duplicados
+                            fail_silently=False,
+                        )
+                    except Exception as e:
+                        messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
+        # --- Caso REPROVADO ---
+        elif acao == "reprovar":
+            solicitacao.status = "Fornecedor reprovado"
+            solicitacao.aprovacao_fornecedor_diretor = "reprovado"
+            solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
+            solicitacao.fornecedor_escolhido = None
+            solicitacao.triagem_realizada = False
+            solicitacao.fornecedores_selecionados.clear()
+            solicitacao.justificativa_diretoria = justificativa
+            solicitacao.save()
+
+            messages.warning(request, "Fornecedor reprovado. Nova triagem necessária pelo suprimento.")
+
+            assunto = f"Fornecedor reprovado pela diretoria de contrato"
+            mensagem = (
+                f"Prezados,\n\n"
+                f"O diretor {request.user.get_full_name() or request.user.username} "
+                f"reprovou o fornecedor selecionado na solicitação #{solicitacao.id}.\n\n"
+                f"Contrato: {solicitacao.contrato.cod_projeto}\n"
+                f"Cliente: {solicitacao.contrato.cliente.nome}\n\n"
+                f"Uma nova triagem será necessária pelo setor de suprimentos.\n\n"
+                f"Acesse o sistema para mais detalhes."
+            )
+
+            # Envia o e-mail para todos os destinatários (se houver)
+            if emails_suprimentos:
+                try:
+                    send_mail(
+                        assunto,
+                        mensagem,
+                        "hidro.gestao25@gmail.com",
+                        list(set(emails_suprimentos)),  # remove duplicados
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
+        else:
+            messages.error(request, "Ação inválida.")
+            return redirect('detalhes_triagem_fornecedores', pk=pk)
 
         return redirect('lista_solicitacoes')
 
@@ -2234,7 +2373,7 @@ def detalhes_solicitacao_contrato(request, pk):
 
         if solicitacao.aprovacao_fornecedor_gerente == "aprovado"  and solicitacao.aprovacao_fornecedor_diretor == "aprovado":
             solicitacao.status = "Fornecedor aprovado"
-
+            solicitacao.save()
             suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
 
             if suprimentos:
