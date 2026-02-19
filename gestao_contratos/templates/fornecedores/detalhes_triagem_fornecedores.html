@@ -64,7 +64,7 @@
 
 
 
-            {% if request.user == solicitacao.lider_contrato %}
+            {% if request.user == solicitacao.lider_contrato and not solicitacao.fornecedor_escolhido %}
             <div class="mb-3">
                 <label for="justificativa_fornecedor_escolhido" class="form-label">
                     Justificativa pela escolha do fornecedor:
@@ -91,6 +91,25 @@
     {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido %}
       <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
           {% csrf_token %}
+          <div class="mb-3">
+              <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
+              <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
+          </div>
+          <button type="submit" name="acao" value="aprovar" class="btn btn-success">
+              Aprovar fornecedor
+          </button>
+          <button type="submit" name="acao" value="reprovar" class="btn btn-danger">
+              Reprovar fornecedor
+          </button>
+      </form>
+    {% endif %}
+    {% if request.user.grupo == "diretoria" and solicitacao.fornecedor_escolhido %}
+      <form method="post" action="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}">
+          {% csrf_token %}
+          <div class="mb-3">
+              <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
+              <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
+          </div>
           <button type="submit" name="acao" value="aprovar" class="btn btn-success">
               Aprovar fornecedor
           </button>

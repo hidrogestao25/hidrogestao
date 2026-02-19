@@ -22,7 +22,8 @@
                     <th>Valor Provisionado</th>
                     <th>Status</th>
                     <th>Aprovação do Fornecedor - Gerência</th>
-                    {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato' %}
+                    <th>Aprovação do Fornecedor - Diretoria</th>
+                    {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria' %}
                         <th>Ações</th>
                     {% endif %}
                 </tr>
@@ -50,11 +51,19 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if solicitacao.status == "Fornecedor Selecionado" %}
-                                <span class="badge bg-warning">Aguardando aprovação</span>
-                            {% elif solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
+                            {% if solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
                                 <span class="badge bg-success">Aprovado</span>
                             {% elif solicitacao.aprovacao_fornecedor_gerente == "reprovado" %}
+                                <span class="badge bg-danger">Reprovado</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Pendente</span>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if solicitacao.aprovacao_fornecedor_diretor == "aprovado" %}
+                                <span class="badge bg-success">Aprovado</span>
+                            {% elif solicitacao.aprovacao_fornecedor_diretor == "reprovado" %}
                                 <span class="badge bg-danger">Reprovado</span>
                             {% else %}
                                 <span class="badge bg-secondary">Pendente</span>
@@ -103,9 +112,23 @@
                                 {% endif %}
                             {% endif %}
 
+                            {% if request.user.grupo == 'diretoria' %}
+                                {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
+                                    <a href="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}" class="btn btn-success btn-sm">Avaliar Fornecedor</a>
+                                {% endif %}
+                                {% if solicitacao.aprovacao_fornecedor_diretor == 'reprovado'  %}
+                                    <a href="{% url 'nova_prospeccao' solicitacao.id %}" class="btn btn-sm btn-primary">Nova Prospecção</a>
+                                    <a href="{% url 'renegociar_valor' solicitacao.id %}" class="btn btn-sm btn-warning">Renegociar Valor</a>
+                                    <a href="{% url 'renegociar_prazo' solicitacao.id %}" class="btn btn-sm btn-info">Renegociar Prazo</a>
+                                {% endif %}
+                            {% endif %}
+
                             {% if request.user.grupo == 'gerente_contrato' %}
                                 {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                                     <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Avaliar Fornecedor</a>
+                                {% endif %}
+                                {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user %}
+                                  <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                                 {% endif %}
                                 {% with contrato=solicitacao.contrato_relacionado %}
                                     {% if contrato %}
@@ -136,7 +159,7 @@
                             {% endif %}
 
                             {% if request.user.grupo == 'lider_contrato' %}
-                              {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" %}
+                              {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user %}
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                               {% endif %}
                               {% if solicitacao.minuta_boletins_medicao %}
@@ -385,7 +408,7 @@
                 <td>{{ os.contrato }}</td>
                 <td>{{ os.titulo }}</td>
                 {% if request.user.grupo != "coordenador" %}
-                  <td>{{ os.solicitante.get_full_name|default:os.solicitante.username }}</td>
+                  <td>{{ os.coordenador.get_full_name|default:os.coordenador.username }}</td>
                 {% endif %}
                 <td>
                     {% if os.lider_contrato %}

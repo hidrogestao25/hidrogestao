@@ -139,20 +139,36 @@ document.addEventListener("DOMContentLoaded", function() {
 
 <!-- Aprovação e Justificativa da Gerência -->
 <div class="card mb-3">
-    <div class="card-header">Avaliação da contratação pela Gerência</div>
+    <div class="card-header">Avaliação da Contratação do Fornecedor</div>
     <div class="card-body">
         <p><strong>Aprovação da Gerência:</strong>
-            {% if solicitacao.aprovacao_gerencia %}
+            {% if solicitacao.aprovacao_fornecedor_gerente == 'aprovado' %}
                 ✔️ Aprovado
-            {% elif solicitacao.reprovacao_gerencia %}
+            {% elif solicitacao.aprovacao_fornecedor_gerente == 'reprovado' %}
                 <span style="color:red;">✖ Reprovado</span>
             {% else %}
               Em analise
             {% endif %}
         </p>
+        {% if solicitacao.reprovacao_gerencia %}
         <p><strong>Justificativa da Gerência:</strong>
             {{ solicitacao.justificativa_gerencia|default:"-" }}
         </p>
+        {% endif %}
+        <p><strong>Aprovação da Diretoria:</strong>
+            {% if solicitacao.aprovacao_fornecedor_diretor == 'aprovado' %}
+                ✔️ Aprovado
+            {% elif solicitacao.aprovacao_fornecedor_diretor == 'reprovado' %}
+                <span style="color:red;">✖ Reprovado</span>
+            {% else %}
+              Em analise
+            {% endif %}
+        </p>
+        {% if solicitacao.reprovacao_diretoria %}
+        <p><strong>Justificativa da Diretoria:</strong>
+            {{ solicitacao.justificativa_diretoria|default:"-" }}
+        </p>
+        {% endif %}
     </div>
 </div>
 
@@ -235,8 +251,8 @@ document.addEventListener("DOMContentLoaded", function() {
       <p>Sem revisões relacionadas.</p>
   {% endif %}
 
-{% if request.user.grupo == 'suprimento' %}
-  {% if solicitacao.reprovacao_gerencia  %}
+{% if request.user.grupo == 'diretoria' %}
+  {% if solicitacao.aprovacao_fornecedor_diretor == 'reprovado'  %}
     <div class="card mb-3">
       <a href="{% url 'nova_prospeccao' solicitacao.id %}" class="btn btn-sm btn-primary">Nova Prospecção</a>
       <a href="{% url 'renegociar_valor' solicitacao.id %}" class="btn btn-sm btn-warning">Renegociar Valor</a>
@@ -246,7 +262,7 @@ document.addEventListener("DOMContentLoaded", function() {
 {% endif %}
 
 <!-- Botões de aprovação para gerente -->
-{% if request.user.grupo == 'gerente' and solicitacao.contrato and solicitacao.contrato.arquivo_contrato %}
+{% if request.user.grupo == 'gerente_contrato' and solicitacao.contrato and solicitacao.contrato.arquivo_contrato %}
     <form method="post">
         {% csrf_token %}
         <div class="mb-3">

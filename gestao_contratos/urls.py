@@ -23,7 +23,8 @@ urlpatterns = [
     path('fornecedores/solicitacoes/', views.lista_solicitacoes, name='lista_solicitacoes'),
     path('fornecedores/solicitacoes/<int:pk>/<str:acao>/', views.aprovar_solicitacao, name='aprovar_solicitacao'),
     path('fornecedores/solicitacoes/triagem/<int:pk>/', views.triagem_fornecedores, name='triagem_fornecedores'),
-    path('solicitacoes/<int:pk>/aprovar_fornecedor/', views.aprovar_fornecedor_gerente, name='aprovar_fornecedor_gerente'),
+    path('solicitacoes/<int:pk>/aprovar_fornecedor_gerente/', views.aprovar_fornecedor_gerente, name='aprovar_fornecedor_gerente'),
+    path('solicitacoes/<int:pk>/aprovar_fornecedor_diretor/', views.aprovar_fornecedor_diretor, name='aprovar_fornecedor_diretor'),
     path('fornecedores/solicitacoes//nenhum<int:pk>/', views.nenhum_fornecedor_ideal, name='nenhum_fornecedor_ideal'),
     path('fornecedores/solicitacoes/<int:pk>', views.detalhes_triagem_fornecedores, name='detalhes_triagem_fornecedores'),
 
