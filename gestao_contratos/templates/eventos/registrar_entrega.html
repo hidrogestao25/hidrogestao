@@ -502,6 +502,8 @@ document.addEventListener("DOMContentLoaded", function() {
         MODAL EDITAR BM
   ------------------------ */
 
+  const editarBMModal = document.getElementById("editarBMModal");
+
   document.querySelectorAll(".btn-editar-bm").forEach(btn => {
 
     btn.addEventListener("click", function() {
@@ -513,7 +515,40 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(html => {
 
           document.getElementById("editarBMModalBody").innerHTML = html;
+
+          const form = document.getElementById("formEditarBM");
+
+          document.getElementById("btnSalvarBM")?.addEventListener("click", function () {
+
+            const fd = new FormData(form);
+
+            fetch(`/bm/${bmId}/editar/`, {
+              method: "POST",
+              body: fd,
+              headers: {
+                "X-CSRFToken": csrfToken
+              }
+            })
+            .then(r => r.json())
+            .then(data => {
+
+              if (data.success) {
+                bootstrap.Modal.getInstance(editarBMModal).hide();
+                location.reload();
+              } else {
+                alert(Object.values(data.errors || {}).flat().join("\n"));
+              }
+
+            })
+            .catch(error => {
+              console.error("Erro:", error);
+              alert("Erro ao salvar.");
+            });
+
+          });
+
         });
+
     });
 
   });
