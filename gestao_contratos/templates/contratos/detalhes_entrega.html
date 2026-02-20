@@ -348,6 +348,15 @@ document.addEventListener("DOMContentLoaded", function() {
   let bmReprovandoId = null;
   let bmReprovandoDiretoria = null;
 
+  function mostrarLoading() {
+    document.getElementById("loadingOverlay").style.display = "flex";
+  }
+
+  function esconderLoading() {
+    document.getElementById("loadingOverlay").style.display = "none";
+  }
+
+
 
   function atualizarLinha(bmId, statusCoordenador, statusGerente) {
     const row = document.getElementById('bm-row-' + bmId);
@@ -476,6 +485,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
 
   function enviarAvaliacao(bmId, acao, justificativa) {
+
+    mostrarLoading(); // ← MOSTRA SPINNER
+
     fetch("{% url 'avaliar_bm' bm_id=0 %}".replace('0', bmId), {
       method: 'POST',
       headers: {
@@ -487,16 +499,19 @@ document.addEventListener("DOMContentLoaded", function() {
     .then(response => response.json())
     .then(data => {
       if (data.success) {
-        atualizarLinha(bmId, data.status_coordenador, data.status_gerente);
-        if (acao === 'reprovar') {
-          alert("Reprovação registrada com sucesso!");
-        }
+        location.reload(); // ← agora atualiza a página inteira
       } else {
+        esconderLoading();
         alert('Erro: ' + data.error);
       }
     })
-    .catch(() => alert('Erro ao processar a ação.'));
+    .catch(() => {
+      esconderLoading();
+      alert('Erro ao processar a ação.');
+    });
   }
+
+
 
   document.getElementById('btnConfirmarReprovar').addEventListener('click', function() {
     const justificativa = document.getElementById('justificativaTexto').value.trim();
@@ -521,5 +536,25 @@ document.addEventListener("DOMContentLoaded", function() {
   });
 });
 </script>
+
+<!-- Overlay de carregamento -->
+<div id="loadingOverlay" style="
+  display:none;
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  background:rgba(0,0,0,0.5);
+  z-index:9999;
+  justify-content:center;
+  align-items:center;
+">
+  <div class="text-center text-white">
+    <div class="spinner-border" role="status"></div>
+    <div class="mt-2">Processando...</div>
+  </div>
+</div>
+
 
 {% endblock %}
