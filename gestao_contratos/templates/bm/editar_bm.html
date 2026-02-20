@@ -1,4 +1,4 @@
-<form id="formEditarBM" enctype="multipart/form-data">
+<form id="formEditarBM" method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {{ form.as_p }}
 </form>
@@ -16,16 +16,30 @@ document.getElementById("btnSalvarBM").addEventListener("click", function() {
 
     fetch("{% url 'editar_bm' bm.id %}", {
         method: "POST",
-        body: fd
+        body: fd,
+        headers: {
+            "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
     })
-    .then(r => r.json())
+    .then(response => response.json())
     .then(data => {
-        if (data.success !== false) {
-            bootstrap.Modal.getInstance(document.getElementById("editarBMModal")).hide();
+
+        if (data.success) {
+            bootstrap.Modal
+                .getInstance(document.getElementById("editarBMModal"))
+                .hide();
+
             location.reload();
         } else {
-            alert("Erro ao salvar:\n" + Object.values(data.errors).flat().join("\n"));
+            alert("Erro ao salvar:\n" +
+                Object.values(data.errors || {}).flat().join("\n")
+            );
         }
+    })
+    .catch(error => {
+        console.error("Erro:", error);
+        alert("Erro inesperado ao salvar.");
     });
+
 });
 </script>
