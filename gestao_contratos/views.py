@@ -4615,14 +4615,19 @@ def editar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
 
     if request.user.grupo != "suprimento":
-        return HttpResponse("Sem permissão.", status=403)
+        return JsonResponse({"success": False, "error": "Sem permissão."}, status=403)
 
     if request.method == "POST":
         form = BMForm(request.POST, request.FILES, instance=bm)
         if form.is_valid():
             form.save()
-            messages.success(request, "BM atualizado com sucesso!")
-            return redirect("registrar_entrega", pk=bm.evento.id)
+            return JsonResponse({"success": True})
+        else:
+            return JsonResponse({
+                "success": False,
+                "errors": form.errors
+            })
+
     else:
         form = BMForm(instance=bm)
 
