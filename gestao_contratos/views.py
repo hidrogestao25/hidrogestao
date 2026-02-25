@@ -3485,8 +3485,8 @@ def registrar_entrega(request, pk):
         form = EventoEntregaForm(request.POST, request.FILES, instance=evento)
 
         if form.is_valid():
-            if evento.boletins_medicao.exists() and not form.cleaned_data['data_pagamento']:
-                form.add_error('data_pagamento', 'Preencha a Data de Pagamento, pois existem BMs cadastrados.')
+            if evento.nota_fiscal.exists() and not form.cleaned_data['data_pagamento']:
+                form.add_error('data_pagamento', 'Preencha a Data de Pagamento, pois existem NFs cadastrados.')
             else:
                 if request.POST.get("valor_igual") == "on":
                     ev = form.save(commit=False)

@@ -41,7 +41,7 @@
         <div class="mb-3 form-check">
           {{ form.realizado }}
           <label class="form-check-label fw-bold" for="id_realizado">
-            Completamente Finalizado
+            Entrega Feita
           </label>
           {% if form.realizado.errors %}
             <div class="text-danger small">{{ form.realizado.errors }}</div>
@@ -72,7 +72,8 @@
         </div>
 
         <div class="form-check mb-3">
-          <input class="form-check-input" type="checkbox" id="check_valor_igual" name="valor_igual" checked>
+        <!--  <input class="form-check-input" type="checkbox" id="check_valor_igual" name="valor_igual" checked> -->
+          <input class="form-check-input" type="checkbox" id="check_valor_igual" name="valor_igual" >
           <label class="form-check-label fw-bold" for="check_valor_igual">
             Valor pago é igual ao valor previsto
           </label>
@@ -448,7 +449,13 @@ document.addEventListener("DOMContentLoaded", function() {
       if (inputJustificativa) inputJustificativa.required = false;
     } else {
       camposDiv.style.display = "block";
-      if (inputJustificativa) inputJustificativa.required = true;
+      if (inputJustificativa && inputValorPago) {
+        if (!inputValorPago.value || inputValorPago.value.trim() === "") {
+          inputJustificativa.required = false;
+        } else {
+          inputJustificativa.required = true;
+      }
+      }
     }
   }
 
