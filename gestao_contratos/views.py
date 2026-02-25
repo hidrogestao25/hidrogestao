@@ -3351,7 +3351,7 @@ def cadastrar_evento_solicitacao(request, pk):
     else:
         form = EventoPrevisaoForm()
 
-    return render(request, "gestao_contratos/cadastrar_evento.html", {
+    return render(request, "gestao_contratos/cadastrar_evento_contrato.html", {
         "form": form,
         "solicitacao": solicitacao,
     })
@@ -3435,7 +3435,7 @@ def excluir_evento(request, pk):
 
 @login_required
 def excluir_evento_contrato(request, pk):
-    if request.user.grupo not in ["suprimento"]:
+    if request.user.grupo not in ["suprimento", "lider_contrato", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -3449,7 +3449,7 @@ def excluir_evento_contrato(request, pk):
 
 @login_required
 def registrar_entrega(request, pk):
-    if request.user.grupo not in ["suprimento", "coordenador", "gerente"]:
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 

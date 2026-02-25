@@ -206,7 +206,7 @@
                     Registrar Entrega
                   </a>
 
-              {% elif request.user.grupo in "suprimento" %}
+              {% elif request.user.grupo in "suprimento lider_contrato gerente_contrato" %}
                   <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
                     Registrar Entrega
                   </a>

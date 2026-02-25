@@ -182,7 +182,7 @@ class ContratoFornecedorForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Filtra apenas usuários que estão no grupo "Coordenador de Contrato"
         self.fields['coordenador'].queryset = (
-            User.objects.filter(grupo='coordenador', is_active=True)
+            User.objects.filter(grupo__in=['coordenador', 'gerente', 'lider_contrato'], is_active=True)
         )
         self.fields['lider_contrato'].queryset = (
             User.objects.filter(grupo__in=['lider_contrato','gerente_contrato'], is_active=True)
