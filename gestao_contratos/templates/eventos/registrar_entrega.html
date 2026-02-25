@@ -443,20 +443,34 @@ document.addEventListener("DOMContentLoaded", function() {
   const inputValorPago = document.getElementById("id_valor_pago");
 
   function atualizarCampos() {
+
+    const valor = inputValorPago ? inputValorPago.value.trim() : "";
     if (checkIgual.checked) {
       camposDiv.style.display = "none";
-      if (inputValorPago) inputValorPago.value = "{{ evento.valor_previsto|default:0 }}";
-      if (inputJustificativa) inputJustificativa.required = false;
+
+      if (inputValorPago) {
+        inputValorPago.value = "{{ evento.valor_previsto|default:0 }}";
+      }
+
+      if (inputJustificativa) {
+        inputJustificativa.required = false;
+      }
+
     } else {
       camposDiv.style.display = "block";
-      if (inputJustificativa && inputValorPago) {
-        if (!inputValorPago.value || inputValorPago.value.trim() === "") {
+
+      if (inputJustificativa) {
+        if (valor === "") {
           inputJustificativa.required = false;
         } else {
           inputJustificativa.required = true;
-      }
+        }
       }
     }
+  }
+
+    if (inputValorPago) {
+    inputValorPago.addEventListener("input", atualizarCampos);
   }
 
   checkIgual.addEventListener("change", atualizarCampos);
