@@ -3334,6 +3334,29 @@ def cadastrar_evento(request, pk):
 
 
 @login_required
+def duplicar_evento(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+
+    evento.pk = None
+    evento.realizado = False
+    evento.valor_pago = None
+    evento.data_pagamento = None
+
+    if evento.data_prevista:
+        evento.data_prevista = evento.data_prevista + timedelta(days=30)
+
+    if evento.data_prevista_pagamento:
+        evento.data_prevista_pagamento = evento.data_prevista_pagamento + timedelta(days=30)
+
+    evento.save()
+
+    messages.success(request, "Evento duplicado com sucesso!")
+
+    return redirect('detalhes_solicitacao', pk=evento.prospeccao.id)
+
+
+
+@login_required
 def cadastrar_evento_solicitacao(request, pk):
     if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -3355,6 +3378,27 @@ def cadastrar_evento_solicitacao(request, pk):
         "form": form,
         "solicitacao": solicitacao,
     })
+
+@login_required
+def duplicar_evento_solicitacao(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+
+    evento.pk = None
+    evento.realizado = False
+    evento.valor_pago = None
+    evento.data_pagamento = None
+
+    if evento.data_prevista:
+        evento.data_prevista = evento.data_prevista + timedelta(days=30)
+
+    if evento.data_prevista_pagamento:
+        evento.data_prevista_pagamento = evento.data_prevista_pagamento + timedelta(days=30)
+
+    evento.save()
+
+    messages.success(request, "Evento duplicado com sucesso!")
+
+    return redirect('detalhes_solicitacao_contrato', pk=evento.solicitacao_contrato.id)
 
 
 @login_required
@@ -3383,6 +3427,28 @@ def cadastrar_evento_contrato(request, pk):
         "contrato": contrato,
         #"solicitacao": solicitacao,
     })
+
+
+@login_required
+def duplicar_evento_contrato(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+
+    evento.pk = None
+    evento.realizado = False
+    evento.valor_pago = None
+    evento.data_pagamento = None
+
+    if evento.data_prevista:
+        evento.data_prevista = evento.data_prevista + timedelta(days=30)
+
+    if evento.data_prevista_pagamento:
+        evento.data_prevista_pagamento = evento.data_prevista_pagamento + timedelta(days=30)
+
+    evento.save()
+
+    messages.success(request, "Evento duplicado com sucesso!")
+
+    return redirect('contrato_fornecedor_detalhe', pk=evento.contrato_terceiro.id)
 
 
 @login_required
