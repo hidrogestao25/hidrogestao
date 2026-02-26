@@ -71,6 +71,9 @@ urlpatterns = [
     path("evento/<int:pk>/registrar-entrega/", views.registrar_entrega, name="registrar_entrega"),
     path("contrato/<int:contrato_id>/evento/<int:evento_id>/bm/novo/", views.cadastrar_bm, name="cadastrar_bm"),
     path('evento/<int:evento_id>/detalhes/', views.detalhes_entrega, name='detalhes_entrega'),
+    path('evento/<int:pk>/duplicar/', views.duplicar_evento, name='duplicar_evento'),
+    path('evento_contrato/<int:pk>/duplicar/', views.duplicar_evento_contrato, name='duplicar_evento_contrato'),
+    path('evento_solicitacao/<int:pk>/duplicar/', views.duplicar_evento_solicitacao, name='duplicar_evento_solicitacao'),
 
     path("previsao-pagamentos/", views.previsao_pagamentos, name="previsao_pagamentos"),
     path('previsao-pagamentos/exportar/', views.exportar_previsao_pagamentos_excel, name='exportar_previsao_pagamentos_excel'),

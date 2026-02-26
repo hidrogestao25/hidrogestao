@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 {% block content %}
 
 <div class="card shadow-sm">
@@ -23,9 +24,9 @@
                     <tr onclick="window.location.href='{% url 'fornecedor_detalhe' item.id %}'" style="cursor: pointer;">
                         <td>{{ forloop.counter }}</td>
                         <td>{{ item.fornecedor }}</td>
-                        <td>R$ {{ item.valor_total_contratos|floatformat:2 }}</td>
-                        <td>R$ {{ item.valor_previsto|floatformat:2 }}</td>
-                        <td>R$ {{ item.valor_pago|floatformat:2 }}</td>
+                        <td>R$ {{ item.valor_total_contratos|floatformat:2|intcomma }}</td>
+                        <td>R$ {{ item.valor_previsto|floatformat:2|intcomma }}</td>
+                        <td>R$ {{ item.valor_pago|floatformat:2|intcomma }}</td>
                         <td>
                             <div class="progress" style="height: 20px;">
                                 <div class="progress-bar

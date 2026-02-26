@@ -175,6 +175,10 @@ document.addEventListener("DOMContentLoaded", function() {
                           <td>R$ {{ evento.valor_pago|default:"-" }}</td>
                           <td>
                             {% if request.user.grupo == 'suprimento' %}
+                            <a href="{% url 'duplicar_evento_solicitacao' evento.id %}" class="btn btn-sm btn-outline-secondary"
+                               onclick="return confirm('Deseja duplicar este evento?');">
+                               Duplicar Evento
+                            </a>
                               <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
                               <a href="{% url 'excluir_evento' evento.id %}" class="btn btn-sm btn-danger"
                                  onclick="return confirm('Tem certeza que deseja excluir este evento?')">

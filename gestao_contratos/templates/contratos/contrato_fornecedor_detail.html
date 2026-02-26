@@ -210,6 +210,10 @@
                   <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
                     Registrar Entrega
                   </a>
+                  <a href="{% url 'duplicar_evento_contrato' evento.id %}" class="btn btn-sm btn-outline-secondary"
+                     onclick="return confirm('Deseja duplicar este evento?');">
+                     Duplicar Evento
+                  </a>
                   <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
                   <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
                      onclick="return confirm('Tem certeza que deseja excluir este evento?')">
@@ -225,6 +229,7 @@
                         {% endif %}
                     {% endwith %}
                   {% endif %}
+
               {% endif %}
             </td>
           </tr>

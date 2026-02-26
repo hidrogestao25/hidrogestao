@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "gestao_contratos",
+    'django.contrib.humanize',
 ]
 
 MIDDLEWARE = [
@@ -110,8 +111,15 @@ LANGUAGE_CODE = "pt-br"
 TIME_ZONE = "America/Sao_Paulo"
 
 USE_I18N = True
+USE_L10N = True
 
 USE_TZ = True
+
+USE_THOUSAND_SEPARATOR = True
+THOUSAND_SEPARATOR = '.'
+DECIMAL_SEPARATOR = ','
+
+FORMAT_MODULE_PATH = ['django.conf.locale.pt_BR']
 
 
 # Static files (CSS, JavaScript, Images)
