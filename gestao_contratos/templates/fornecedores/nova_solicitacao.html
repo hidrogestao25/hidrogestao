@@ -54,6 +54,15 @@
             {% if form.valor_provisionado.errors %}
               <div class="text-danger small">{{ form.valor_provisionado.errors|striptags }}</div>
             {% endif %}
+
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.valor_vendido.id_for_label }}" class="form-label">Valor Vendido</label>
+            {{ form.valor_vendido }}
+            {% if form.valor_vendido.errors %}
+              <div class="text-danger small">{{ form.valor_vendido.errors|striptags }}</div>
+            {% endif %}
         </div>
 
         <button type="submit" class="btn btn-primary">Enviar Solicitação</button>

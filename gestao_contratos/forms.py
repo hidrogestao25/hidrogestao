@@ -218,6 +218,14 @@ class SolicitacaoContratoForm(forms.ModelForm):
         label="Valor Provisionado",
         required=True
     )
+    valor_vendido = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Vendido",
+        required=False
+    )
 
     class Meta:
         model = SolicitacaoContrato
@@ -226,6 +234,7 @@ class SolicitacaoContratoForm(forms.ModelForm):
             'contrato',
             'lider_contrato',
             'descricao',
+            'valor_vendido',
             'requisitos',
             'previsto_no_orcamento',
             'valor_provisionado',
@@ -272,6 +281,23 @@ class SolicitacaoContratoForm(forms.ModelForm):
 
         return valor
 
+    def clean_valor_vendido(self):
+        valor = self.cleaned_data.get('valor_vendido')
+
+        if valor:
+            valor = (
+                valor.replace('R$', '')
+                     .replace('.', '')
+                     .replace(',', '.')
+                     .strip()
+            )
+            try:
+                return Decimal(valor)
+            except:
+                raise forms.ValidationError("Informe um valor monetário válido.")
+
+        return valor
+
 
 class SolicitacaoProspeccaoForm(forms.ModelForm):
     valor_provisionado = forms.CharField(
@@ -282,9 +308,17 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
         label="Valor Provisionado",
         required=True
     )
+    valor_vendido = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Vendido",
+        required=False
+    )
     class Meta:
         model = SolicitacaoProspeccao
-        fields = ['contrato', 'lider_contrato', 'descricao', 'requisitos','previsto_no_orcamento', 'valor_provisionado', 'cronograma']
+        fields = ['valor_vendido','contrato', 'lider_contrato', 'descricao', 'requisitos','previsto_no_orcamento', 'valor_provisionado', 'cronograma']
         widgets = {
             'valor_provisionado': forms.TextInput(attrs ={
                 'class': 'form-control money',

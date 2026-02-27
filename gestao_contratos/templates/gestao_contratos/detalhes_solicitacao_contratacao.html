@@ -50,6 +50,7 @@ document.addEventListener("DOMContentLoaded", function() {
         </p>
         <p><strong>Valor Provisionado:</strong> {{ solicitacao.valor_provisionado }}</p>
         <p><strong>Valor Vendido:</strong> {{ solicitacao.valor_vendido }}</p>
+        <p><strong>Valor do Contrato com Cliente:</strong> {{ solicitacao.contrato.valor_total }}</p>
         <p><strong>Data da Solicitação:</strong> {{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</p>
         <p><strong>Status:</strong> {{ solicitacao.status }}</p>
 

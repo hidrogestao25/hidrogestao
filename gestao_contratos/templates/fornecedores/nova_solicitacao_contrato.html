@@ -70,10 +70,18 @@
               {% endif %}
           </div>
 
+          <div class="mb-3">
+              <label for="{{ form.valor_vendido.id_for_label }}" class="form-label">Valor Vendido</label>
+              {{ form.valor_vendido }}
+              {% if form.valor_vendido.errors %}
+                <div class="text-danger small">{{ form.valor_vendido.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
           <button type="submit" class="btn btn-primary">Enviar Solicitação</button>
           <a href="{% url 'lista_contratos' %}" class="btn btn-secondary">Cancelar</a>
       </form>
-    </div>  
+    </div>
     </div>
 </div>
 
