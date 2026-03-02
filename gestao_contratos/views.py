@@ -1164,6 +1164,9 @@ def nova_solicitacao_contrato(request):
                         )
                     except Exception as e:
                         messages.warning(request, f"Erro ao enviar e-mail para o líder de contrato: {e}")
+
+                    """FAZER PROCESSO DE ENVIAR E-MAIL PARA DIRETORIA E PARA GERENTE DE CONTRATO"""
+
                 messages.success(request, "Solicitação de contratação criada com sucesso!")
                 return redirect('detalhes_solicitacao_contrato', pk=solicitacao.pk )
             else:

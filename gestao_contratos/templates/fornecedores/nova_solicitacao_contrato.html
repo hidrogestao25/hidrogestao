@@ -55,10 +55,42 @@
           </div>
 
           <div class="mb-3">
+              <label for="{{ form.justificativa_fornecedor_escolhido.id_for_label }}" class="form-label">Justificativa da Escolha do Fornecedor</label>
+              {{ form.justificativa_fornecedor_escolhido }}
+              {% if form.justificativa_fornecedor_escolhido.errors %}
+                <div class="text-danger small">{{ form.justificativa_fornecedor_escolhido.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
               <label for="{{ form.previsto_no_orcamento.id_for_label }}" class="form-label">Previsto no Orçamento</label>
               {{ form.previsto_no_orcamento }}
               {% if form.previsto_no_orcamento.errors %}
                 <div class="text-danger small">{{ form.previsto_no_orcamento.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.guarda_chuva.id_for_label }}" class="form-label">Guarda-chuva</label>
+              {{ form.guarda_chuva }}
+              {% if form.guarda_chuva.errors %}
+                <div class="text-danger small">{{ form.guarda_chuva.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.data_inicio.id_for_label }}" class="form-label">Data Inicial</label>
+              {{ form.data_inicio }}
+              {% if form.data_inicio.errors %}
+                <div class="text-danger small">{{ form.data_inicio.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.data_fim.id_for_label }}" class="form-label">Data Final</label>
+              {{ form.data_fim }}
+              {% if form.data_fim.errors %}
+                <div class="text-danger small">{{ form.data_fim.errors|striptags }}</div>
               {% endif %}
           </div>
 
