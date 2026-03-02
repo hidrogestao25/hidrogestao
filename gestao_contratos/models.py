@@ -215,6 +215,9 @@ class SolicitacaoContrato(models.Model):
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     data_solicitacao = models.DateTimeField(auto_now_add=True)
     guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
+    justificativa_solicitacao = models.TextField(null=True, blank=True)
+    data_inicio = models.DateField(null=True, blank=True)
+    data_fim = models.DateField(null=True, blank=True)
     cronograma = models.FileField(
         upload_to='cronograma/',
         verbose_name='Inserir cronograma',

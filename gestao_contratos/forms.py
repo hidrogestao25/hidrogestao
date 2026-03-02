@@ -206,9 +206,6 @@ class ContratoFornecedorForm(forms.ModelForm):
             raise forms.ValidationError(f"{valor_str} Informe um valor válido no formato R$ 0,00.")
 
 
-from decimal import Decimal
-from django import forms
-
 class SolicitacaoContratoForm(forms.ModelForm):
     valor_provisionado = forms.CharField(
         widget=forms.TextInput(attrs={
@@ -226,6 +223,29 @@ class SolicitacaoContratoForm(forms.ModelForm):
         label="Valor Vendido",
         required=False
     )
+    data_inicio = forms.DateField(
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                'class': 'form-control datepicker',
+                'type': 'text',
+                'autocomplete': 'off'
+            }
+        ),
+        input_formats=['%d-%m-%Y']
+    )
+
+    data_fim = forms.DateField(
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                'class': 'form-control datepicker',
+                'type': 'text',
+                'autocomplete': 'off'
+            }
+        ),
+        input_formats=['%d-%m-%Y']
+    )
 
     class Meta:
         model = SolicitacaoContrato
@@ -237,8 +257,12 @@ class SolicitacaoContratoForm(forms.ModelForm):
             'valor_vendido',
             'requisitos',
             'previsto_no_orcamento',
+            'justificativa_fornecedor_escolhido',
             'valor_provisionado',
-            'cronograma'
+            'data_inicio',
+            'data_fim',
+            'cronograma',
+            'guarda_chuva'
         ]
 
     def __init__(self, *args, **kwargs):
