@@ -1123,7 +1123,7 @@ def fornecedor_detalhe(request, pk):
 
 @login_required
 def nova_solicitacao_contrato(request):
-    if request.user.grupo in ['coordenador', 'gerente']:
+    if request.user.grupo in ['coordenador', 'gerente', 'lider_contrato', 'gerente_contrato']:
         if request.method == 'POST':
             form = SolicitacaoContratoForm(request.POST, user=request.user)
             if form.is_valid():
@@ -1356,7 +1356,7 @@ def aprovar_solicitacao_contrato(request, pk):
 
 @login_required
 def nova_solicitacao_prospeccao(request):
-    if request.user.grupo in ['coordenador', 'gerente']:
+    if request.user.grupo in ['coordenador', 'gerente', 'lider_contrato', 'gerente_contrato']:
         if request.method == 'POST':
             form = SolicitacaoProspeccaoForm(request.POST, user=request.user)
             if form.is_valid():
@@ -1412,7 +1412,7 @@ def nova_solicitacao_prospeccao(request):
 
 @login_required
 def solicitar_os(request):
-    if request.user.grupo not in ['coordenador', 'gerente']:
+    if request.user.grupo not in ['coordenador', 'gerente', 'lider_contrato', 'gerente_contrato']:
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
