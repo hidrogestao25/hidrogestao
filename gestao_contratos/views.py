@@ -159,6 +159,16 @@ def home(request):
             | (Q(aprovacao_fornecedor_gerente="aprovado") & Q(aprovacao_gerencia=False))
             | Q(status__in=["Fornecedor aprovado", "Planejamento do Contrato"])
         ).exclude(status__in=["Onboarding"]).distinct()
+        solicitacoes_contratos = SolicitacaoContrato.objects.filter(
+            Q(aprovacao_fornecedor_gerente="aprovado")
+            | Q(aprovacao_fornecedor_diretor="aprovado")
+            | Q(status__in=["Planejamento do Contrato"])
+        ).exclude(status__in=["Onboarding"]).distinct()
+        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+            Q(aprovacao_lider="aprovado")
+            #| Q(aprovacao_diretor="aprovado")
+            | Q(status__in=["pendente_suprimento"])
+        ).distinct()
 
         eventos_proximos = Evento.objects.filter(
             data_prevista__range=[hoje, limite]
