@@ -380,6 +380,14 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
 
 
 class SolicitacaoOrdemServicoForm(forms.ModelForm):
+    valor_previsto = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Previsto",
+        required=True
+    )
     class Meta:
         model = SolicitacaoOrdemServico
         fields = [
@@ -414,7 +422,7 @@ class UploadContratoOSForm(forms.ModelForm):
 
 
 class DocumentoContratoTerceiroForm(forms.ModelForm):
-    valor_total = forms.CharField(required=True)  # força como texto primeiro
+    valor_total = forms.CharField(required=True)
 
     class Meta:
         model = DocumentoContratoTerceiro
@@ -443,6 +451,14 @@ class DocumentoBMForm(forms.ModelForm):
 
 
 class EventoPrevisaoForm(forms.ModelForm):
+    valor_previsto = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Previsto",
+        required=True
+    )
     class Meta:
         model = Evento
         fields = ["descricao", "data_prevista", "valor_previsto", "data_prevista_pagamento", "observacao"]
@@ -468,6 +484,18 @@ class EventoPrevisaoForm(forms.ModelForm):
             )
 
         return cleaned_data
+
+    def clean_valor_previsto(self):
+        valor = self.cleaned_data.get("valor_previsto")
+
+        if valor:
+            # remove pontos de milhar e troca vírgula por ponto
+            valor = valor.replace(".", "").replace(",", ".")
+            try:
+                return Decimal(valor)
+            except InvalidOperation:
+                raise forms.ValidationError("Informe um valor válido no formato 1.234,56")
+        return None
 
 
 
