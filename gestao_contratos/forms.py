@@ -426,9 +426,9 @@ class DocumentoContratoTerceiroForm(forms.ModelForm):
 
     class Meta:
         model = DocumentoContratoTerceiro
-        fields = ["numero_contrato", "objeto", "prazo_inicio", "prazo_fim", "valor_total", "arquivo_contrato", "observacao"]
+        fields = ["numero_contrato", "objeto", "arquivo_contrato", "observacao"]
 
-    def clean_valor_total(self):
+    """def clean_valor_total(self):
         valor = self.cleaned_data.get("valor_total")
 
         if valor:
@@ -438,7 +438,7 @@ class DocumentoContratoTerceiroForm(forms.ModelForm):
                 return Decimal(valor)
             except InvalidOperation:
                 raise forms.ValidationError("Informe um valor válido no formato 1.234,56")
-        return None
+        return None"""
 
 
 class DocumentoBMForm(forms.ModelForm):

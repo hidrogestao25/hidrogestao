@@ -1351,14 +1351,13 @@ def aprovar_solicitacao_contrato(request, pk):
                     assunto,
                     mensagem,
                     "hidro.gestao25@gmail.com",
-                    list(set(emails_suprimentos)),  # remove duplicados
+                    list(set(emails_suprimentos)),
                     fail_silently=False,
                 )
             except Exception as e:
                 messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
 
         return redirect('lista_solicitacoes')
-
 
     return redirect('home')
 
@@ -2370,6 +2369,9 @@ def detalhes_solicitacao_contrato(request, pk):
                 solicitacao.aprovacao_fornecedor_gerente = "aprovado"
                 solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
             elif acao == "reprovar":
+                if not justificativa:
+                    messages.error(request, "A justificativa é obrigatória para reprovar.")
+                    return redirect("detalhes_solicitacao", pk=solicitacao.pk)
                 solicitacao.aprovacao_fornecedor_gerente = "reprovado"
                 solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
                 solicitacao.justificativa_gerencia = justificativa
@@ -2380,6 +2382,9 @@ def detalhes_solicitacao_contrato(request, pk):
                 solicitacao.aprovacao_fornecedor_diretor = "aprovado"
                 solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
             elif acao == "reprovar":
+                if not justificativa:
+                    messages.error(request, "A justificativa é obrigatória para reprovar.")
+                    return redirect("detalhes_solicitacao", pk=solicitacao.pk)
                 solicitacao.aprovacao_fornecedor_diretor = "reprovado"
                 solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
                 solicitacao.justificativa_diretoria = justificativa
@@ -2390,9 +2395,9 @@ def detalhes_solicitacao_contrato(request, pk):
             suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
 
             if suprimentos:
-                assunto = "Aprovação de Solicitação de Contratação"
+                assunto = f"Aprovação de Solicitação de Contratação #{solicitacao.id}"
                 mensagem = (
-                    f"O HIDROGestão informa que a Solicitação de Contrato e o Fornecedor escolhido \n"
+                    f"O HIDROGestão informa que a Solicitação de Contrato #{solicitacao.id} e o Fornecedor {solicitacao.fornecedor_escolhido}\n"
                     f"foram aprovados pelo Gerente de Contrato e pela Diretoria.\n\n"
 
                     f"Dessa forma, o processo encontra-se liberado para a etapa de Suprimentos, \n"
@@ -2769,6 +2774,9 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
         if form.is_valid():
             contrato = form.save(commit=False)
             contrato.solicitacao_contrato = solicitacao
+            contrato.prazo_inicio = solicitacao.data_inicio
+            contrato.prazo_fim = solicitacao.data_fim
+            contrato.valor_total = solicitacao.valor_provisionado
             if hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
                 contrato.status = "Planejamento do Contrato"
 
