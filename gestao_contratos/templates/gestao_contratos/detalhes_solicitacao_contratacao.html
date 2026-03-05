@@ -325,7 +325,10 @@ document.addEventListener("DOMContentLoaded", function() {
             <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
         </div>
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
-        <button type="submit" name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+        <button type="submit" name="acao" value="reprovar" class="btn btn-danger"
+        onclick="return validarJustificativa('justificativa')">
+            Reprovar
+        </button>
     </form>
 {% endif %}
 
@@ -338,7 +341,11 @@ document.addEventListener("DOMContentLoaded", function() {
             <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
         </div>
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
-        <button type="submit" name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+        <button type="submit" name="acao" value="reprovar" class="btn btn-danger"
+        onclick="return validarJustificativa('justificativa')">
+            Reprovar
+        </button>
+
     </form>
 {% endif %}
 
@@ -346,5 +353,18 @@ document.addEventListener("DOMContentLoaded", function() {
 
 
 </div>
+
+<script>
+function validarJustificativa(idCampo){
+    let campo = document.getElementById(idCampo).value.trim();
+
+    if(campo === ""){
+        alert("É obrigatório informar a justificativa para reprovar.");
+        return false;
+    }
+
+    return true;
+}
+</script>
 
 {% endblock %}

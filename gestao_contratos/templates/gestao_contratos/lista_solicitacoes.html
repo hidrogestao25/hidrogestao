@@ -247,7 +247,7 @@
                   </td>
 
                   <!-- AÇÕES -->
-                  {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato' %}
+                  {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria' %}
                   <td onclick="event.stopPropagation();">
 
                       {% if request.user.grupo == 'suprimento' %}
@@ -290,7 +290,22 @@
 
                       {% endif %}
 
+                      {% if request.user.grupo == 'diretoria' %}
+                          {% if solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
+                              <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
+                              class="btn btn-success btn-sm">
+                                Avaliar Solicitação
+                              </a>
+                          {% endif %}
+                      {% endif %}
+
                       {% if request.user.grupo == 'gerente_contrato' %}
+                          {% if solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
+                          <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
+                          class="btn btn-success btn-sm">
+                            Avaliar Solicitação
+                          </a>
+                          {% endif %}
                           {% if solicitacao.minuta_boletins_medicao_contrato %}
                               {% if solicitacao.minuta_boletins_medicao_contrato.status_gerente == 'pendente' %}
                                   <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-primary btn-sm">
