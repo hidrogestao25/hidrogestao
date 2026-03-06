@@ -2786,7 +2786,7 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
 
             contrato.save()
 
-            gerente = User.objects.filter(grupo="gerente", centros__in=solicitacao.coordenador.centros.all()).values_list("email", flat=True).distinct()
+            gerente = User.objects.filter(grupo="gerente_contrato").values_list("email", flat=True).distinct()
 
             if gerente:
                 assunto = "Foi anexado uma nova minuta de contrato"
@@ -3044,10 +3044,22 @@ def detalhes_minuta_contrato(request, pk):
             solicitacao.justificativa_gerencia = ""
             messages.success(request, "Documento do contrato aprovado pela gerência.")
         elif acao == "reprovar":
+            if not justificativa:
+                messages.warning(request, "Por favor, insira uma justificativa para a reprovação.")
+                return redirect('detalhes_minuta_contrato', pk=pk)
             solicitacao.aprovacao_gerencia = False
             solicitacao.reprovacao_gerencia = True
             solicitacao.justificativa_gerencia = justificativa
             messages.warning(request, "Documento do contrato reprovado pela gerência.")
+
+            ########################################################################
+            ########################################################################
+            """Enviar e-mail para Suprimentos informando a reprovação
+            e outro e-mail para diretoria e lider de contrato apontando justificativa
+            e informando que o Suprimentos irá revisar."""
+            #######################################################################
+            #######################################################################
+
         else:
             messages.error(request, "Ação inválida.")
 
@@ -3445,7 +3457,7 @@ def cadastrar_evento_contrato(request, pk):
 
     return render(request, "gestao_contratos/cadastrar_evento_contrato.html", {
         "form": form,
-        "contrato": contrato,
+        "solicitacao": contrato, #fiz isso para utilizar o mesmo html
         #"solicitacao": solicitacao,
     })
 
