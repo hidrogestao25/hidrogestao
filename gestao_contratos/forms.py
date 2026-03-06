@@ -422,7 +422,7 @@ class UploadContratoOSForm(forms.ModelForm):
 
 
 class DocumentoContratoTerceiroForm(forms.ModelForm):
-    valor_total = forms.CharField(required=True)
+    """valor_total = forms.CharField(required=True)"""
 
     class Meta:
         model = DocumentoContratoTerceiro

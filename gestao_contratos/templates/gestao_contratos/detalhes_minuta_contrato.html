@@ -56,6 +56,7 @@
         <div class="card-body">
             <p><strong>Nome:</strong> {{ fornecedor_escolhido.nome }}</p>
             <p><strong>Setor de Atuação:</strong> {{ fornecedor_escolhido.setor_de_atuacao }}</p>
+            <p><strong>Justificativa de escolha:</strong> {{ solicitacao.justificativa_fornecedor_escolhido }}</p>
             {% if proposta_escolhida %}
                 <p><strong>Valor da Proposta:</strong> R$ {{ proposta_escolhida.valor_proposta|floatformat:2 }}</p>
                 <p><strong>Prazo de Validade:</strong> {{ proposta_escolhida.prazo_validade|date:"d/m/Y" }}</p>
@@ -70,7 +71,7 @@
     <!-- Documento do contrato -->
     {% if contrato_doc %}
     <div class="card mb-3">
-        <div class="card-header">Contrato desenvolvido pelo Financeiro</div>
+        <div class="card-header">Contrato Desenvolvido</div>
         <div class="card-body">
             <p><strong>Número do Contrato:</strong> {{ contrato_doc.numero_contrato }}</p>
             <p><strong>Objeto:</strong> {{ contrato_doc.objeto }}</p>
