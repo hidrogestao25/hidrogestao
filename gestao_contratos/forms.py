@@ -51,6 +51,14 @@ class ContratoForm(forms.ModelForm):
         input_formats=['%d-%m-%Y']
     )
 
+    valor_total = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': '0,00'
+        })
+    )
+
     class Meta:
         model = Contrato
         fields = ['observacao', 'cod_projeto', 'cliente', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta', 'lider_contrato']
@@ -60,7 +68,7 @@ class ContratoForm(forms.ModelForm):
             'cliente': forms.Select(attrs={'class': 'form-select'}),
             'coordenador': forms.Select(attrs={'class': 'form-select'}),
             'lider_contrato': forms.Select(attrs={'class': 'form-select'}),
-            'valor_total': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_valor_total'}),
+            #'valor_total': forms.TextInput(attrs={'class': 'form-control money', 'placeholder': '0,00'}),
             'objeto':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'observacao':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
@@ -78,6 +86,9 @@ class ContratoForm(forms.ModelForm):
         self.fields['proposta'].queryset = (
             Proposta.objects.all()
         )
+        if self.instance and self.instance.valor_total:
+            valor = self.instance.valor_total
+            self.initial['valor_total'] = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
     def clean_valor_total(self):
@@ -85,12 +96,10 @@ class ContratoForm(forms.ModelForm):
         if valor in [None, ""]:
             return None
 
-        # Converte para string e remove "R$"
-        valor_str = str(valor).replace("R$", "").strip()
-
+        valor = valor.replace(".", "").replace(",", ".")
 
         try:
-            return Decimal(valor_str)
+            return Decimal(valor)
         except InvalidOperation:
             raise forms.ValidationError("Informe um valor válido no formato R$ 0,00.")
 

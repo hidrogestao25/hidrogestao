@@ -151,9 +151,9 @@
                 <td>R$ {{ item.bm.valor_pago|floatformat:2 }}</td>
                 <td>{{ item.bm.data_pagamento|date:"d/m/Y" }}</td>
 
-                {% if bm.status_coordenador == "aprovado" %}
+                {% if item.bm.status_coordenador == "aprovado" %}
                   <td><span class="badge bg-success">Aprovado</span></td>
-                {% elif bm.status_coordenador == "reprovado" %}
+                {% elif item.bm.status_coordenador == "reprovado" %}
                   <td><span class="badge bg-danger">Reprovado</span></td>
                 {% else %}
                   <td><span class="badge bg-secondary">Pendente</span></td>
@@ -167,9 +167,9 @@
                   </td>
                 {% endif %}
 
-                {% if bm.status_gerente == "aprovado" %}
+                {% if item.bm.status_gerente == "aprovado" %}
                   <td><span class="badge bg-success">Aprovado</span></td>
-                {% elif bm.status_gerente == "reprovado" %}
+                {% elif item.bm.status_gerente == "reprovado" %}
                   <td><span class="badge bg-danger">Reprovado</span></td>
                 {% else %}
                   <td><span class="badge bg-secondary">Pendente</span></td>
