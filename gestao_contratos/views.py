@@ -2777,6 +2777,7 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
             contrato.prazo_inicio = solicitacao.data_inicio
             contrato.prazo_fim = solicitacao.data_fim
             contrato.valor_total = solicitacao.valor_provisionado
+            solicitacao.aprovacao_gerencia = False
             if hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
                 contrato.status = "Planejamento do Contrato"
 
@@ -3052,13 +3053,57 @@ def detalhes_minuta_contrato(request, pk):
             solicitacao.justificativa_gerencia = justificativa
             messages.warning(request, "Documento do contrato reprovado pela gerência.")
 
-            ########################################################################
-            ########################################################################
-            """Enviar e-mail para Suprimentos informando a reprovação
-            e outro e-mail para diretoria e lider de contrato apontando justificativa
-            e informando que o Suprimentos irá revisar."""
-            #######################################################################
-            #######################################################################
+            suprimentos = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email__exact="")
+            lista_emails = [u.email for u in suprimentos]
+            if lista_emails:
+                assunto = f"Solicitação #{solicitacao.id} - Minuta de Contrato Reprovada"
+                mensagem = (
+                    f"Olá, equipe de Suprimentos!\n\n"
+                    f"A Gerência de Contratos reprovou a minuta do contrato:\n\n"
+                    f"Solicitação: {solicitacao.id}\n"
+                    f"Fornecedor: {solicitacao.fornecedor_escolhido}\n"
+                    f"Justificativa da reprovação: {solicitacao.justificativa_gerencia}\n"
+                    "Acesse o sistema HIDROGestão para mais informações.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                )
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao25@gmail.com",
+                        lista_emails,
+                        fail_silently=False
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
+            diretoria = User.objects.filter(grupo="diretoria").exclude(email__isnull=True).exclude(email__exact="")
+            lista_emails = [u.email for u in diretoria]
+
+            if solicitacao.lider_contrato and solicitacao.lider_contrato.email:
+                lista_emails.append(solicitacao.lider_contrato.email)
+            lista_emails = list(set(lista_emails))
+
+            if lista_emails:
+                assunto = f"Solicitação #{solicitacao.id} - Minuta de Contrato Reprovada"
+                mensagem = (
+                    f"Olá, \n\n"
+                    f"A Gerência de Contratos reprovou a minuta do contrato:\n\n"
+                    f"Solicitação: {solicitacao.id}\n"
+                    f"Fornecedor: {solicitacao.fornecedor_escolhido}\n"
+                    f"Justificativa da reprovação: {solicitacao.justificativa_gerencia}\n"
+                    "A minuta do contrato será revisada e passará por uma nova avaliação."
+                    "Acesse o sistema HIDROGestão para mais informações.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                )
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao25@gmail.com",
+                        lista_emails,
+                        fail_silently=False
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
 
         else:
             messages.error(request, "Ação inválida.")

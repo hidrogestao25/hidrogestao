@@ -270,7 +270,11 @@
                             <div>
                               {% with contrato=solicitacao.minuta_contrato.arquivo_contrato %}
                                   {% if contrato %}
-                                      <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">Revisar Minuta de Contrato</a>
+                                      {% if solicitacao.reprovacao_gerencia %}
+                                          <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-danger btn-sm">Revisar Minuta de Contrato</a>
+                                      {% else %}
+                                          <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">Revisar Minuta de Contrato</a>
+                                      {% endif %}
                                   {% else %}
                                       <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-primary btn-sm">Cadastrar Minuta de Contrato</a>
                                   {% endif %}

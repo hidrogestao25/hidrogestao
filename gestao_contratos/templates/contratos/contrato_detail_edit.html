@@ -56,7 +56,10 @@
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.valor_total.id_for_label }}">Valor Total</label>
-            {{ form.valor_total }}
+            <div class="input-group">
+                <span class="input-group-text">R$</span>
+                {{ form.valor_total }}
+            </div>
           </div>
 
           <div class="col-md-6 mb-3">
@@ -291,6 +294,7 @@
 
 
 
+
 {% if open_modal_nf %}
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -300,21 +304,13 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 {% endif %}
 
-<!-- jQuery -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-
-<!-- Inputmask -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
-
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
 <script>
-  $(document).ready(function(){
-    $('#id_valor_total').inputmask('currency', {
-      prefix: "R$ ",
-      groupSeparator: ".",
-      autoGroup: true,
-      rightAlign: false,
-      removeMaskOnSubmit: true
-    });
-  });
+$(document).ready(function(){
+    $('.money').mask('000.000.000.000.000,00', {reverse: true});
+});
 </script>
+
+
 {% endblock %}
