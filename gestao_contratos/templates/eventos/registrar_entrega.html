@@ -136,7 +136,7 @@
               <th>Observação</th>
               <th>Arquivo</th>
 
-              {% if request.user.grupo == 'coordenador' or request.user.grupo == 'suprimento' %}
+              {% if request.user.grupo == 'coordenador' or request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' %}
               <th>Ações</th>
               {% endif %}
             </tr>
@@ -195,7 +195,7 @@
                   {% endif %}
                 </td>
 
-                {% if request.user.grupo == 'coordenador' %}
+                {% if request.user.grupo == 'coordenador' or request.user.grupo == 'gerente' %}
                 <td>
                   <div class="d-flex gap-1">
 

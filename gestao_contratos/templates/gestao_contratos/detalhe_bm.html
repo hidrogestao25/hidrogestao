@@ -15,7 +15,7 @@
 
     <h4>Status das aprovações</h4>
     <ul>
-        <li>Líder de Contrato:
+        <!-- <li>Líder de Contrato:
             {% if bm.status_coordenador == 'aprovado' %}
                 <span class="badge bg-success">Aprovado</span>
             {% elif bm.status_coordenador == 'reprovado' %}
@@ -23,11 +23,11 @@
             {% else %}
                 <span class="badge bg-secondary">Pendente</span>
             {% endif %}
-        </li>
+        </li> -->
         <li>Gerência de Contrato:
             {% if bm.status_gerente == 'aprovado' %}
                 <span class="badge bg-success">Aprovado</span>
-            {% elif bm.aprovado_gerente == 'reprovado' %}
+            {% elif bm.status_gerente == 'reprovado' %}
                 <span class="badge bg-danger">Reprovado</span>
             {% else %}
                 <span class="badge bg-secondary">Pendente</span>
