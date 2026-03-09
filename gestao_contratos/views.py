@@ -3294,7 +3294,7 @@ def detalhe_bm_contrato(request, pk):
     if request.method == "POST":
         acao = request.POST.get("acao")
 
-        # Avaliação do coordenador
+        """# Avaliação do coordenador
         if usuario.grupo == "lider_contrato":
             if acao == "aprovar":
                 bm.status_coordenador = "aprovado"
@@ -3303,10 +3303,10 @@ def detalhe_bm_contrato(request, pk):
             elif acao == "reprovar":
                 bm.status_coordenador = "reprovado"
                 bm.data_aprovacao_coordenador = timezone.now()
-                messages.warning(request, "Minuta BM reprovada pelo coordenador.")
+                messages.warning(request, "Minuta BM reprovada pelo coordenador.")"""
 
         # Avaliação do gerente
-        elif usuario.grupo == "gerente_contrato":
+        if usuario.grupo == "gerente_contrato":
             if acao == "aprovar":
                 bm.status_gerente = "aprovado"
                 bm.data_aprovacao_gerente = timezone.now()
@@ -3593,7 +3593,7 @@ def excluir_evento_contrato(request, pk):
 
 @login_required
 def registrar_entrega(request, pk):
-    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "lider_contrato"]:
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "lider_contrato", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
