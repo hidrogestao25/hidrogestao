@@ -473,11 +473,22 @@ class EventoPrevisaoForm(forms.ModelForm):
         fields = ["descricao", "data_prevista", "valor_previsto", "data_prevista_pagamento", "observacao"]
         widgets = {
             "descricao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
-            "valor_previsto": forms.NumberInput(attrs={"class": "form-control"}),
+            #"valor_previsto": forms.NumberInput(attrs={"class": "form-control"}),
             "data_prevista": ISODateInput(attrs={ "class": "form-control"}),
             "data_prevista_pagamento": ISODateInput(attrs={"class": "form-control"}),
             "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Se estiver editando (tem instance)
+        if self.instance and self.instance.valor_previsto:
+            valor = self.instance.valor_previsto
+            valor_formatado = f"{valor:,.2f}"
+            valor_formatado = valor_formatado.replace(",", "X").replace(".", ",").replace("X", ".")
+
+            self.initial["valor_previsto"] = valor_formatado
 
     def clean(self):
         cleaned_data = super().clean()

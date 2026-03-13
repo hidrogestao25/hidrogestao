@@ -75,4 +75,34 @@
     </div>
 </div>
 
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    const moneyFields = document.querySelectorAll(".money");
+
+    moneyFields.forEach(function(field){
+
+        field.addEventListener("input", function(e){
+
+            let value = e.target.value;
+
+            // remove tudo que não for número
+            value = value.replace(/\D/g, "");
+
+            value = (value/100).toFixed(2) + "";
+
+            value = value.replace(".", ",");
+
+            value = value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+            e.target.value = value;
+
+        });
+
+    });
+
+});
+</script>
+
 {% endblock %}
