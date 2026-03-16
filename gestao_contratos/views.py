@@ -3861,13 +3861,13 @@ def previsao_pagamentos(request):
 
         # === SUPRIMENTO ===
         if usuario.grupo in ["suprimento", "diretoria"]:
-            eventos = Evento.objects.filter(filtros_base)
+            eventos = Evento.objects.filter(filtros_base, contrato_terceiro__isnull=False)
             os_queryset = OS.objects.filter(filtros_os)
 
         # === GERENTE ===
         elif usuario.grupo == "gerente":
             eventos = Evento.objects.filter(
-                filtros_base,
+                filtros_base, contrato_terceiro__isnull=False,
                 contrato_terceiro__coordenador__centros__in=usuario.centros.all()
             )
             os_queryset = OS.objects.filter(
@@ -3878,7 +3878,7 @@ def previsao_pagamentos(request):
         # === GERENTE DE CONTRATO ===
         elif usuario.grupo == "gerente_contrato":
             eventos = Evento.objects.filter(
-                filtros_base,
+                filtros_base, contrato_terceiro__isnull=False,
                 contrato_terceiro__lider_contrato__grupo="lider_contrato",
             )
             os_queryset = OS.objects.filter(
@@ -4055,17 +4055,17 @@ def previsao_pagamentos(request):
         if coordenador:
             if request.user.grupo == 'gerente_contrato':
                 projetos = list(Evento.objects.filter(
-                    contrato_terceiro__coordenador=coordenador,
+                    contrato_terceiro__coordenador=coordenador, contrato_terceiro__isnull=False,
                     contrato_terceiro__lider_contrato__grupo='lider_contrato'
                 ).values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True))
             else:
                 projetos = list(Evento.objects.filter(
-                    contrato_terceiro__coordenador=coordenador
+                    contrato_terceiro__coordenador=coordenador, contrato_terceiro__isnull=False,
                 ).values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True))
         else:
             if request.user.grupo == 'gerente_contrato':
                 projetos = list(Evento.objects.filter(
-                    contrato_terceiro__lider_contrato__grupo='lider_contrato'
+                    contrato_terceiro__lider_contrato__grupo='lider_contrato', contrato_terceiro__isnull=False,
                 ).values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True))
             else:
                 projetos = list(Evento.objects.values_list(
@@ -4087,7 +4087,7 @@ def previsao_pagamentos(request):
                 if coordenador:
                     filtro_base &= Q(contrato_terceiro__coordenador=coordenador)
 
-                eventos_previsto = Evento.objects.filter(filtro_periodo & filtro_base)
+                eventos_previsto = Evento.objects.filter(filtro_periodo & filtro_base, contrato_terceiro__isnull=False)
 
                 total_previsto_periodo = eventos_previsto.aggregate(
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
@@ -4145,11 +4145,11 @@ def previsao_pagamentos(request):
                 filtro_pago_evento &= Q(contrato_terceiro__lider_contrato__grupo='lider_contrato')
                 filtro_os &= Q(lider_contrato__grupo='lider_contrato')
 
-            total_prev_eventos = Evento.objects.filter(filtro_prev_evento).aggregate(
+            total_prev_eventos = Evento.objects.filter(filtro_prev_evento, contrato_terceiro__isnull=False,).aggregate(
                 total=Coalesce(Sum("valor_previsto"), Decimal("0.00"))
             )["total"]
 
-            total_pago_eventos = Evento.objects.filter(filtro_pago_evento).aggregate(
+            total_pago_eventos = Evento.objects.filter(filtro_pago_evento, contrato_terceiro__isnull=False,).aggregate(
                 total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
             )["total"]
 
@@ -4371,12 +4371,12 @@ def exportar_previsao_pagamentos_excel(request):
 
     # === SUPRIMENTO e DIRETORIA ===
     if usuario.grupo == "suprimento" or usuario.grupo == "diretoria":
-        eventos = Evento.objects.filter(filtros_base)
+        eventos = Evento.objects.filter(filtros_base, contrato_terceiro__isnull=False)
 
     # === GERENTE ===
     elif usuario.grupo == "gerente":
         eventos = Evento.objects.filter(
-            filtros_base,
+            filtros_base, contrato_terceiro__isnull=False,
             contrato_terceiro__coordenador__centros__in=usuario.centros.all()
         )
 
@@ -4384,7 +4384,7 @@ def exportar_previsao_pagamentos_excel(request):
         return redirect('home')
 
     if coordenador:
-        eventos = eventos.filter(contrato_terceiro__coordenador=coordenador)
+        eventos = eventos.filter(contrato_terceiro__coordenador=coordenador, contrato_terceiro__isnull=False)
 
     eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
 
@@ -4544,7 +4544,7 @@ def ranking_fornecedores(request):
 
     for fornecedor in fornecedores:
         contratos = contratos_ativos.filter(empresa_terceira=fornecedor)
-        eventos = Evento.objects.filter(empresa_terceira=fornecedor)
+        eventos = Evento.objects.filter(empresa_terceira=fornecedor, contrato_terceiro__isnull=False)
 
         valor_total_contratos = contratos.aggregate(total=Sum('valor_total'))['total'] or 0
         valor_previsto = eventos.aggregate(total=Sum('valor_previsto'))['total'] or 0
@@ -4815,8 +4815,8 @@ def editar_nf(request, nf_id):
 
 
 @login_required
-def deletar_bm(request, bm_id):
-    bm = get_object_or_404(BM, id=bm_id)
+def deletar_bm(request, pk):
+    bm = get_object_or_404(BM, pk=pk)
 
     if request.user.grupo != "suprimento":
         messages.error(request, "Você não tem permissão para isso!")
