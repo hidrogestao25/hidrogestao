@@ -57,7 +57,67 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
 <script>
 $(document).ready(function(){
+
+    // Máscara monetária
     $('.money').mask('000.000.000.000.000,00', {reverse: true});
+
+    $("#id_data_prevista").change(function(){
+
+        let dataPrevista = $(this).val();
+
+        if (!dataPrevista) return;
+
+        let campoPagamento = $("#id_data_prevista_pagamento");
+
+        if (campoPagamento.val()) {
+            return;
+        }
+
+        $.ajax({
+            url: "{% url 'buscar_proxima_data_pagamento' %}",
+            data: {
+                data_prevista: dataPrevista
+            },
+            success: function(response){
+
+                if (response.data) {
+
+                    campoPagamento.val(response.data);
+
+                    mostrarMensagemSugestao("Data de pagamento sugerida automaticamente.");
+
+                } else {
+                    mostrarMensagemSugestao("Nenhuma data de pagamento encontrada.", true);
+                }
+            }
+        });
+
+    });
+
+    // Função para exibir mensagem na tela
+    function mostrarMensagemSugestao(texto, erro=false){
+
+        // Remove mensagem anterior
+        $("#mensagem-sugestao").remove();
+
+        let classe = erro ? "alert-warning" : "alert-info";
+
+        let mensagem = `
+            <div id="mensagem-sugestao" class="alert ${classe} mt-2" role="alert">
+                ${texto}
+            </div>
+        `;
+
+        $("#id_data_prevista_pagamento").after(mensagem);
+
+        // Remove automaticamente após 4 segundos
+        setTimeout(function(){
+            $("#mensagem-sugestao").fadeOut(500, function(){
+                $(this).remove();
+            });
+        }, 4000);
+    }
+
 });
 </script>
 

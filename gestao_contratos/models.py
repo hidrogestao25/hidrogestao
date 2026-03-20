@@ -14,6 +14,7 @@ class User(AbstractUser):
         ('coordenador', 'Coordenador de Contrato'),
         ('lider_contrato','Lider de Contratos'),
         ('gerente', 'Gerente'),
+        ('gerente_lider', 'Gerente e Lider de Contratos'),
         ('gerente_contrato', 'Gerente de Contratos'),
         ('diretoria', 'Diretoria'),
         ('financeiro', 'Financeiro'),
@@ -21,7 +22,7 @@ class User(AbstractUser):
         ('fornecedor', 'Fornecedor'),
     ]
 
-    grupo = models.CharField(max_length=20, choices=GRUPOS_CHOICES, blank=True, null=True)
+    grupo = models.CharField(max_length=50, choices=GRUPOS_CHOICES, blank=True, null=True)
 
     # Novo campo ManyToMany
     centros = models.ManyToManyField("CentroDeTrabalho", blank=True, related_name="usuarios")
@@ -180,7 +181,7 @@ class Contrato(models.Model):
     observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):
-        return f"Contrato {self.cod_projeto} - {self.cliente}"
+        return f"{self.cod_projeto} - {self.cliente}"
 
 
 # ---------------------------------------
@@ -197,9 +198,14 @@ class SolicitacaoContrato(models.Model):
         ("aprovado", "Aprovado"),
         ("reprovado", "Reprovado")
     ]
+    FORMA_PAGAMENTO_CHOICES = [
+        (30, "30 dias"),
+        (60, "60 dias"),
+        (90, "90 dias"),
+    ]
 
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes_contratos')
-    coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
     lider_contrato = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -211,6 +217,9 @@ class SolicitacaoContrato(models.Model):
     descricao = models.TextField(blank=True, null=True)
     requisitos = models.TextField(blank=True, null=True)
     previsto_no_orcamento = models.BooleanField(default=False)
+    justificativa_orcamento = models.TextField(blank=True, null=True)
+    forma_pagamento = models.PositiveIntegerField(choices=FORMA_PAGAMENTO_CHOICES, null=True, blank=True, verbose_name="Forma de Pagamento (dias)")
+    valor_disponivel = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_provisionado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     data_solicitacao = models.DateTimeField(auto_now_add=True)
@@ -270,20 +279,28 @@ class SolicitacaoProspeccao(models.Model):
         ("aprovado", "Aprovado"),
         ("reprovado", "Reprovado")
     ]
+    FORMA_PAGAMENTO_CHOICES = [
+        (30, "30 dias"),
+        (60, "60 dias"),
+        (90, "90 dias"),
+    ]
 
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes')
-    coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
     lider_contrato = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato"]},
+        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato", "gerente_lider"]},
         related_name="solicitacoes_lideradas",
     )
     descricao = models.TextField(blank=True, null=True)
     requisitos = models.TextField(blank=True, null=True)
     previsto_no_orcamento = models.BooleanField(default=False)
+    justificativa_orcamento = models.TextField(blank=True, null=True)
+    forma_pagamento = models.PositiveIntegerField(choices=FORMA_PAGAMENTO_CHOICES, null=True, blank=True, verbose_name="Forma de Pagamento (dias)")
+    valor_disponivel = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_provisionado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     data_solicitacao = models.DateTimeField(auto_now_add=True)
@@ -420,7 +437,7 @@ class ContratoTerceiros(models.Model):
     )
 
     def __str__(self):
-        return f"Contrato {self.num_contrato} - {self.cod_projeto} - {self.empresa_terceira}"
+        return f"{self.cod_projeto} - {self.empresa_terceira}"
 
     @property
     def eventos(self):
@@ -533,7 +550,7 @@ class SolicitacaoOrdemServico(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={"grupo": "lider_contrato"},
+        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_lider", "gerente_contrato"]},
         related_name="ordens_liderados_terceiros"
     )
     titulo = models.CharField(max_length=200)
@@ -804,16 +821,6 @@ class DocumentoBM(models.Model):
     solicitacao_contrato = models.OneToOneField(SolicitacaoContrato, on_delete=models.CASCADE, related_name="minuta_boletins_medicao_contrato", null=True, blank=True)
     minuta_boletim = models.FileField(
         upload_to='Minuta boletim/',
-        blank=True,
-        null=True
-    )
-    assinatura_fornecedor = models.FileField(
-        upload_to='Assinaturas/',
-        blank=True,
-        null=True
-    )
-    assinatura_gerente = models.FileField(
-        upload_to='Assinaturas/',
         blank=True,
         null=True
     )

@@ -4,7 +4,7 @@
 <div class="container mt-4">
     {% if request.user.grupo == 'suprimento' %}
         <h2>Solicitações de Prospecção - Suprimento</h2>
-    {% elif request.user.grupo == 'gerente' %}
+    {% elif request.user.grupo in 'gerente,gerente_lider' %}
         <h2>Solicitações de Prospecção - Gerência</h2>
     {% else %}
         <h2>Solicitações de Prospecção</h2>
@@ -23,7 +23,7 @@
                     <th>Status</th>
                     <th>Aprovação do Fornecedor - Gerência</th>
                     <th>Aprovação do Fornecedor - Diretoria</th>
-                    {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria' %}
+                    {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria,gerente_lider' %}
                         <th>Ações</th>
                     {% endif %}
                 </tr>
@@ -215,7 +215,7 @@
                   <th>Valor Provisionado</th>
                   <th>Status</th>
 
-                  {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato' %}
+                  {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato, gerente_lider' %}
                       <th>Ações</th>
                   {% endif %}
               </tr>
@@ -247,7 +247,7 @@
                   </td>
 
                   <!-- AÇÕES -->
-                  {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria' %}
+                  {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria,gerente_lider' %}
                   <td onclick="event.stopPropagation();">
 
                       {% if request.user.grupo == 'suprimento' %}
@@ -284,7 +284,7 @@
 
                       {% endif %}
 
-                      {% if request.user.grupo in 'lider_contrato,gerente_contrato' %}
+                      {% if request.user.grupo in 'lider_contrato,gerente_contrato,gerente_lider' %}
                           {% if solicitacao.status == 'Fornecedor Selecionado' %}
                               <a href="{% url 'avaliar_contrato' solicitacao.id %}"
                                  class="btn btn-primary btn-sm">
@@ -339,7 +339,7 @@
                           {% endwith %}
                       {% endif %}
 
-                      {% if request.user.grupo == 'gerente' %}
+                      {% if request.user.grupo in 'gerente,gerente_lider' %}
                           <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
                              class="btn btn-outline-primary btn-sm">
                               Detalhes
@@ -468,7 +468,7 @@
                         Detalhes
                     </a>
 
-                    {% if request.user.grupo in 'gerente,gerente_contrato,suprimento' %}
+                    {% if request.user.grupo in 'gerente,gerente_contrato,gerente_lider,suprimento' %}
                         <a href="{% url 'editar_ordem_servico' os.id %}" class="btn btn-sm btn-outline-warning">
                             Editar
                         </a>

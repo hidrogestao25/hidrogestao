@@ -2,10 +2,7 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Contratos com Fornecedores Cadastrados</h2>
-    {% if user.grupo == "suprimento" %}
-      <a href="{% url 'novo_contrato_fornecedor' %}" class="btn btn-custom">+ Adicionar Contrato</a>
-    {% endif %}
+    <h2>Contratos Guarda-chuva com Fornecedores</h2>
 </div>
 
 <form method="get" class="mb-3 d-flex">
@@ -16,10 +13,8 @@
 <table id="tabela-contrato" class="table table-striped align-middle">
     <thead>
         <tr>
-            <th>Código do Projeto</th>
-            <th>Cliente</th>
+            <th>Código do Contrato</th>
             <th>Número do Contrato</th>
-            <th>Coordenador</th>
             <th>Fornecedor</th>
             <th>Status</th>
             <th>Ações</th>
@@ -28,10 +23,8 @@
     <tbody>
         {% for fornecedor in page_obj %}
         <tr>
-            <td>{{ fornecedor.cod_projeto.cod_projeto }}</td>
-            <td>{{ fornecedor.cod_projeto.cliente.nome }}</td>
             <td>{{ fornecedor.num_contrato }}</td>
-            <td>{{ fornecedor.coordenador }}</td>
+            <td>{{ fornecedor.num_contrato }}</td>
             <td>{{ fornecedor.empresa_terceira }}</td>
             <td>{% if fornecedor.status == 'em_elaboracao' %}
                   Em elaboração
@@ -55,6 +48,11 @@
                   <a href="{% url 'contrato_fornecedor_editar' fornecedor.pk %}" class="btn btn-sm btn-outline-secondary">
                       Editar Contrato
                   </a>
+                {% endif %}
+                {% if user.grupo in "coordenador gerente gerente_lider lider_contrato gerente_contrato" %}
+                    <a href="{% url 'solicitar_os' fornecedor.pk %}" class="btn btn-sm btn-success">
+                        Solicitar OS
+                    </a>
                 {% endif %}
             </td>
         </tr>

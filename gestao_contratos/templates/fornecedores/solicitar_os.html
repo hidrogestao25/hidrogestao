@@ -7,6 +7,10 @@
     <div class="card-header bg-success text-white">
       <h5 class="mb-0">Solicitação de Ordem de Serviço</h5>
     </div>
+    <div class="alert alert-info">
+        <b>Contrato:</b> {{ contrato.num_contrato }} <br>
+        <b>Fornecedor:</b> {{ contrato.empresa_terceira }}
+    </div>
 
     <div class="card-body">
 
@@ -17,7 +21,9 @@
           <label class="form-label fw-bold">
             Código do Projeto
           </label>
+
           {{ form.cod_projeto }}
+
           {% if form.cod_projeto.errors %}
             <div class="text-danger small">
               {{ form.cod_projeto.errors }}
@@ -27,21 +33,11 @@
 
         <div class="mb-3">
           <label class="form-label fw-bold">
-            Contrato (Guarda-Chuva)
-          </label>
-          {{ form.contrato }}
-          {% if form.contrato.errors %}
-            <div class="text-danger small">
-              {{ form.contrato.errors }}
-            </div>
-          {% endif %}
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label fw-bold">
             Título da Solicitação
           </label>
-          {{ form.titulo }}
+          <div>
+            {{ form.titulo }}
+          </div>
           {% if form.titulo.errors %}
             <div class="text-danger small">
               {{ form.titulo.errors }}
@@ -53,7 +49,9 @@
           <label class="form-label fw-bold">
             Descrição da Ordem de Serviço
           </label>
-          {{ form.descricao }}
+          <div>
+            {{ form.descricao }}
+          </div>
           {% if form.descricao.errors %}
             <div class="text-danger small">
               {{ form.descricao.errors }}
@@ -67,7 +65,9 @@
             <label class="form-label fw-bold">
               Valor Previsto (R$)
             </label>
-            {{ form.valor_previsto }}
+            <div>
+              {{ form.valor_previsto }}
+            </div>
             {% if form.valor_previsto.errors %}
               <div class="text-danger small">
                 {{ form.valor_previsto.errors }}
@@ -79,7 +79,9 @@
             <label class="form-label fw-bold">
               Prazo de Execução
             </label>
-            {{ form.prazo_execucao }}
+            <div>
+              {{ form.prazo_execucao }}
+            </div>
             {% if form.prazo_execucao.errors %}
               <div class="text-danger small">
                 {{ form.prazo_execucao.errors }}
@@ -87,18 +89,6 @@
             {% endif %}
           </div>
 
-        </div>
-
-        <div class="mb-4">
-          <label class="form-label fw-bold">
-            Líder de Contrato Responsável
-          </label>
-          {{ form.lider_contrato }}
-          {% if form.lider_contrato.errors %}
-            <div class="text-danger small">
-              {{ form.lider_contrato.errors }}
-            </div>
-          {% endif %}
         </div>
 
         <div class="d-flex justify-content-end gap-2">
@@ -110,7 +100,8 @@
           </button>
         </div>
 
-      </form>
+        </form>
+
 
     </div>
   </div>
