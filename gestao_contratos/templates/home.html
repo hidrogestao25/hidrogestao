@@ -95,7 +95,7 @@
 
 
             <!-- Solicitações de Prospecção -->
-            {% if request.user.grupo in "suprimento coordenador gerente financeiro lider_contrato gerente_contrato" %}
+            {% if request.user.grupo in "suprimento coordenador gerente gerente_lider financeiro lider_contrato gerente_contrato" %}
             <div class="col-md-6 mb-4 animated-card">
                 <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-primary text-white">
@@ -143,7 +143,7 @@
                                     {% endwith %}
                                     {% endfor %}
 
-                                {% elif request.user.grupo == 'gerente' %}
+                                {% elif request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' %}
                                     {% for item in solicitacoes_pendentes %}
                                         {% with solicitacao=item.solicitacoes_pendentes contrato=item.contrato %}
                                             <li class="list-group-item d-flex justify-content-between align-items-center">
@@ -327,7 +327,7 @@
                                             <span class="badge bg-danger">Prevista: {{ e.data_prevista|date:"d/m/Y" }}</span>
                                         </div>
 
-                                        {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'coordenador' %}
+                                        {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'coordenador' %}
                                             <a href="{% url 'registrar_entrega' e.id %}" class="btn btn-sm btn-outline-danger">
                                                 Registrar Entrega
                                             </a>

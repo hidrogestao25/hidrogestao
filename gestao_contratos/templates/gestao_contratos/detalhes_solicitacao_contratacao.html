@@ -251,7 +251,7 @@ document.addEventListener("DOMContentLoaded", function() {
                           <td>{% if evento.com_atraso %}✔️{% else %}✖{% endif %}</td>
                           <td>R$ {{ evento.valor_pago|default:"-" }}</td>
                           <td>
-                            {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_contrato' %}
+                            {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_lider gerente_contrato' %}
                             <a href="{% url 'duplicar_evento_solicitacao' evento.id %}" class="btn btn-sm btn-outline-secondary"
                                onclick="return confirm('Deseja duplicar este evento?');">
                                Duplicar Evento
@@ -270,7 +270,7 @@ document.addEventListener("DOMContentLoaded", function() {
           {% else %}
               <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
           {% endif %}
-          {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_contrato' %}
+          {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' %}
               <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
           {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de contratação" %}
               <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>

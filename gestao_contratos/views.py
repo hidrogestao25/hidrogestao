@@ -4,7 +4,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
-from django.db.models import Sum, Q, DecimalField, Avg
+from django.db.models import Sum, Q, DecimalField, Avg, Prefetch
 from decimal import Decimal
 from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
@@ -72,7 +72,7 @@ class FornecedorCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
 
     def test_func(self):
         # Só permite se for grupo suprimento
-        return self.request.user.grupo == "suprimento"
+        return self.request.user.grupo in ["suprimento"]
 
     def handle_no_permission(self):
         # Redireciona para a home
@@ -135,6 +135,7 @@ def home(request):
     is_suprimento = grupo == "suprimento"
     is_coordenador = grupo == "coordenador"
     is_gerente = grupo == "gerente"
+    is_gerente_lider = grupo =="gerente_lider"
     is_diretoria = grupo == "diretoria"
     is_financeiro = grupo == "financeiro"
     is_lider = grupo == "lider_contrato"
@@ -145,6 +146,7 @@ def home(request):
         "is_coordenador": is_coordenador,
         "is_lider":is_lider,
         "is_gerente": is_gerente,
+        "is_gerente_lider": is_gerente_lider,
         "is_gerente_contrato":is_gerente_contrato,
         "is_diretoria": is_diretoria,
         "is_financeiro": is_financeiro
@@ -240,7 +242,7 @@ def home(request):
 
         bms_pendentes = BM.objects.filter(
             contrato__coordenador=user,
-            status_coordenador="pendente"
+            #status_coordenador="pendente"
         ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
 
         eventos_proximos = Evento.objects.filter(
@@ -325,6 +327,58 @@ def home(request):
             "entregas_atrasadas": entregas_atrasadas,
         })
 
+    # ==================== GERENTE TÉCNICO E LIDER DE CONTRATO ====================
+    elif is_gerente_lider:
+        centros_gerente = getattr(user, "centros", None)
+        centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []
+
+        solicitacoes = SolicitacaoProspeccao.objects.filter(
+            coordenador__centros__in=centros_ids).select_related("fornecedor_escolhido", "coordenador"
+            ).exclude(status__in=["Onboarding"]).distinct()
+
+        lista_solicitacoes = []
+        for s in solicitacoes:
+            proposta_escolhida = PropostaFornecedor.objects.filter(
+                solicitacao=s, fornecedor=s.fornecedor_escolhido
+            ).first()
+            contrato = DocumentoContratoTerceiro.objects.filter(solicitacao=s).first()
+
+            pendente_fornecedor = s.fornecedor_escolhido and s.aprovacao_fornecedor_gerente == "pendente"
+            pendente_contrato = contrato and not getattr(contrato, "aprovacao_gerencia", False)
+
+            if pendente_fornecedor or pendente_contrato:
+                lista_solicitacoes.append({
+                    "solicitacoes_pendentes": s,
+                    "fornecedor": s.fornecedor_escolhido,
+                    "proposta": proposta_escolhida,
+                    "contrato": contrato,
+                })
+
+        bms_pendentes = BM.objects.filter(
+            contrato__coordenador__centros__in=centros_ids,
+            status_gerente="pendente"
+        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento").distinct()
+
+        eventos_proximos = Evento.objects.filter(
+            data_prevista__range=[hoje, limite],
+            contrato_terceiro__coordenador__centros__in=centros_ids
+        ).order_by("data_prevista").distinct()
+
+        # Entregas atrasadas dos centros do gerente
+        entregas_atrasadas = Evento.objects.filter(
+            contrato_terceiro__coordenador__centros__in=centros_ids,
+            realizado=False,
+            data_prevista__lt=hoje
+        ).order_by("data_prevista").distinct()
+
+        context.update({
+            "painel_titulo": "Painel da Gerência",
+            "solicitacoes_pendentes": lista_solicitacoes,
+            "bms_pendentes": bms_pendentes,
+            "eventos_proximos": eventos_proximos,
+            "entregas_atrasadas": entregas_atrasadas,
+        })
+
     #===================== GERENTE DE CONTRATO ==========
     elif is_gerente_contrato:
         """centros_gerente = getattr(user, "centros", None)
@@ -364,7 +418,6 @@ def home(request):
             contrato_terceiro__lider_contrato__grupo="lider_contrato"
         ).order_by("data_prevista").distinct()
 
-        # Entregas atrasadas dos centros do gerente
         entregas_atrasadas = Evento.objects.filter(
             contrato_terceiro__lider_contrato__grupo="lider_contrato",
             realizado=False,
@@ -384,7 +437,7 @@ def home(request):
 
         # BM aprovados por Coordenador e Gerente mas pendentes na Diretoria
         bms_pendentes_diretoria = BM.objects.filter(
-            status_coordenador="aprovado",
+            #status_coordenador="aprovado",
             status_gerente="aprovado",
             aprovacao_pagamento="pendente"
         ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
@@ -416,7 +469,7 @@ def home(request):
         ).distinct()
 
         eventos_sem_nf = BM.objects.filter(
-            status_coordenador="aprovado",
+            #status_coordenador="aprovado",
             status_gerente="aprovado",
             aprovacao_pagamento="aprovado"
         ).filter(
@@ -483,18 +536,18 @@ def lista_clientes(request):
     # Filtro inicial por grupo
     if request.user.grupo in ['suprimento', 'financeiro', 'diretoria']:
         clientes = Cliente.objects.all()
-    elif request.user.grupo == 'coordenador':
-        clientes = Cliente.objects.filter(contratos__coordenador=request.user).distinct()
-    elif request.user.grupo == 'lider_contrato':
-        clientes = Cliente.objects.filter(contratos__lider_contrato=request.user).distinct()
-    elif request.user.grupo == 'gerente':
-        clientes = Cliente.objects.filter(
-            contratos__coordenador__centros__in=request.user.centros.all()
-        ).distinct()
-    elif request.user.grupo == 'gerente_contrato':
-        clientes = Cliente.objects.filter(
-            contratos__lider_contrato__grupo='lider_contrato'
-        ).distinct()
+        """elif request.user.grupo == 'coordenador':
+            clientes = Cliente.objects.filter(contratos__coordenador=request.user).distinct()
+        elif request.user.grupo == 'lider_contrato':
+            clientes = Cliente.objects.filter(contratos__lider_contrato=request.user).distinct()
+        elif request.user.grupo == 'gerente':
+            clientes = Cliente.objects.filter(
+                contratos__coordenador__centros__in=request.user.centros.all()
+            ).distinct()
+        elif request.user.grupo == 'gerente_contrato':
+            clientes = Cliente.objects.filter(
+                contratos__lider_contrato__grupo='lider_contrato'
+            ).distinct()"""
     else:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
@@ -530,7 +583,7 @@ def lista_contratos_fornecedor(request):
         contratos = ContratoTerceiros.objects.filter(coordenador=request.user)
     elif request.user.grupo == 'lider_contrato':
         contratos = ContratoTerceiros.objects.filter(lider_contrato=request.user)
-    elif request.user.grupo == 'gerente':
+    elif request.user.grupo in ['gerente', 'gerente_lider']:
         contratos = ContratoTerceiros.objects.filter(
             coordenador__centros__in=request.user.centros.all()
         )
@@ -570,6 +623,42 @@ def lista_contratos_fornecedor(request):
 
 
 @login_required
+def lista_contratos_guarda_chuva(request):
+    # Filtragem base por grupo de usuário
+    if request.user.grupo in ['suprimento', 'financeiro', 'diretoria', 'coordenador', 'lider_contrato', 'gerente', 'gerente_lider', 'gerente_contrato']:
+        contratos = ContratoTerceiros.objects.filter(guarda_chuva=True)
+    else:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    # Campo de busca
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        contratos = contratos.filter(
+            Q(cod_projeto__cod_projeto__icontains=search_query) |
+            Q(num_contrato__icontains=search_query) |
+            Q(cod_projeto__cliente__nome__icontains=search_query) |
+            Q(empresa_terceira__nome__icontains=search_query) |
+            Q(coordenador__username__icontains=search_query) |
+            Q(status__icontains=search_query) |
+            Q(valor_total__icontains=search_query)
+        )
+
+    # Ordenar e paginar
+    contratos = contratos.order_by('-data_inicio')
+    paginator = Paginator(contratos, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'page_obj': page_obj,
+        'search_query': search_query,
+    }
+
+    return render(request, 'gestao_contratos/lista_contratos_guarda_chuva.html', context)
+
+
+@login_required
 def lista_fornecedores(request):
     # Filtro base por grupo de usuário
     if request.user.grupo in ['suprimento', 'financeiro', 'diretoria']:
@@ -586,7 +675,7 @@ def lista_fornecedores(request):
             Q(contratos__os_cadastrada__status__in=['em_execucao', 'finalizada', 'paralizada']) &
             Q(contratos__os_cadastrada__lider_contrato=request.user)
         ).distinct()
-    elif request.user.grupo == 'gerente':
+    elif request.user.grupo in ['gerente', 'gerente_lider']:
         fornecedores = EmpresaTerceira.objects.filter(
             Q(contratos__coordenador__centros__in=request.user.centros.all()) |
             Q(contratos__os_cadastrada__status__in=['em_execucao', 'finalizada', 'paralizada']) &
@@ -617,8 +706,17 @@ def lista_fornecedores(request):
     if guarda_chuva == '1':
         fornecedores = fornecedores.filter(contratos__guarda_chuva=True)
 
-    # Ordenação e paginação
     fornecedores = fornecedores.order_by('nome')
+
+    # Criar indicadores para cada fornecedor
+    indicadores_dict = {
+        ind.empresa_terceira_id: ind
+        for ind in Indicadores.objects.filter(
+            empresa_terceira__in=fornecedores
+        )
+    }
+
+    # Ordenação e paginação
     paginator = Paginator(fornecedores, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
@@ -627,9 +725,25 @@ def lista_fornecedores(request):
         'page_obj': page_obj,
         'search_query': search_query,
         'guarda_chuva': guarda_chuva,
+        'indicadores': indicadores_dict,
     }
 
     return render(request, 'gestao_contratos/lista_fornecedores.html', context)
+
+@login_required
+def cadastrar_fornecedor(request):
+    if request.user.grupo not in ["lider_contrato", "suprimento", "gerente_lider", "gerente_contrato"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+    if request.method == "POST":
+        form = FornecedorForm(request.POST)
+        if form.is_valid():
+            fornecedor = form.save()
+            return JsonResponse({
+                "id": fornecedor.id,
+                "nome": fornecedor.nome
+            })
+        return JsonResponse({"errors": form.errors}, status=400)
 
 
 @login_required
@@ -1089,7 +1203,7 @@ def fornecedor_detalhe(request, pk):
     elif request.user.grupo == "gerente_contrato":
         contratos = fornecedor.contratos.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato'])
         os = OS.objects.filter(contrato__empresa_terceira=fornecedor, lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato'])
-    elif request.user.grupo == "gerente":
+    elif request.user.grupo in ["gerente", "gerente_lider"]:
         contratos = fornecedor.contratos.filter(coordenador__centros__in=request.user.centros.all())
         os = OS.objects.filter(contrato__empresa_terceira=fornecedor, coordenador__centros__in=request.user.centros.all())
     else:
@@ -1133,12 +1247,12 @@ def fornecedor_detalhe(request, pk):
 
 @login_required
 def nova_solicitacao_contrato(request):
-    if request.user.grupo in ['coordenador', 'gerente', 'lider_contrato', 'gerente_contrato']:
+    if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
         if request.method == 'POST':
             form = SolicitacaoContratoForm(request.POST, user=request.user)
             if form.is_valid():
                 solicitacao = form.save(commit=False)
-                solicitacao.coordenador = request.user
+                solicitacao.lider_contrato = request.user
                 solicitacao.status = "Solicitação de contratação"
                 solicitacao.save()
 
@@ -1365,12 +1479,12 @@ def aprovar_solicitacao_contrato(request, pk):
 
 @login_required
 def nova_solicitacao_prospeccao(request):
-    if request.user.grupo in ['coordenador', 'gerente', 'lider_contrato', 'gerente_contrato']:
+    if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
         if request.method == 'POST':
             form = SolicitacaoProspeccaoForm(request.POST, user=request.user)
             if form.is_valid():
                 solicitacao = form.save(commit=False)
-                solicitacao.coordenador = request.user
+                solicitacao.lider_contrato = request.user
                 solicitacao.status = "Solicitação de prospecção"
                 solicitacao.save()
 
@@ -1406,7 +1520,7 @@ def nova_solicitacao_prospeccao(request):
                         )
                     except Exception as e:
                         messages.warning(request, f"Erro ao enviar e-mail para o líder de contrato: {e}")
-                messages.success(request, "Solicitação de prospecção criada com sucesso!")
+                messages.success(request, "Solicitação de prospecção criada com sucesso! Por favor, cadastre os eventos que serão feitos pelo fornecedor.")
                 return redirect('lista_solicitacoes')
             else:
                 messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
@@ -1420,17 +1534,21 @@ def nova_solicitacao_prospeccao(request):
 
 
 @login_required
-def solicitar_os(request):
-    if request.user.grupo not in ['coordenador', 'gerente', 'lider_contrato', 'gerente_contrato']:
+def solicitar_os(request, contrato_id):
+    if request.user.grupo not in ['gerente_lider', 'lider_contrato', 'gerente_contrato']:
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
+
+    contrato = get_object_or_404(ContratoTerceiros, pk=contrato_id)
 
     if request.method == 'POST':
         form = SolicitacaoOrdemServicoForm(request.POST, user=request.user)
         if form.is_valid():
             os = form.save(commit=False)
             os.solicitante = request.user
+            os.lider_contrato = request.user
             os.status = 'pendente_lider'
+            os.contrato = contrato
             os.save()
 
             assunto = "Nova Solicitação de O.S."
@@ -1471,7 +1589,7 @@ def solicitar_os(request):
     else:
         form = SolicitacaoOrdemServicoForm(user=request.user)
 
-    return render(request, 'fornecedores/solicitar_os.html', {'form': form})
+    return render(request, 'fornecedores/solicitar_os.html', {'form': form, "contrato": contrato})
 
 
 @login_required
@@ -1778,7 +1896,7 @@ def lista_solicitacoes(request):
         solicitacoes = SolicitacaoProspeccao.objects.all().exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
         solicitacoes_c = SolicitacaoContrato.objects.all().exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
         os = OS.objects.all().exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
-    elif request.user.grupo == 'gerente':
+    elif request.user.grupo in ['gerente', 'gerente_lider']:
         centros_do_gerente = request.user.centros.all()
         # filtra solicitações cujo solicitante tenha pelo menos um centro em comum
         solicitacoes = SolicitacaoProspeccao.objects.filter(
@@ -2568,7 +2686,7 @@ def lista_ordens_servico(request):
         os = OS.objects.filter(coordenador=request.user)
     elif request.user.grupo == 'lider_contrato':
         os = OS.objects.filter(lider_contrato=request.user)
-    elif request.user.grupo == 'gerente':
+    elif request.user.grupo in ['gerente', 'gerente_lider']:
         os = OS.objects.filter(coordenador__centros__in=request.user.centros.all())
     elif request.user.grupo == 'gerente_contrato':
         os = OS.objects.filter(lider_contrato__grupo='lider_contrato')
@@ -3389,7 +3507,7 @@ def reprovar_bm(request, pk, papel):
 
 @login_required
 def cadastrar_evento(request, pk):
-    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_contrato", "lider_contrato"]:
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
@@ -3409,6 +3527,25 @@ def cadastrar_evento(request, pk):
         "form": form,
         "solicitacao": solicitacao,
     })
+
+
+@login_required
+def buscar_proxima_data_pagamento(request):
+    data_prevista = request.GET.get("data_prevista")
+
+    if not data_prevista:
+        return JsonResponse({"data": None})
+
+    proxima_data = CalendarioPagamento.objects.filter(
+        data_pagamento__gte=data_prevista
+    ).order_by("data_pagamento").first()
+
+    if proxima_data:
+        return JsonResponse({
+            "data": proxima_data.data_pagamento.strftime("%Y-%m-%d")
+        })
+
+    return JsonResponse({"data": None})
 
 
 @login_required
@@ -3436,7 +3573,7 @@ def duplicar_evento(request, pk):
 
 @login_required
 def cadastrar_evento_solicitacao(request, pk):
-    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_contrato", "lider_contrato"]:
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
@@ -3531,7 +3668,7 @@ def duplicar_evento_contrato(request, pk):
 
 @login_required
 def editar_evento(request, pk):
-    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_contrato", "lider_contrato"]:
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -3548,7 +3685,7 @@ def editar_evento(request, pk):
 
 @login_required
 def editar_evento_contrato(request, pk):
-    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_contrato", "lider_contrato"]:
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -3565,21 +3702,39 @@ def editar_evento_contrato(request, pk):
 
 @login_required
 def excluir_evento(request, pk):
-    if request.user.grupo not in ["suprimento"]:
+    if request.user.grupo not in ["suprimento", "gerente_lider", "lider_contrato", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
     evento = get_object_or_404(Evento, pk=pk)
+
+    if evento.prospeccao:
+        pk_origem = evento.prospeccao.id
+    elif evento.solicitacao_contrato:
+        pk_origem = evento.solicitacao_contrato.id
+    else:
+        pk_origem = None
+
     if request.method == "POST":
-        solicitacao_id = evento.prospeccao.id
         evento.delete()
-        return redirect("detalhes_solicitacao", pk=solicitacao_id)
-    return render(request, "gestao_contratos/excluir_evento.html", {"evento": evento})
+
+        if evento.prospeccao:
+            return redirect("detalhes_solicitacao", pk=pk_origem)
+        elif evento.solicitacao_contrato:
+            return redirect("detalhes_solicitacao_contrato", pk=pk_origem)
+
+        else:
+            return redirect("home")
+
+    return render(request, "gestao_contratos/excluir_evento.html", {
+        "evento": evento,
+        "pk_origem": pk_origem
+    })
 
 
 @login_required
 def excluir_evento_contrato(request, pk):
-    if request.user.grupo not in ["suprimento", "lider_contrato", "gerente_contrato"]:
+    if request.user.grupo not in ["suprimento", "lider_contrato", "gerente_contrato", "gerente_lider"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -3607,7 +3762,8 @@ def registrar_entrega(request, pk):
     has_reprovacao_gerente = False
 
     for bm in boletins:
-        if bm.status_coordenador == "aprovado" and bm.status_gerente == "aprovado":
+        #if bm.status_coordenador == "aprovado" and bm.status_gerente == "aprovado":
+        if bm.status_gerente == "aprovado":
             row_class = "table-success"
         elif bm.status_coordenador == "reprovado" or bm.status_gerente == "reprovado":
             row_class = "table-danger"
@@ -3767,11 +3923,12 @@ def avaliar_bm(request, bm_id):
                 if lista_emails:
 
                     # Ambos aprovaram
-                    if status_coord == "aprovado" and status_ger == "aprovado":
+                    #if status_coord == "aprovado" and status_ger == "aprovado":
+                    if status_ger == "aprovado":
                         assunto = f"BM aprovado - Contrato {bm.contrato.num_contrato}"
                         mensagem = (
                             f"Olá, equipe de Suprimentos!\n\n"
-                            f"O Boletim de Medição foi APROVADO pelo coordenador e pelo gerente.\n\n"
+                            f"O Boletim de Medição foi APROVADO pelo gerente.\n\n"
                             f"Projeto: {bm.contrato.cod_projeto}\n"
                             f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
                             f"Evento: {bm.evento.descricao}\n"
@@ -3826,10 +3983,10 @@ def avaliar_bm(request, bm_id):
 
 @login_required
 def previsao_pagamentos(request):
-    if request.user.grupo not in ["suprimento", "gerente", "diretoria", "financeiro", "gerente_contrato"]:
+    if request.user.grupo not in ["suprimento", "gerente", "gerente_lider", "diretoria", "financeiro", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
-    form = FiltroPrevisaoForm(request.GET or None)
+    form = FiltroPrevisaoForm(request.GET or None, user=request.user)
     pagamentos = []
     total_previsto = 0
     total_pago = 0
@@ -3865,7 +4022,7 @@ def previsao_pagamentos(request):
             os_queryset = OS.objects.filter(filtros_os)
 
         # === GERENTE ===
-        elif usuario.grupo == "gerente":
+        elif usuario.grupo in ["gerente", "gerente_lider"]:
             eventos = Evento.objects.filter(
                 filtros_base, contrato_terceiro__isnull=False,
                 contrato_terceiro__coordenador__centros__in=usuario.centros.all()
@@ -4217,7 +4374,7 @@ def previsao_pagamentos(request):
         # Determina status de aprovação (para exibir na tabela)
         for bm in bms:
             # Define o status geral
-            if bm.status_coordenador == 'aprovado' and bm.status_gerente == 'aprovado':
+            if bm.status_gerente == 'aprovado':
                 bm.status_geral = '✅ Aprovado'
                 bm.falta_aprovar = '-'
             elif bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado':
@@ -4255,7 +4412,7 @@ def previsao_pagamentos(request):
 
 @login_required
 def download_bms_aprovados(request):
-    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "financeiro", "gerente_contrato"]:
+    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "gerente_lider", "financeiro", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -4278,7 +4435,7 @@ def download_bms_aprovados(request):
 
     # === FILTRO PRINCIPAL: APROVADOS ===
     bms_aprovados = BM.objects.filter(
-        status_coordenador='aprovado',
+        #status_coordenador='aprovado',
         status_gerente='aprovado'
     )
 
@@ -4346,7 +4503,7 @@ def download_bms_aprovados(request):
 
 @login_required
 def exportar_previsao_pagamentos_excel(request):
-    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "financeiro", "gerente_contrato"]:
+    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "gerente_lider", "financeiro", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -4510,14 +4667,14 @@ def exportar_previsao_pagamentos_excel(request):
 
 @login_required
 def ranking_fornecedores(request):
-    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "financeiro", "gerente_contrato"]:
+    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "gerente_lider", "financeiro", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
     user = request.user
     contratos_ativos = ContratoTerceiros.objects.filter(status='ativo')
 
-    if user.grupo == 'gerente':
+    if user.grupo in ['gerente', 'gerente_lider']:
         # Pega os centros de trabalho do gerente
         centros_gerente = user.centros.all()
 
@@ -4532,7 +4689,7 @@ def ranking_fornecedores(request):
         )
 
     elif user.grupo in ['suprimento', 'diretoria', 'financeiro', 'gerente_contrato']:
-        # Suprimento vê todos os contratos ativos
+        # vê todos os contratos ativos
         pass
 
     else:
@@ -4540,7 +4697,7 @@ def ranking_fornecedores(request):
         contratos_ativos = ContratoTerceiros.objects.none()
 
     dados = []
-    fornecedores = EmpresaTerceira.objects.all()
+    fornecedores = EmpresaTerceira.objects.filter(contratos__in=contratos_ativos).distinct()
 
     for fornecedor in fornecedores:
         contratos = contratos_ativos.filter(empresa_terceira=fornecedor)

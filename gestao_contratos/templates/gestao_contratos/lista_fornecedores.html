@@ -1,7 +1,8 @@
 {% extends 'base.html' %}
 {% block content %}
+{% load custom_tags %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Fornecedores Cadastrados</h2>
+    <h2>Fornecedores</h2>
     {% if user.grupo == "suprimento" %}
       <a href="{% url 'novo_fornecedor' %}" class="btn btn-custom">+ Adicionar Fornercedor</a>
     {% endif %}
@@ -49,19 +50,84 @@
     <thead>
         <tr>
             <th>Nome</th>
-            <th>Setor de Atuação</th>
-            <th>CPF/CNPJ</th>
-            <th>E-mail</th>
+            <th>Escopo de Atuação</th>
+            <th style="width:300px">Indicadores</th>
 
        </tr>
     </thead>
     <tbody>
         {% for fornecedor in page_obj %}
         <tr class="linha-hover" onclick="window.location='{% url 'fornecedor_detalhe' fornecedor.pk %}'">
-            <td>{{ fornecedor.nome }}</td>
-            <td>{{ fornecedor.setor_de_atuacao }}</td>
-            <td>{{ fornecedor.cpf_cnpj }}</td>
-            <td>{{ fornecedor.email }}</td>
+            <td class="align-middle">{{ fornecedor.nome }}</td>
+            <td class="align-middle">{{ fornecedor.setor_de_atuacao }}</td>
+            <td>
+              {% with ind=indicadores|dict_get:fornecedor.id %}
+
+              <div class="mb-2">
+                <small><b>Total de Entregas: {{ ind.entregas_total }}</b></small>
+              </div>
+
+              <div class="row">
+
+                <!-- IQ -->
+                <div class="col-6 mb-2">
+                    <small><b>IQ</b> {{ ind.IQ|floatformat:0 }}%</small>
+                    <div class="progress" style="height:4px;">
+                        <div class="progress-bar
+                            {% if ind.IQ < 50 %}bg-danger
+                            {% elif ind.IQ < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ ind.IQ|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IQ|floatformat:2|cut:","|slice:"-2:" }}%">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Técnica -->
+                <div class="col-6 mb-2">
+                    <small><b>Técnica</b> {{ ind.IS_tecnica|floatformat:0 }}%</small>
+                    <div class="progress" style="height:4px;">
+                        <div class="progress-bar
+                            {% if ind.IS_tecnica < 50 %}bg-danger
+                            {% elif ind.IS_tecnica < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ ind.IS_tecnica|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IS_tecnica|floatformat:2|cut:","|slice:"-2:" }}%">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gestão -->
+                <div class="col-6 mb-2">
+                    <small><b>Gestão</b> {{ ind.IS_gestao|floatformat:0 }}%</small>
+                    <div class="progress" style="height:4px;">
+                        <div class="progress-bar
+                            {% if ind.IS_gestao < 50 %}bg-danger
+                            {% elif ind.IS_gestao < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ ind.IS_gestao|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IS_gestao|floatformat:2|cut:","|slice:"-2:" }}%">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Entrega -->
+                <div class="col-6 mb-2">
+                    <small><b>Entrega</b> {{ ind.IS_entrega|floatformat:0 }}%</small>
+                    <div class="progress" style="height:4px;">
+                        <div class="progress-bar
+                            {% if ind.IS_entrega < 50 %}bg-danger
+                            {% elif ind.IS_entrega < 80 %}bg-warning
+                            {% else %}bg-success{% endif %}"
+                            style="width: {{ ind.IS_entrega|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IS_entrega|floatformat:2|cut:","|slice:"-2:" }}%">
+                        </div>
+                    </div>
+                </div>
+
+              </div>
+
+              {% endwith %}
+
+
+            </td>
+
         </tr>
         {% empty %}
         <tr>

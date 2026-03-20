@@ -7,10 +7,12 @@ urlpatterns = [
     path('contratos/novo/', ContratoCreateView.as_view(), name='novo_contrato'),
     path('contratos/<int:pk>/', views.contrato_cliente_detalhe, name='contrato_cliente_detalhe'),
 
-    path('contratos_fornecedores', views.lista_contratos_fornecedor, name='lista_contratos_fornecedores'),
+    path('contratos_fornecedores/', views.lista_contratos_fornecedor, name='lista_contratos_fornecedores'),
     path('contratos_fornecedores/novo', ContratoFornecedorCreateView.as_view(), name='novo_contrato_fornecedor'),
     path('contratos_fornecedores/<int:pk>/', views.contrato_fornecedor_detalhe, name='contrato_fornecedor_detalhe'),
     path('contratos_fornecedores/<int:pk>/editar/', views.contrato_fornecedor_editar, name='contrato_fornecedor_editar'),
+
+    path('contratos_guarda_chuva/', views.lista_contratos_guarda_chuva, name='lista_contratos_guarda_chuva'),
 
     path('clientes/', views.lista_clientes, name='lista_clientes'),
     path('clientes/novo/', ClienteCreateView.as_view(), name='novo_cliente'),
@@ -18,6 +20,7 @@ urlpatterns = [
 
     path('fornecedores/', views.lista_fornecedores, name='lista_fornecedores'),
     path('fornecedores/novo/', FornecedorCreateView.as_view(), name='novo_fornecedor'),
+    path('fornecedor/criar-fornecedor/', views.cadastrar_fornecedor, name='cadastrar_fornecedor'),
     path('fornecedores/<int:pk>/', views.fornecedor_detalhe, name='fornecedor_detalhe'),
     path('fornecedores/solicitar/', views.nova_solicitacao_prospeccao, name='nova_solicitacao_prospeccao'),
     path('fornecedores/solicitacoes/', views.lista_solicitacoes, name='lista_solicitacoes'),
@@ -74,6 +77,8 @@ urlpatterns = [
     path('evento/<int:pk>/duplicar/', views.duplicar_evento, name='duplicar_evento'),
     path('evento_contrato/<int:pk>/duplicar/', views.duplicar_evento_contrato, name='duplicar_evento_contrato'),
     path('evento_solicitacao/<int:pk>/duplicar/', views.duplicar_evento_solicitacao, name='duplicar_evento_solicitacao'),
+    path("buscar-proxima-data-pagamento/", views.buscar_proxima_data_pagamento, name="buscar_proxima_data_pagamento"),
+
 
     path("previsao-pagamentos/", views.previsao_pagamentos, name="previsao_pagamentos"),
     path('previsao-pagamentos/exportar/', views.exportar_previsao_pagamentos_excel, name='exportar_previsao_pagamentos_excel'),
@@ -82,7 +87,8 @@ urlpatterns = [
 
     path('ranking-fornecedores/', views.ranking_fornecedores, name='ranking_fornecedores'),
 
-    path('nova/', views.solicitar_os, name='solicitar_os'),
+    #path('nova/', views.solicitar_os, name='solicitar_os'),
+    path("solicitar-os/<int:contrato_id>/", views.solicitar_os, name="solicitar_os"),
     path('ordem-servico/<int:pk>/', views.detalhe_os, name='detalhe_ordem_servico'),
     path('ordem-servico/<int:pk>/editar/', views.editar_ordem_servico, name='editar_ordem_servico'),
     path('ordem-servico/<int:pk>/lider/<str:acao>/', views.aprovar_os_lider, name='aprovar_os_lider'),
