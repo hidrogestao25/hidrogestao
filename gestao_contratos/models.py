@@ -162,6 +162,7 @@ class Contrato(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
+        blank=True,
         #limit_choices_to={'grupo': 'Coordenador de Contrato'},
         related_name="contratos_cliente_coordenados"  # evita conflito com contratos_coordenados
     )
@@ -175,9 +176,9 @@ class Contrato(models.Model):
     )
     data_inicio = models.DateField(null=True, blank=True)
     data_fim = models.DateField(null=True, blank=True)
-    valor_total = models.DecimalField(max_digits=12, decimal_places=2)
+    valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     objeto = models.TextField()
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Em elaboracao')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao', null=True, blank=True)
     observacao = models.TextField(null=True, blank=True)
 
     def __str__(self):

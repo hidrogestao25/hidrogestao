@@ -12,7 +12,7 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm
 
 import plotly.graph_objs as go
 import plotly.express as px
@@ -1248,6 +1248,7 @@ def fornecedor_detalhe(request, pk):
 @login_required
 def nova_solicitacao_contrato(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
+        clientes = Cliente.objects.all().order_by('nome')
         if request.method == 'POST':
             form = SolicitacaoContratoForm(request.POST, user=request.user)
             if form.is_valid():
@@ -1297,7 +1298,7 @@ def nova_solicitacao_contrato(request):
                 messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
         else:
             form = SolicitacaoContratoForm(user=request.user)
-        return render(request, 'fornecedores/nova_solicitacao_contrato.html', {'form':form})
+        return render(request, 'fornecedores/nova_solicitacao_contrato.html', {'form':form, 'clientes': clientes})
     else:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
@@ -1480,6 +1481,7 @@ def aprovar_solicitacao_contrato(request, pk):
 @login_required
 def nova_solicitacao_prospeccao(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
+        clientes = Cliente.objects.all().order_by('nome')
         if request.method == 'POST':
             form = SolicitacaoProspeccaoForm(request.POST, user=request.user)
             if form.is_valid():
@@ -1526,11 +1528,29 @@ def nova_solicitacao_prospeccao(request):
                 messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
         else:
             form = SolicitacaoProspeccaoForm(user=request.user)
-        return render(request, 'fornecedores/nova_solicitacao.html', {'form':form})
+        return render(request, 'fornecedores/nova_solicitacao.html', {'form':form, 'clientes':clientes})
 
     else:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
+
+
+@login_required
+def add_contrato(request):
+    if request.method == "POST":
+        form = ContratoModalForm(request.POST)
+        if form.is_valid():
+            contrato = form.save(commit=False)
+            contrato.status = 'ativo'
+            contrato.lider_contrato = request.user
+            contrato.save()
+
+            return JsonResponse({
+                "id": contrato.id,
+                "nome": contrato.cod_projeto
+            })
+        else:
+            return JsonResponse({"errors": form.errors}, status=400)
 
 
 @login_required

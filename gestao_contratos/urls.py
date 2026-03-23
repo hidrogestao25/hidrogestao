@@ -5,6 +5,7 @@ from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, 
 urlpatterns = [
     path('contratos/', views.lista_contratos, name='lista_contratos'),
     path('contratos/novo/', ContratoCreateView.as_view(), name='novo_contrato'),
+    path('contratos/criar-contrato/', views.add_contrato, name='add_contrato'),
     path('contratos/<int:pk>/', views.contrato_cliente_detalhe, name='contrato_cliente_detalhe'),
 
     path('contratos_fornecedores/', views.lista_contratos_fornecedor, name='lista_contratos_fornecedores'),
