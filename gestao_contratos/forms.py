@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Q
 from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato
 from django.contrib import messages
 from decimal import Decimal, InvalidOperation
@@ -29,6 +30,7 @@ class PropostaFornecedorForm(forms.ModelForm):
 
 class ContratoForm(forms.ModelForm):
     data_inicio = forms.DateField(
+        required=False,
         widget=forms.DateInput(
             attrs={
                 'class': 'form-control datepicker',
@@ -90,7 +92,6 @@ class ContratoForm(forms.ModelForm):
             valor = self.instance.valor_total
             self.initial['valor_total'] = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-
     def clean_valor_total(self):
         valor = self.cleaned_data.get('valor_total')
         if valor in [None, ""]:
@@ -102,6 +103,12 @@ class ContratoForm(forms.ModelForm):
             return Decimal(valor)
         except InvalidOperation:
             raise forms.ValidationError("Informe um valor válido no formato R$ 0,00.")
+
+
+class ContratoModalForm(forms.ModelForm):
+    class Meta:
+        model = Contrato
+        fields = ['cod_projeto', 'cliente', 'objeto']
 
 
 class ClienteForm(forms.ModelForm):
@@ -283,10 +290,17 @@ class SolicitacaoContratoForm(forms.ModelForm):
 
         if user and user.grupo == 'coordenador':
             self.fields['contrato'].queryset = Contrato.objects.filter(coordenador=user)
-        elif user and user.grupo in ['gerente', 'gerente_lider']:
+        elif user and user.grupo in ['gerente']:
             self.fields['contrato'].queryset = Contrato.objects.filter(
                 coordenador__centros__in=user.centros.all()
             )
+        elif user and user.grupo in ['gerente_lider']:
+            self.fields['contrato'].queryset = Contrato.objects.filter(
+                Q(coordenador__centros__in=user.centros.all()) |
+                Q(lider_contrato=user)
+            ).distinct()
+        elif user and user.grupo in ['gerente_contrato', 'lider_contrato']:
+            self.fields['contrato'].queryset = Contrato.objects.all()
         else:
             self.fields['contrato'].queryset = Contrato.objects.none()
 
