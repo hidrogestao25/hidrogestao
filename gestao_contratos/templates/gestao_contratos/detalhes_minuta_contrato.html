@@ -7,8 +7,14 @@
     <!-- Dados gerais da solicitação -->
     <table class="table table-bordered">
         <tr>
-            <th>Contrato</th>
-            <td>{{ solicitacao.contrato }}</td>
+            {% if solicitacao.guarda_chuva %}
+              <th>Contrato</th>
+              <td>{{ contrato_doc.numero_contrato }}</td>
+
+            {% else %}
+              <th>Contrato</th>
+              <td>{{ solicitacao.contrato }}</td>
+            {% endif %}
         </tr>
         <tr>
             <th>Líder Técnico</th>
@@ -27,13 +33,15 @@
             <td>{% if solicitacao.previsto_no_orcamento %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}</td>
         </tr>
         <tr>
-            <th>Valor Provisionado</th>
-            <td>{{ solicitacao.valor_provisionado }}</td>
+            <th>Valor Total</th>
+            <td>{{ contrato_doc.valor_total }}</td>
         </tr>
-        <tr>
-            <th>Valor Vendido</th>
-            <td>{{ solicitacao.valor_vendido }}</td>
-        </tr>
+        {% if not solicitacao.guarda_chuva %}
+            <tr>
+                <th>Valor Vendido</th>
+                <td>{{ solicitacao.valor_vendido }}</td>
+            </tr>
+        {% endif %}
         <tr>
             <th>Data da Solicitação</th>
             <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>

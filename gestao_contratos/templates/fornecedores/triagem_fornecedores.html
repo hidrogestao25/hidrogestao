@@ -1,77 +1,149 @@
 {% extends 'base.html' %}
 {% load custom_tags %}
 {% block content %}
-<form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    <table class="table table-striped">
-        <thead>
-            <tr>
-                <th>Selecionar</th>
-                <th>Nome</th>
-                <th>Setor de Atuação</th>
-                <th>Indicadores</th>
-                <th>Proposta (R$)</th>
-                <th>Condição</th>
-                <th>Prazo de Validade</th>
-                <th>Arquivo PDF</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for f in fornecedores %}
-                {% with prop=propostas_dict|dict_get:f.id %}
-                <tr>
-                    <td>
-                        <input type="checkbox" name="fornecedores" value="{{ f.id }}"
-                            {% if f in fornecedores_selecionados %}checked{% endif %}>
-                    </td>
-                    <td>{{ f.nome }}</td>
-                    <td>{{ f.setor_de_atuacao }}</td>
-                    <td>
-                        {% with ind_list=fornecedores_indicadores|dict_get:f.id %}
-                            {% if ind_list %}
-                                <ul>
-                                    {% for ind in ind_list %}
-                                        <li>IQ: {{ ind.IQ|floatformat:2 }}%</li>
-                                        <li>IP: {{ ind.IP|floatformat:2 }}%</li>
-                                        <li>INC: {{ ind.INC|floatformat:2 }}%</li>
-                                        <li>IS: {{ ind.IS|floatformat:2 }}%</li>
+
+<div class="container mt-4">
+    <h3 class="mb-3">Triagem de Fornecedores e Propostas</h3>
+
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center">
+                            <input type="checkbox" id="selecionarTodos">
+                        </th>
+                        <th>Nome</th>
+                        <th>Setor</th>
+                        <th>Indicadores</th>
+                        <th class="text-end" style="min-width: 150px;">Proposta</th>
+                        <th>Condição</th>
+                        <th>Validade</th>
+                        <th>Arquivo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for f in fornecedores %}
+                        {% with prop=propostas_dict|dict_get:f.id %}
+                        <tr class="{% if f in fornecedores_selecionados %}table-success{% endif %}">
+
+                            <!-- Selecionar -->
+                            <td class="text-center">
+                                <input type="checkbox" class="checkFornecedor"
+                                       name="fornecedores" value="{{ f.id }}"
+                                       {% if f in fornecedores_selecionados %}checked{% endif %}>
+                            </td>
+
+                            <!-- Nome -->
+                            <td>
+                                <strong>{{ f.nome }}</strong>
+                            </td>
+
+                            <!-- Setor -->
+                            <td>{{ f.setor_de_atuacao }}</td>
+
+                            <!-- Indicadores -->
+                            <td>
+                                {% with ind_list=fornecedores_indicadores|dict_get:f.id %}
+                                    {% if ind_list %}
+                                        {% for ind in ind_list %}
+                                            <div class="d-flex flex-wrap gap-1">
+                                                <span class="badge bg-primary">IQ {{ ind.IQ|floatformat:2 }}%</span>
+                                                <span class="badge bg-success">IP {{ ind.IP|floatformat:2 }}%</span>
+                                                <span class="badge bg-warning text-dark">INC {{ ind.INC|floatformat:2 }}%</span>
+                                                <span class="badge bg-info text-dark">IS {{ ind.IS_gestao|floatformat:2 }}%</span>
+                                            </div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <span class="text-muted">Sem indicadores</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </td>
+
+                            <!-- Valor -->
+                            <td style="min-width: 150px;">
+                                <div class="input-group">
+                                    <span class="input-group-text">R$</span>
+                                    <input type="text" name="valor_{{ f.id }}"
+                                           class="form-control money text-end"
+                                           value="{% if prop %}{{ prop.valor_proposta|floatformat:2|cut:'.' }}{% endif %}">
+                                </div>
+                            </td>
+
+                            <!-- Condição -->
+                            <td>
+                                <select name="condicao_{{ f.id }}" class="form-select">
+                                    <option value="">Selecione...</option>
+                                    {% for value, label in condicoes_choices %}
+                                        <option value="{{ value }}"
+                                            {% if prop and prop.condicao_pagamento == value %}selected{% endif %}>
+                                            {{ label }}
+                                        </option>
                                     {% endfor %}
-                                </ul>
-                            {% else %}
-                                Nenhum indicador cadastrado
-                            {% endif %}
+                                </select>
+                            </td>
+
+                            <!-- Validade -->
+                            <td>
+                                <input type="date" name="prazo_{{ f.id }}"
+                                       class="form-control"
+                                       value="{% if prop and prop.prazo_validade %}{{ prop.prazo_validade|date:'Y-m-d' }}{% endif %}">
+                            </td>
+
+                            <!-- Arquivo -->
+                            <td>
+                                {% if prop and prop.arquivo_proposta %}
+                                    <a href="{{ prop.arquivo_proposta.url }}" target="_blank"
+                                       class="btn btn-sm btn-outline-secondary mb-1">
+                                       Ver PDF
+                                    </a>
+                                {% endif %}
+                                <input type="file" name="arquivo_{{ f.id }}"
+                                       class="form-control form-control-sm"
+                                       accept="application/pdf">
+                            </td>
+
+                        </tr>
                         {% endwith %}
-                    </td>
-                    <td>
-                        <input type="text" name="valor_{{ f.id }}" class="form-control"
-                               placeholder="R$" value="{% if prop %}{{ prop.valor_proposta }}{% endif %}">
-                    </td>
-                    <td>
-                      <select name="condicao_{{ f.id }}" class="form-select">
-                          <option value="">Selecione...</option>
-                          {% for value, label in condicoes_choices %}
-                              <option value="{{ value }}"
-                                  {% if prop and prop.condicao_pagamento == value %}selected{% endif %}>
-                                  {{ label }}
-                              </option>
-                          {% endfor %}
-                      </select>
-                    </td>
-                    <td>
-                        <input type="date" name="prazo_{{ f.id }}" class="form-control"
-                               value="{% if prop and prop.prazo_validade %}{{ prop.prazo_validade|date:'Y-m-d' }}{% endif %}">
-                    </td>
-                    <td>
-                        {% if prop and prop.arquivo_proposta %}
-                            <a href="{{ prop.arquivo_proposta.url }}" target="_blank">Ver PDF</a><br>
-                        {% endif %}
-                        <input type="file" name="arquivo_{{ f.id }}" accept="application/pdf">
-                    </td>
-                </tr>
-                {% endwith %}
-            {% endfor %}
-        </tbody>
-    </table>
-    <button type="submit" class="btn btn-primary">Salvar Triagem e Propostas</button>
-</form>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-3">
+            Salvar Triagem e Propostas
+        </button>
+    </form>
+</div>
+
+
+<!-- jQuery e máscara -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
+
+<script>
+    $(document).ready(function(){
+
+        // Máscara dinheiro
+        $('.money').mask('#.##0,00', {reverse: true});
+
+        // Selecionar todos
+        $('#selecionarTodos').click(function(){
+            $('.checkFornecedor').prop('checked', this.checked);
+        });
+
+        // Destacar linha quando selecionar
+        $('.checkFornecedor').change(function(){
+            if($(this).is(':checked')){
+                $(this).closest('tr').addClass('table-success');
+            } else {
+                $(this).closest('tr').removeClass('table-success');
+            }
+        });
+
+    });
+</script>
+
 {% endblock %}

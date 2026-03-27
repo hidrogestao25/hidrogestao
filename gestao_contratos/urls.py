@@ -89,6 +89,7 @@ urlpatterns = [
     path('ranking-fornecedores/', views.ranking_fornecedores, name='ranking_fornecedores'),
 
     #path('nova/', views.solicitar_os, name='solicitar_os'),
+    path('fornecedores/solicitar_guarda_chuva/', views.nova_solicitacao_guarda_chuva, name='nova_solicitacao_guarda_chuva'),
     path("solicitar-os/<int:contrato_id>/", views.solicitar_os, name="solicitar_os"),
     path('ordem-servico/<int:pk>/', views.detalhe_os, name='detalhe_ordem_servico'),
     path('ordem-servico/<int:pk>/editar/', views.editar_ordem_servico, name='editar_ordem_servico'),
