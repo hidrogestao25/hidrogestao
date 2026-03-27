@@ -5,6 +5,8 @@ from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.utils import timezone
 from django.conf import settings
 
+from datetime import date
+
 
 # --------------------
 # Usuários com grupos
@@ -171,7 +173,7 @@ class Contrato(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={"grupo": "lider_contrato"},
+        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato", "gerente_lider"]},
         related_name="contratos_liderados"
     )
     data_inicio = models.DateField(null=True, blank=True)
@@ -205,14 +207,14 @@ class SolicitacaoContrato(models.Model):
         (90, "90 dias"),
     ]
 
-    contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes_contratos')
+    contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes_contratos', blank=True, null=True)
     coordenador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
     lider_contrato = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato"]},
+        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato", "gerente_lider"]},
         related_name="solicitacoes_lideradas_contratos",
     )
     descricao = models.TextField(blank=True, null=True)
@@ -262,6 +264,8 @@ class SolicitacaoContrato(models.Model):
 
     status = models.CharField(max_length=100, default='Em análise')
 
+    solicitante = models.CharField(max_length=50, null=True, blank=True)
+
     def __str__(self):
         return f"Solicitação para {self.contrato}"
 
@@ -306,6 +310,9 @@ class SolicitacaoProspeccao(models.Model):
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     data_solicitacao = models.DateTimeField(auto_now_add=True)
     guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
+    justificativa_solicitacao = models.TextField(null=True, blank=True)
+    data_inicio = models.DateField(null=True, blank=True)
+    data_fim = models.DateField(null=True, blank=True)
     cronograma = models.FileField(
         upload_to='cronograma/',
         verbose_name='Inserir cronograma',
@@ -349,6 +356,7 @@ class SolicitacaoProspeccao(models.Model):
     solicitacao_origem = models.ForeignKey(
         "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="revisoes"
     )
+    solicitante = models.CharField(max_length=50, null=True, blank=True)
 
     def __str__(self):
         return f"Solicitação para {self.contrato}"
@@ -404,7 +412,7 @@ class ContratoTerceiros(models.Model):
         ('encerrado', 'Encerrado'),
     ]
 
-    cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE)
+    cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE, null=True, blank=True)
     num_contrato = models.CharField(max_length=30, null=True, blank=True)
     prospeccao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.SET_NULL, null=True, blank=True)
     solicitacao = models.OneToOneField(SolicitacaoContrato, on_delete=models.SET_NULL, null=True, blank=True)
@@ -419,7 +427,7 @@ class ContratoTerceiros(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={"grupo": "lider_contrato"},
+        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato", "gerente_lider"]},
         related_name="contratos_liderados_terceiros"
     )
     guarda_chuva = models.BooleanField(default=False, null=True, blank=True)
@@ -436,6 +444,12 @@ class ContratoTerceiros(models.Model):
         verbose_name='Inserir arquivo do contrato com fornecedor',
         null=True, blank=True
     )
+
+    @property
+    def dias_para_vencer(self):
+        if self.data_fim:
+            return (self.data_fim - date.today()).days
+        return None
 
     def __str__(self):
         return f"{self.cod_projeto} - {self.empresa_terceira}"
@@ -554,6 +568,11 @@ class SolicitacaoOrdemServico(models.Model):
         limit_choices_to={"grupo__in": ["lider_contrato", "gerente_lider", "gerente_contrato"]},
         related_name="ordens_liderados_terceiros"
     )
+    coordenador = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="os_coordenados",
+    )
     titulo = models.CharField(max_length=200)
     descricao = models.TextField()
     valor_previsto = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -607,7 +626,7 @@ class OS(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={"grupo": "lider_contrato"},
+        limit_choices_to={"grupo__in": ["lider_contrato", "gerente_contrato", "gerente_lider"]},
         related_name="ordens"
     )
     titulo = models.CharField(max_length=200)
@@ -632,6 +651,11 @@ class OS(models.Model):
     data_pagamento = models.DateField(null=True, blank=True)
     observacao = models.TextField(null=True, blank=True)
 
+    @property
+    def dias_atraso(self):
+        if self.prazo_execucao and self.prazo_execucao < date.today():
+            return (date.today() - self.prazo_execucao).days
+        return 0
     def __str__(self):
         return f"OS {self.id} - {self.titulo} - {self.contrato.empresa_terceira}"
 
@@ -667,6 +691,24 @@ class Evento(models.Model):
     data_pagamento = models.DateField(null=True, blank=True)
     observacao = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def dias_atraso(self):
+        if self.data_prevista and not self.data_entrega:
+            return (date.today() - self.data_prevista).days
+        return 0
+
+    @property
+    def dias_para_entrega(self):
+        if self.data_prevista:
+            return (self.data_prevista - date.today()).days
+        return None
+
+    @property
+    def dias_sem_avaliacao(self):
+        if self.data_entrega:
+            return (date.today() - self.data_entrega).days
+        return 0
 
     def __str__(self):
         try:

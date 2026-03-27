@@ -15,11 +15,11 @@
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Contrato</th>
+                    <th>Projeto</th>
                     <th>Descrição</th>
                     <th>Data</th>
                     <th>Previsto no Orçamento</th>
-                    <th>Valor Provisionado</th>
+                    <th>Valor Disponível</th>
                     <th>Status</th>
                     <th>Aprovação do Fornecedor - Gerência</th>
                     <th>Aprovação do Fornecedor - Diretoria</th>
@@ -42,7 +42,13 @@
                                 <i class="bi bi-x-lg text-danger fs-4"></i>
                             {% endif %}
                         </td>
-                        <td>R$ {{ solicitacao.valor_provisionado|floatformat:2 }}</td>
+                        <td>
+                          {% if solicitacao.valor_disponivel %}
+                            R$ {{ solicitacao.valor_disponivel|floatformat:2 }}
+                          {% else %}
+                            Não informado
+                          {% endif %}
+                          </td>
                         <td>
                             {% if solicitacao.nenhum_fornecedor_ideal %}
                                 Nenhum fornecedor é ideal
@@ -158,7 +164,7 @@
                                 {% endif %}
                             {% endif %}
 
-                            {% if request.user.grupo == 'lider_contrato' %}
+                            {% if request.user.grupo in 'lider_contrato gerente_lider' %}
                               {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user %}
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                               {% endif %}
@@ -208,7 +214,7 @@
           <thead>
               <tr>
                   <th>ID</th>
-                  <th>Contrato</th>
+                  <th>Projeto</th>
                   <th>Descrição</th>
                   <th>Data</th>
                   <th>Previsto no Orçamento</th>
@@ -226,7 +232,13 @@
                   onclick="window.location='{% url 'detalhes_solicitacao_contrato' solicitacao.id %}'">
 
                   <td>#{{ solicitacao.id }}</td>
-                  <td>{{ solicitacao.contrato }}</td>
+                  <td>
+                    {% if solicitacao.contrato %}
+                        {{ solicitacao.contrato }}
+                    {% elif solicitacao.guarda_chuva %}
+                        Guarda-chuva
+                    {% endif %}
+                  </td>
                   <td>{{ solicitacao.descricao|truncatechars:60 }}</td>
                   <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>
 
@@ -239,7 +251,11 @@
                   </td>
 
                   <td>
-                      R$ {{ solicitacao.valor_provisionado|floatformat:2 }}
+                    {% if solicitacao.valor_previsto %}
+                        R$ {{ solicitacao.valor_previsto|floatformat:2 }}
+                    {% else %}
+                        —
+                    {% endif %}
                   </td>
 
                   <td>
@@ -408,7 +424,7 @@
         <thead class="table-light">
             <tr>
                 <th>ID</th>
-                <th>Contrato</th>
+                <th>Projeto</th>
                 <th>Título</th>
                 {% if request.user.grupo != "coordenador" %}
                   <th>Solicitante</th>

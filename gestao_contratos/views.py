@@ -4,7 +4,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
-from django.db.models import Sum, Q, DecimalField, Avg, Prefetch
+from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count
 from decimal import Decimal
 from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
@@ -12,7 +12,7 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm, SolicitacaoGuardaChuvaForm
 
 import plotly.graph_objs as go
 import plotly.express as px
@@ -130,6 +130,7 @@ def home(request):
     user = request.user
     hoje = timezone.now().date()
     limite = hoje + timedelta(days=10)
+    limite_contrato = hoje + timedelta(days=30)
 
     grupo = getattr(user, "grupo", None)
     is_suprimento = grupo == "suprimento"
@@ -154,45 +155,120 @@ def home(request):
 
     # ==================== SUPRIMENTO ====================
     if is_suprimento:
-        solicitacoes_pendentes = SolicitacaoProspeccao.objects.filter(
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
             Q(aprovado__isnull=True)
             | (Q(aprovado=True) & Q(triagem_realizada=False))
             | (Q(aprovado=True) & Q(triagem_realizada=True) & Q(fornecedor_escolhido__isnull=True))
             | (Q(aprovacao_fornecedor_gerente="aprovado") & Q(aprovacao_gerencia=False))
             | Q(status__in=["Fornecedor aprovado", "Planejamento do Contrato"])
         ).exclude(status__in=["Onboarding"]).distinct()
+
         solicitacoes_contratos = SolicitacaoContrato.objects.filter(
             Q(aprovacao_fornecedor_gerente="aprovado")
             | Q(aprovacao_fornecedor_diretor="aprovado")
             | Q(status__in=["Planejamento do Contrato"])
         ).exclude(status__in=["Onboarding"]).distinct()
+
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             Q(aprovacao_lider="aprovado")
             #| Q(aprovacao_diretor="aprovado")
             | Q(status__in=["pendente_suprimento"])
         ).distinct()
 
+        bms_pendentes = BM.objects.filter(
+            Q(status_coordenador="pendente") |
+            Q(status_gerente="pendente") |
+            Q(aprovacao_pagamento="pendente")
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira"
+        ).order_by("-data_pagamento").distinct()
+
         eventos_proximos = Evento.objects.filter(
-            data_prevista__range=[hoje, limite]
+            data_prevista__gte=hoje,
+            data_prevista__lte=limite,
+            data_entrega__isnull=True,
+            contrato_terceiro__isnull=False
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
         ).order_by("data_prevista")
 
         # Entregas atrasadas (todas)
         entregas_atrasadas = Evento.objects.filter(
-            Q(realizado=False) & Q(data_prevista__lt=hoje)
+            data_prevista__lt=hoje,
+            data_entrega__isnull=True,
+            contrato_terceiro__isnull=False
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
         ).order_by("data_prevista")
+
+        eventos_para_avaliar = Evento.objects.filter(
+            data_entrega__isnull=False,
+            contrato_terceiro__isnull=False
+        ).annotate(
+            total_avaliacoes=Count("avaliacoes")
+        ).filter(
+            total_avaliacoes=0
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
+        ).order_by("data_entrega")
+
+        contratos_vencendo = ContratoTerceiros.objects.filter(
+            data_fim__gte=hoje,
+            data_fim__lte=limite_contrato,
+            status='ativo'
+        ).select_related(
+            "empresa_terceira"
+        ).order_by("data_fim")
+
+        os_em_aberto = OS.objects.filter(
+            status__in=["em_execucao", "paralizada"]
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira"
+        ).order_by("prazo_execucao")
 
         context.update({
             "painel_titulo": "Painel de Suprimentos",
-            "solicitacoes_pendentes": solicitacoes_pendentes,
+            "solicitacoes_prospeccao": solicitacoes_prospeccao,
+            "solicitacoes_contrato": solicitacoes_contratos,
+            "solicitacoes_os": solicitacoes_os,
             "eventos_proximos": eventos_proximos,
+            "eventos_para_avaliar": eventos_para_avaliar,
             "entregas_atrasadas": entregas_atrasadas,
+            "is_suprimento": user.grupo == 'suprimento',
+            "bms_pendentes": bms_pendentes,
+            "contratos_vencendo":contratos_vencendo,
+            "os_em_aberto": os_em_aberto,
+            "today": hoje
         })
 
     # ==================== COORDENADOR ====================
     elif is_coordenador:
-        solicitacoes_pendentes = SolicitacaoProspeccao.objects.filter(
-            Q(coordenador=user)
-        ).distinct()
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+            coordenador=user
+        ).exclude(status__in=["Onboarding"]).distinct()
+
+        solicitacoes_contrato = SolicitacaoContrato.objects.filter(
+            coordenador=user
+        ).exclude(status__in=["Onboarding"]).distinct()
+
+        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+            coordenador=user
+        ).exclude(status__in=["finalizada","reprovada"]).distinct()
+
+        eventos_atrasados = Evento.objects.filter(
+            contrato_terceiro__coordenador=user,
+            data_prevista__lt=hoje,
+            realizado=False,
+            contrato_terceiro__isnull=False,
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
+        ).order_by("data_prevista")
 
         bms_pendentes = BM.objects.filter(
             contrato__coordenador=user,
@@ -201,77 +277,116 @@ def home(request):
 
         eventos_proximos = Evento.objects.filter(
             data_prevista__range=[hoje, limite],
+            realizado=False,
             contrato_terceiro__coordenador=user
         ).order_by("data_prevista")
 
-        # Entregas atrasadas do coordenador
-        entregas_atrasadas = Evento.objects.filter(
-            Q(contrato_terceiro__coordenador=user)
-            & Q(realizado=False)
-            & Q(data_prevista__lt=hoje)
-        ).order_by("data_prevista")
+        eventos_para_avaliar = Evento.objects.filter(
+            contrato_terceiro__coordenador=user,
+            realizado=True,
+            avaliacoes__isnull=True
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
+        ).order_by("data_entrega")
 
-        eventos_para_avaliar = (
-            Evento.objects.filter(
-                Q(contrato_terceiro__coordenador=user)
-                & Q(realizado=True)
-                & Q(avaliacoes__isnull=True)
-            ).order_by("data_entrega")
-        )
+        contratos_vencendo = ContratoTerceiros.objects.filter(
+            coordenador=user,
+            data_fim__gte=hoje,
+            data_fim__lte=limite_contrato,
+            status='ativo'
+        ).select_related(
+            "empresa_terceira"
+        ).order_by("data_fim")
+
+        os_em_aberto = OS.objects.filter(
+            status__in=["em_execucao", "paralizada"],
+            coordenador=user
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira"
+        ).order_by("prazo_execucao")
 
         context.update({
             "painel_titulo": "Painel do Coordenador",
-            "solicitacoes_pendentes": solicitacoes_pendentes,
+            "solicitacoes_prospeccao": solicitacoes_prospeccao,
+            "solicitacoes_contrato": solicitacoes_contrato,
+            "solicitacoes_os": solicitacoes_os,
             "bms_pendentes": bms_pendentes,
             "eventos_proximos": eventos_proximos,
-            "entregas_atrasadas": entregas_atrasadas,
+            "eventos_atrasados": eventos_atrasados,
             "eventos_para_avaliar":eventos_para_avaliar,
+            "contratos_vencendo": contratos_vencendo,
+            "today": hoje,
         })
 
 
     # ==================== LIDER DE CONTRATO ==========
 
     elif is_lider:
-        solicitacoes_pendentes = SolicitacaoProspeccao.objects.filter(
-            Q(lider_contrato=user)
-            & (Q(triagem_realizada=True, status="Triagem realizada") |
-               Q(minuta_boletins_medicao__status_coordenador="pendente") |
-               Q(status="Solicitação de prospecção")
-               )
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+            lider_contrato=user
+        ).filter(
+            Q(status="Solicitação de prospecção") |
+            Q(triagem_realizada=True, status="Triagem realizada")
+        ).distinct()
+        solicitacoes_contrato = SolicitacaoContrato.objects.filter(
+            lider_contrato=user,
+            status="Solicitação de contratação"
+        ).distinct()
+        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+            lider_contrato=user,
+            status="pendente_lider"
         ).distinct()
 
-        bms_pendentes = BM.objects.filter(
-            contrato__coordenador=user,
-            #status_coordenador="pendente"
-        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
-
         eventos_proximos = Evento.objects.filter(
-            data_prevista__range=[hoje, limite],
+            data_prevista__gte=hoje,
+            data_prevista__lte=limite,
+            data_entrega__isnull=True,
+            contrato_terceiro__isnull=False,
             contrato_terceiro__lider_contrato=user
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
         ).order_by("data_prevista")
 
-        # Entregas atrasadas do coordenador
+        # Entregas atrasadas
         entregas_atrasadas = Evento.objects.filter(
-            Q(contrato_terceiro__lider_contrato=user)
-            & Q(realizado=False)
-            & Q(data_prevista__lt=hoje)
+            data_prevista__lt=hoje,
+            data_entrega__isnull=True,
+            contrato_terceiro__isnull=False,
+            contrato_terceiro__lider_contrato=user
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
         ).order_by("data_prevista")
 
-        eventos_para_avaliar = (
-            Evento.objects.filter(
-                Q(contrato_terceiro__lider_contrato=user)
-                & Q(realizado=True)
-                & Q(avaliacoes__isnull=True)
-            ).order_by("data_entrega")
-        )
+        contratos_vencendo = ContratoTerceiros.objects.filter(
+            data_fim__gte=hoje,
+            data_fim__lte=limite_contrato,
+            status='ativo',
+            lider_contrato=user
+        ).select_related(
+            "empresa_terceira"
+        ).order_by("data_fim")
+
+        os_em_aberto = OS.objects.filter(
+            status__in=["em_execucao", "paralizada"],
+            lider_contrato=user
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira"
+        ).order_by("prazo_execucao")
 
         context.update({
             "painel_titulo": "Painel do Lider de Contratos",
-            "solicitacoes_pendentes": solicitacoes_pendentes,
-            "bms_pendentes": bms_pendentes,
+            "solicitacoes_prospeccao": solicitacoes_prospeccao,
+            "solicitacoes_contrato": solicitacoes_contrato,
+            "solicitacoes_os": solicitacoes_os,
             "eventos_proximos": eventos_proximos,
             "entregas_atrasadas": entregas_atrasadas,
-            "eventos_para_avaliar":eventos_para_avaliar,
+            "contratos_vencendo": contratos_vencendo,
+            "is_lider": is_lider,
         })
 
     # ==================== GERENTE ====================
@@ -279,52 +394,78 @@ def home(request):
         centros_gerente = getattr(user, "centros", None)
         centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []
 
-        solicitacoes = SolicitacaoProspeccao.objects.filter(
-            coordenador__centros__in=centros_ids).select_related("fornecedor_escolhido", "coordenador"
-            ).exclude(status__in=["Onboarding"]).distinct()
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+            coordenador__centros__in=centros_ids
+        ).exclude(status__in=["Onboarding"]).distinct()
 
+        solicitacoes_contratos = SolicitacaoContrato.objects.filter(
+            coordenador__centros__in=centros_ids
+        ).exclude(status__in=["Onboarding"]).distinct()
 
-        lista_solicitacoes = []
-        for s in solicitacoes:
-            proposta_escolhida = PropostaFornecedor.objects.filter(
-                solicitacao=s, fornecedor=s.fornecedor_escolhido
-            ).first()
-            contrato = DocumentoContratoTerceiro.objects.filter(solicitacao=s).first()
-
-            pendente_fornecedor = s.fornecedor_escolhido and s.aprovacao_fornecedor_gerente == "pendente"
-            pendente_contrato = contrato and not getattr(contrato, "aprovacao_gerencia", False)
-
-            if pendente_fornecedor or pendente_contrato:
-                lista_solicitacoes.append({
-                    "solicitacoes_pendentes": s,
-                    "fornecedor": s.fornecedor_escolhido,
-                    "proposta": proposta_escolhida,
-                    "contrato": contrato,
-                })
+        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+            coordenador__centros__in=centros_ids
+        ).exclude(status__in=["finalizada","reprovada"]).distinct()
 
         bms_pendentes = BM.objects.filter(
             contrato__coordenador__centros__in=centros_ids,
-            status_gerente="pendente"
-        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento").distinct()
+            status_coordenador="pendente"
+        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
 
         eventos_proximos = Evento.objects.filter(
             data_prevista__range=[hoje, limite],
+            realizado=False,
             contrato_terceiro__coordenador__centros__in=centros_ids
         ).order_by("data_prevista").distinct()
 
-        # Entregas atrasadas dos centros do gerente
-        entregas_atrasadas = Evento.objects.filter(
+        eventos_para_avaliar = Evento.objects.filter(
             contrato_terceiro__coordenador__centros__in=centros_ids,
+            realizado=True,
+            avaliacoes__isnull=True
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
+        ).order_by("data_entrega")
+
+        os_em_aberto = OS.objects.filter(
+            status__in=["em_execucao", "paralizada"],
+            coordenador__centros__in=centros_ids
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira"
+        ).order_by("prazo_execucao")
+
+        contratos_vencendo = ContratoTerceiros.objects.filter(
+            coordenador__centros__in=centros_ids,
+            data_fim__gte=hoje,
+            data_fim__lte=limite_contrato,
+            status='ativo'
+        ).select_related(
+            "empresa_terceira"
+        ).order_by("data_fim")
+
+        # Entregas atrasadas dos centros do gerente
+        eventos_atrasados = Evento.objects.filter(
+            contrato_terceiro__coordenador__centros__in=centros_ids,
+            data_prevista__lt=hoje,
             realizado=False,
-            data_prevista__lt=hoje
+            contrato_terceiro__isnull=False,
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
         ).order_by("data_prevista").distinct()
 
         context.update({
             "painel_titulo": "Painel da Gerência",
-            "solicitacoes_pendentes": lista_solicitacoes,
+            "solicitacoes_prospeccao": solicitacoes_prospeccao,
+            "solicitacoes_contrato": solicitacoes_contratos,
+            "solicitacoes_os": solicitacoes_os,
             "bms_pendentes": bms_pendentes,
             "eventos_proximos": eventos_proximos,
-            "entregas_atrasadas": entregas_atrasadas,
+            "eventos_atrasados": eventos_atrasados,
+            "eventos_proximos": eventos_proximos,
+            "eventos_para_avaliar": eventos_para_avaliar,
+            "contratos_vencendo":contratos_vencendo,
+            "os_em_aberto": os_em_aberto
         })
 
     # ==================== GERENTE TÉCNICO E LIDER DE CONTRATO ====================
@@ -332,51 +473,77 @@ def home(request):
         centros_gerente = getattr(user, "centros", None)
         centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []
 
-        solicitacoes = SolicitacaoProspeccao.objects.filter(
-            coordenador__centros__in=centros_ids).select_related("fornecedor_escolhido", "coordenador"
-            ).exclude(status__in=["Onboarding"]).distinct()
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+            coordenador__centros__in=centros_ids
+        ).exclude(status__in=["Onboarding"]).distinct()
 
-        lista_solicitacoes = []
-        for s in solicitacoes:
-            proposta_escolhida = PropostaFornecedor.objects.filter(
-                solicitacao=s, fornecedor=s.fornecedor_escolhido
-            ).first()
-            contrato = DocumentoContratoTerceiro.objects.filter(solicitacao=s).first()
+        solicitacoes_contratos = SolicitacaoContrato.objects.filter(
+            coordenador__centros__in=centros_ids
+        ).exclude(status__in=["Onboarding"]).distinct()
 
-            pendente_fornecedor = s.fornecedor_escolhido and s.aprovacao_fornecedor_gerente == "pendente"
-            pendente_contrato = contrato and not getattr(contrato, "aprovacao_gerencia", False)
-
-            if pendente_fornecedor or pendente_contrato:
-                lista_solicitacoes.append({
-                    "solicitacoes_pendentes": s,
-                    "fornecedor": s.fornecedor_escolhido,
-                    "proposta": proposta_escolhida,
-                    "contrato": contrato,
-                })
+        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+            coordenador__centros__in=centros_ids
+        ).exclude(status__in=["finalizada","reprovada"]).distinct()
 
         bms_pendentes = BM.objects.filter(
             contrato__coordenador__centros__in=centros_ids,
             status_gerente="pendente"
-        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento").distinct()
+        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
 
         eventos_proximos = Evento.objects.filter(
             data_prevista__range=[hoje, limite],
+            realizado=False,
             contrato_terceiro__coordenador__centros__in=centros_ids
         ).order_by("data_prevista").distinct()
 
-        # Entregas atrasadas dos centros do gerente
-        entregas_atrasadas = Evento.objects.filter(
+        eventos_para_avaliar = Evento.objects.filter(
             contrato_terceiro__coordenador__centros__in=centros_ids,
+            realizado=True,
+            avaliacoes__isnull=True
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
+        ).order_by("data_entrega")
+
+        os_em_aberto = OS.objects.filter(
+            status__in=["em_execucao", "paralizada"],
+            coordenador__centros__in=centros_ids
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira"
+        ).order_by("prazo_execucao")
+
+        contratos_vencendo = ContratoTerceiros.objects.filter(
+            coordenador__centros__in=centros_ids,
+            data_fim__gte=hoje,
+            data_fim__lte=limite_contrato,
+            status='ativo'
+        ).select_related(
+            "empresa_terceira"
+        ).order_by("data_fim")
+
+        # Entregas atrasadas dos centros do gerente
+        eventos_atrasados = Evento.objects.filter(
+            contrato_terceiro__coordenador__centros__in=centros_ids,
+            data_prevista__lt=hoje,
             realizado=False,
-            data_prevista__lt=hoje
+            contrato_terceiro__isnull=False,
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
         ).order_by("data_prevista").distinct()
 
         context.update({
             "painel_titulo": "Painel da Gerência",
-            "solicitacoes_pendentes": lista_solicitacoes,
+            "solicitacoes_prospeccao": solicitacoes_prospeccao,
+            "solicitacoes_contrato": solicitacoes_contratos,
+            "solicitacoes_os": solicitacoes_os,
             "bms_pendentes": bms_pendentes,
             "eventos_proximos": eventos_proximos,
-            "entregas_atrasadas": entregas_atrasadas,
+            "eventos_atrasados":eventos_atrasados,
+            "eventos_para_avaliar":eventos_para_avaliar,
+            "contratos_vencendo": contratos_vencendo,
+            "os_em_aberto": os_em_aberto,
         })
 
     #===================== GERENTE DE CONTRATO ==========
@@ -385,7 +552,7 @@ def home(request):
         centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []"""
 
         solicitacoes = (
-            SolicitacaoProspeccao.objects.filter(lider_contrato__grupo__in=["lider_contrato", "gerente_contrato"])
+            SolicitacaoProspeccao.objects.filter(lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"])
             .select_related("fornecedor_escolhido", "lider_contrato")
             .exclude(status__in=["Onboarding"]).distinct()
         )
@@ -589,7 +756,7 @@ def lista_contratos_fornecedor(request):
         )
     elif request.user.grupo == 'gerente_contrato':
         contratos = ContratoTerceiros.objects.filter(
-            lider_contrato__grupo__in=['lider_contrato','gerente_contrato']
+            lider_contrato__grupo__in=['lider_contrato','gerente_contrato', 'gerente_lider']
         )
     else:
         messages.error(request, "Você não tem permissão para isso!")
@@ -739,6 +906,29 @@ def cadastrar_fornecedor(request):
         form = FornecedorForm(request.POST)
         if form.is_valid():
             fornecedor = form.save()
+
+            suprimentos = User.objects.filter(grupo="suprimento", is_active=True).values_list("email", flat=True)
+
+            if suprimentos:
+                assunto = "Novo fornecedor cadastrado"
+                mensagem = (
+                    f"Um novo fornecedor foi cadastrado no sistema.\n\n"
+                    f"Fornecedor: {fornecedor.nome}\n"
+                    f"CNPJ/CPF: {fornecedor.cpf_cnpj}\n"
+                    f"Cadastrado por: {request.user.get_full_name() or request.user.username}\n"
+                    "Acesse o sistema HIDROGestão e complete o cadastro.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                )
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao25@gmail.com",
+                        list(suprimentos),
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+
             return JsonResponse({
                 "id": fornecedor.id,
                 "nome": fornecedor.nome
@@ -1072,40 +1262,76 @@ def contrato_fornecedor_detalhe(request, pk):
         fig = go.Figure(data=[trace_previsto, trace_pago], layout=layout)
         plot_div = plot(fig, auto_open=False, output_type="div")
 
-    #  --- GRÁFICO DE COMPARAÇÃO GERAL ---
-    contrato_cliente = contrato.cod_projeto  # contrato com o cliente
-    valor_cliente = contrato_cliente.valor_total or 0
+    # --- GRÁFICO DE COMPARAÇÃO ---
+    if contrato.guarda_chuva:
+        valor_total_contrato = contrato.valor_total or 0
 
-    total_previsto = eventos.aggregate(Sum("valor_previsto"))["valor_previsto__sum"] or 0
-    total_pago = eventos.aggregate(Sum("valor_pago"))["valor_pago__sum"] or 0
+        total_os = OS.objects.filter(
+            contrato=contrato
+        ).aggregate(Sum("valor_pago"))["valor_pago__sum"] or 0
 
-    # Percentuais
-    perc_previsto = (total_previsto / valor_cliente * 100) if valor_cliente else 0
-    perc_pago = (total_pago / valor_cliente * 100) if valor_cliente else 0
+        saldo_contrato = valor_total_contrato - total_os
 
-    fig_comp = go.Figure()
+        fig_comp = go.Figure()
 
-    fig_comp.add_trace(go.Bar(
-        x=["Valor Contrato Cliente", "Valor Previsto Fornecedor", "Valor Pago Fornecedor"],
-        y=[valor_cliente, total_previsto, total_pago],
-        text=[
-            f"R$ {valor_cliente:,.2f}<br>100%",
-            f"R$ {total_previsto:,.2f}<br>{perc_previsto:.1f}%",
-            f"R$ {total_pago:,.2f}<br>{perc_pago:.1f}%"
-        ],
-        textposition="auto",
-        marker_color=["#007bff", "#ffc107", "#28a745"]
-    ))
+        fig_comp.add_trace(go.Bar(
+            x=["Valor Total Contrato", "Total Pago em OS", "Saldo Disponível"],
+            y=[valor_total_contrato, total_os, saldo_contrato],
+            text=[
+                f"R$ {valor_total_contrato:,.2f}",
+                f"R$ {total_os:,.2f}",
+                f"R$ {saldo_contrato:,.2f}",
+            ],
+            textposition="auto",
+            marker_color=["#007bff", "#ffc107", "#28a745"]
+        ))
 
-    fig_comp.update_layout(
-        title="Comparativo Financeiro: Cliente × Fornecedor",
-        yaxis_title="Valor (R$)",
-        xaxis_title="Categoria",
-        template="plotly_white",
-        height=450
-    )
+        fig_comp.update_layout(
+            title="Controle Financeiro do Contrato Guarda-Chuva",
+            yaxis_title="Valor (R$)",
+            xaxis_title="Categoria",
+            template="plotly_white",
+            height=450
+        )
+
+    else:
+        # GRÁFICO ANTIGO
+        if contrato.cod_projeto:
+            contrato_cliente = contrato.cod_projeto
+            valor_cliente = contrato_cliente.valor_total or 0
+        else:
+            valor_cliente = 0
+
+        total_previsto = eventos.aggregate(Sum("valor_previsto"))["valor_previsto__sum"] or 0
+        total_pago = eventos.aggregate(Sum("valor_pago"))["valor_pago__sum"] or 0
+
+        perc_previsto = (total_previsto / valor_cliente * 100) if valor_cliente else 0
+        perc_pago = (total_pago / valor_cliente * 100) if valor_cliente else 0
+
+        fig_comp = go.Figure()
+
+        fig_comp.add_trace(go.Bar(
+            x=["Valor Contrato Cliente", "Valor Previsto Fornecedor", "Valor Pago Fornecedor"],
+            y=[valor_cliente, total_previsto, total_pago],
+            text=[
+                f"R$ {valor_cliente:,.2f}<br>100%",
+                f"R$ {total_previsto:,.2f}<br>{perc_previsto:.1f}%",
+                f"R$ {total_pago:,.2f}<br>{perc_pago:.1f}%"
+            ],
+            textposition="auto",
+            marker_color=["#007bff", "#ffc107", "#28a745"]
+        ))
+
+        fig_comp.update_layout(
+            title="Comparativo Financeiro: Cliente × Fornecedor",
+            yaxis_title="Valor (R$)",
+            xaxis_title="Categoria",
+            template="plotly_white",
+            height=450
+        )
 
     comparativo_div = plot(fig_comp, auto_open=False, output_type="div")
+
 
     return render(
         request,
@@ -1255,6 +1481,11 @@ def nova_solicitacao_contrato(request):
                 solicitacao = form.save(commit=False)
                 solicitacao.lider_contrato = request.user
                 solicitacao.status = "Solicitação de contratação"
+                nome = request.user.get_full_name()
+                if not nome:
+                    nome = request.user.username
+
+                solicitacao.solicitante = nome
                 solicitacao.save()
 
                 suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
@@ -1477,7 +1708,6 @@ def aprovar_solicitacao_contrato(request, pk):
     return redirect('home')
 
 
-
 @login_required
 def nova_solicitacao_prospeccao(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
@@ -1488,6 +1718,11 @@ def nova_solicitacao_prospeccao(request):
                 solicitacao = form.save(commit=False)
                 solicitacao.lider_contrato = request.user
                 solicitacao.status = "Solicitação de prospecção"
+                nome = request.user.get_full_name()
+                if not nome:
+                    nome = request.user.username
+
+                solicitacao.solicitante = nome
                 solicitacao.save()
 
                 suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
@@ -1499,7 +1734,7 @@ def nova_solicitacao_prospeccao(request):
                         f"solicitou uma prospecção.\n\n"
                         f"Detalhes da solicitação:\n"
                         f"- ID: {solicitacao.id}\n"
-                        f"- Valor Provisionado: {solicitacao.valor_provisionado}\n"
+                        f"- Valor Disponível: {solicitacao.valor_disponivel}\n"
                         f"- Descrição: {solicitacao.descricao}\n\n"
                         "Acesse o sistema HIDROGestão para mais informações.\n"
                         "https://hidrogestao.pythonanywhere.com/"
@@ -1536,6 +1771,69 @@ def nova_solicitacao_prospeccao(request):
 
 
 @login_required
+def nova_solicitacao_guarda_chuva(request):
+    if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
+        clientes = Cliente.objects.all().order_by('nome')
+        if request.method == 'POST':
+            form = SolicitacaoGuardaChuvaForm(request.POST, user=request.user)
+            if form.is_valid():
+                solicitacao = form.save(commit=False)
+                solicitacao.lider_contrato = request.user
+                solicitacao.status = "Solicitação de contratação"
+                solicitacao.guarda_chuva = True
+                nome = request.user.get_full_name()
+                if not nome:
+                    nome = request.user.username
+
+                solicitacao.solicitante = nome
+                solicitacao.save()
+
+                suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
+
+                if suprimentos:
+                    assunto = "Nova Solicitação de contratação guarda-chuva"
+                    mensagem = (
+                        f"O usuário {request.user.get_full_name() or request.user.username} "
+                        f"solicitou uma contratação do tipo guarda-chuva.\n\n"
+                        f"Detalhes da solicitação:\n"
+                        f"- ID: {solicitacao.id}\n"
+                        f"- Valor Disponível: {solicitacao.valor_disponivel}\n"
+                        f"- Descrição: {solicitacao.descricao}\n\n"
+                        "Acesse o sistema HIDROGestão para mais informações.\n"
+                        "https://hidrogestao.pythonanywhere.com/"
+                    )
+                    try:
+                        send_mail(
+                            assunto, mensagem,
+                            "hidro.gestao25@gmail.com",
+                            list(suprimentos),
+                            fail_silently=False,
+                        )
+                    except Exception as e:
+                        messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+                    try:
+                        send_mail(
+                            assunto, mensagem,
+                            "hidro.gestao25@gmail.com",
+                            list(solicitacao.lider_contrato.email),
+                            fail_silently=False,
+                        )
+                    except Exception as e:
+                        messages.warning(request, f"Erro ao enviar e-mail para o líder de contrato: {e}")
+                messages.success(request, "Solicitação de contratação criada com sucesso!")
+                return redirect('lista_solicitacoes')
+            else:
+                messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
+        else:
+            form = SolicitacaoGuardaChuvaForm(user=request.user)
+        return render(request, 'fornecedores/nova_solicitacao_guarda_chuva.html', {'form':form, 'clientes':clientes})
+
+    else:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+
+@login_required
 def add_contrato(request):
     if request.method == "POST":
         form = ContratoModalForm(request.POST)
@@ -1544,6 +1842,29 @@ def add_contrato(request):
             contrato.status = 'ativo'
             contrato.lider_contrato = request.user
             contrato.save()
+
+            suprimentos = User.objects.filter(grupo="suprimento", is_active=True).values_list("email", flat=True)
+
+            if suprimentos:
+                assunto = "Novo contrato cadastrado"
+                mensagem = (
+                    f"Um novo contrato foi cadastrado no sistema.\n\n"
+                    f"Contrato: {contrato.cod_projeto}\n"
+                    f"Cliente: {contrato.cliente}\n"
+                    f"Objeto: {contrato.objeto}\n"
+                    f"Cadastrado por: {request.user.get_full_name() or request.user.username}\n"
+                    "Acesse o sistema HIDROGestão e complete o cadastro.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                )
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        "hidro.gestao25@gmail.com",
+                        list(suprimentos),
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
 
             return JsonResponse({
                 "id": contrato.id,
@@ -1926,10 +2247,10 @@ def lista_solicitacoes(request):
         os = OS.objects.filter(coordenador__centros__in=centros_do_gerente).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
     elif request.user.grupo == 'gerente_contrato':
         solicitacoes = SolicitacaoProspeccao.objects.filter(
-            lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato']
+            lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']
         ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
-        solicitacoes_c = SolicitacaoContrato.objects.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato']).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = OS.objects.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato']).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
+        solicitacoes_c = SolicitacaoContrato.objects.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
+        os = OS.objects.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
     else:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
@@ -2079,8 +2400,14 @@ def triagem_fornecedores(request, pk):
                     )
                     if valor:
                         try:
-                            proposta_obj.valor_proposta = float(valor.replace(",", "."))
-                        except ValueError:
+                            valor_formatado = (
+                                valor.replace('R$', '')
+                                     .replace('.', '')
+                                     .replace(',', '.')
+                                     .strip()
+                            )
+                            proposta_obj.valor_proposta = Decimal(valor_formatado)
+                        except:
                             messages.warning(request, f"Valor inválido para {fornecedor.nome}")
                     if prazo_validade:
                         proposta_obj.prazo_validade = prazo_validade
@@ -2231,7 +2558,7 @@ def detalhes_triagem_fornecedores(request, pk):
                 except Exception as e:
                     messages.warning(request, f"Erro ao enviar e-mail para gerente: {e}")
 
-            messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando aprovação do gerente.")
+            messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando aprovação do gerente de contrato.")
         return redirect('lista_solicitacoes')
 
     context = {
@@ -2493,7 +2820,7 @@ def detalhes_solicitacao_contrato(request, pk):
         "Solicitação de contratação",
         "Fornecedor aprovado",
         "Planejamento do Contrato",
-        "Aprovação do Planejamento",
+        "Aprovação Final",
         "Onboarding",
     ]
 
@@ -2604,7 +2931,7 @@ def detalhes_solicitacao(request, pk):
         "Fornecedor selecionado",
         "Fornecedor aprovado",
         "Planejamento do Contrato",
-        "Aprovação do Planejamento",
+        "Aprovação Final",
         "Onboarding",
     ]
 
@@ -2631,11 +2958,29 @@ def detalhes_solicitacao(request, pk):
     current_index = status_order.index(solicitacao.status)+1 if solicitacao.status in status_order else 0
     progress_percent = "{:.2f}".format((current_index / (len(status_order))) * 100)
 
+    # Propostas dos fornecedores selecionados
+    propostas_dict = {}
+    for f in fornecedores_selecionados:
+        proposta = PropostaFornecedor.objects.filter(
+            solicitacao=solicitacao,
+            fornecedor=f
+        ).first()
+        propostas_dict[f.id] = proposta
+
+
+    # Indicadores dos fornecedores selecionados
+    fornecedores_indicadores = {
+        f.id: Indicadores.objects.filter(empresa_terceira=f)
+        for f in fornecedores_selecionados
+    }
+
     context = {
         "solicitacao": solicitacao,
         "fornecedor_escolhido": fornecedor_escolhido,
         "proposta_escolhida": proposta_escolhida,
         "fornecedores_selecionados": fornecedores_selecionados,
+        "propostas_dict": propostas_dict,
+        "fornecedores_indicadores": fornecedores_indicadores,
         "indicadores": indicadores,
         "status_order": status_order,
         "current_index": current_index,
@@ -2851,7 +3196,13 @@ def cadastrar_contrato(request, solicitacao_id):
         if form.is_valid():
             contrato = form.save(commit=False)
             contrato.solicitacao = solicitacao
-            contrato.status = "Minuta do Contrato Elaborada"
+            if solicitacao.minuta_boletins_medicao:
+                solicitacao.status = "Aprovação Final"
+            else:
+                solicitacao.status = "Planejamento do contratos"
+            solicitacao.save()
+            contrato.prazo_inicio = solicitacao.data_inicio
+            contrato.prazo_fim = solicitacao.data_fim
 
             # mantém arquivo antigo se não foi enviado novo
             if not request.FILES.get("arquivo_contrato") and contrato_existente:
@@ -2859,7 +3210,7 @@ def cadastrar_contrato(request, solicitacao_id):
 
             contrato.save()
 
-            gerente = User.objects.filter(grupo="gerente", centros__in=solicitacao.coordenador.centros.all()).values_list("email", flat=True).distinct()
+            gerente = User.objects.filter(grupo="gerente_contrato").values_list("email", flat=True).distinct()
 
             if gerente:
                 assunto = "Foi anexado uma nova minuta de contrato"
@@ -2879,7 +3230,7 @@ def cadastrar_contrato(request, solicitacao_id):
                 except Exception as e:
                     messages.warning(request, f"Erro ao enviar e-mail para gerente: {e}")
             messages.success(request, "Contrato salvo com sucesso!")
-            return redirect("elaboracao_contrato")
+            return redirect("detalhes_solicitacao", pk=solicitacao.pk)
         else:
             messages.error(request, f"Erro ao salvar contrato: {form.errors}")
     else:
@@ -2914,11 +3265,14 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
             contrato.solicitacao_contrato = solicitacao
             contrato.prazo_inicio = solicitacao.data_inicio
             contrato.prazo_fim = solicitacao.data_fim
-            contrato.valor_total = solicitacao.valor_provisionado
+            if solicitacao.valor_provisionado:
+                contrato.valor_total = solicitacao.valor_provisionado
             solicitacao.aprovacao_gerencia = False
             if hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
-                contrato.status = "Planejamento do Contrato"
-
+                solicitacao.status = "Aprovação Final"
+            else:
+                solicitacao.status = "Planejamento do contrato"
+            solicitacao.save()
             # mantém arquivo antigo se não foi enviado novo
             if not request.FILES.get("arquivo_contrato") and contrato_existente:
                 contrato.arquivo_contrato = contrato_existente.arquivo_contrato
@@ -2967,7 +3321,7 @@ def criar_contrato_se_aprovado(solicitacao):
         print("BM não encontrado")
         return None
 
-    bm_aprovado = bm.aprovado_por_ambos
+    bm_aprovado = bm.status_gerente == 'aprovado'
     contrato_aprovado = solicitacao.aprovacao_gerencia is True
 
     print(f"Solicitacao {solicitacao.id} - BM aprovado: {bm_aprovado}, Contrato aprovado: {contrato_aprovado}")
@@ -3056,10 +3410,12 @@ def criar_contrato_se_aprovado_minuta(solicitacao):
             fornecedor=solicitacao.fornecedor_escolhido
         ).first()
 
+
         contrato = ContratoTerceiros.objects.create(
-            cod_projeto=solicitacao.contrato,
+            cod_projeto=solicitacao.contrato if solicitacao.contrato else None,
             solicitacao=solicitacao,
             lider_contrato=solicitacao.lider_contrato,
+            guarda_chuva=solicitacao.guarda_chuva,
             num_contrato=documento.numero_contrato if documento else None,
             empresa_terceira=solicitacao.fornecedor_escolhido,
             coordenador=solicitacao.coordenador,
@@ -3126,7 +3482,7 @@ def detalhes_contrato(request, pk):
     revisoes = solicitacao.revisoes.all()
     origem = solicitacao.solicitacao_origem
 
-    if request.method == "POST" and request.user.grupo == "gerente" and contrato_doc:
+    if request.method == "POST" and request.user.grupo == "gerente_contrato" and contrato_doc:
         acao = request.POST.get("acao")
         justificativa = request.POST.get("justificativa", "")
 
@@ -3332,7 +3688,10 @@ def inserir_minuta_bm(request, pk):
         form = DocumentoBMForm(request.POST, request.FILES, instance=documento_bm)
         if form.is_valid():
             form.save()
-            solicitacao.status = "Planejamento do Contrato"
+            if hasattr(solicitacao, "contrato_relacionado"):
+                solicitacao.status = "Aprovação Final"
+            else:
+                solicitacao.status = "Planejamento do contrato"
             solicitacao.save()
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
             return redirect('lista_solicitacoes')
@@ -3406,6 +3765,8 @@ def detalhe_bm(request, pk):
             elif acao == "reprovar":
                 bm.status_gerente = "reprovado"
                 bm.data_aprovacao_gerente = timezone.now()
+                solicitacao.status = "Planejamento do Contrato"
+                solicitacao.save()
                 messages.warning(request, "Minuta BM reprovada pelo gerente.")
 
         bm.save()
@@ -3768,7 +4129,7 @@ def excluir_evento_contrato(request, pk):
 
 @login_required
 def registrar_entrega(request, pk):
-    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "lider_contrato", "gerente_contrato"]:
+    if request.user.grupo not in ["suprimento", "coordenador", "gerente", "lider_contrato", "gerente_contrato", "gerente_lider"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 

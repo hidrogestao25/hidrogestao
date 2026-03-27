@@ -43,7 +43,7 @@
         </form>
     {% endif %}
 
-    {% if request.user.grupo == "gerente_contrato" and bm.status_gerente == 'pendente' %}
+    {% if request.user.grupo == "gerente_contrato" %}
         <form method="post">
             {% csrf_token %}
             <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>

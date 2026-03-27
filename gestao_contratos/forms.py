@@ -83,7 +83,7 @@ class ContratoForm(forms.ModelForm):
             User.objects.filter(grupo='coordenador', is_active=True)
         )
         self.fields['lider_contrato'].queryset = (
-            User.objects.filter(grupo__in=['lider_contrato', 'gerente_contrato'], is_active=True)
+            User.objects.filter(grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider'], is_active=True)
         )
         self.fields['proposta'].queryset = (
             Proposta.objects.all()
@@ -198,10 +198,10 @@ class ContratoFornecedorForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Filtra apenas usuários que estão no grupo "Coordenador de Contrato"
         self.fields['coordenador'].queryset = (
-            User.objects.filter(grupo__in=['coordenador', 'gerente', 'lider_contrato'], is_active=True)
+            User.objects.filter(grupo__in=['coordenador', 'gerente', 'gerente_lider'], is_active=True)
         )
         self.fields['lider_contrato'].queryset = (
-            User.objects.filter(grupo__in=['lider_contrato','gerente_contrato'], is_active=True)
+            User.objects.filter(grupo__in=['lider_contrato','gerente_contrato', 'gerente_lider'], is_active=True)
         )
         self.fields['prospeccao'].queryset = (
             SolicitacaoProspeccao.objects.all().exclude(status='Finalizada')
@@ -363,9 +363,45 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
         label="Valor Disponível",
         required=False
     )
+    data_inicio = forms.DateField(
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                'class': 'form-control datepicker',
+                'type': 'text',
+                'autocomplete': 'off'
+            }
+        ),
+        input_formats=['%d-%m-%Y']
+    )
+
+    data_fim = forms.DateField(
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                'class': 'form-control datepicker',
+                'type': 'text',
+                'autocomplete': 'off'
+            }
+        ),
+        input_formats=['%d-%m-%Y']
+    )
     class Meta:
         model = SolicitacaoProspeccao
-        fields = ['justificativa_orcamento','forma_pagamento','valor_disponivel','contrato', 'coordenador', 'descricao', 'requisitos','previsto_no_orcamento', 'cronograma']
+        fields = [
+                    'justificativa_orcamento',
+                    'forma_pagamento',
+                    'valor_disponivel',
+                    'contrato',
+                    'coordenador',
+                    'descricao',
+                    'requisitos',
+                    'previsto_no_orcamento',
+                    'cronograma',
+                    'justificativa_fornecedor_escolhido',
+                    'data_inicio',
+                    'data_fim',
+                    ]
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)
@@ -379,7 +415,10 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
         #elif user and user.grupo == 'financeiro':
         #    self.fields['contrato'].queryset = Contrato.objects.all()
         elif user and user.grupo in ['gerente_lider']:
-            self.fields['contrato'].queryset = Contrato.objects.filter(coordenador__centros__in=user.centros.all())
+            self.fields['contrato'].queryset = Contrato.objects.filter(
+                Q(coordenador__centros__in=user.centros.all()) |
+                Q(lider_contrato=user)
+            ).distinct()
         else:
             self.fields['contrato'].queryset = Contrato.objects.none()
         self.fields['coordenador'].queryset = User.objects.filter(grupo__in=['coordenador','gerente', 'gerente_lider'], is_active=True)
@@ -410,6 +449,86 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
         return None"""
 
 
+class SolicitacaoGuardaChuvaForm(forms.ModelForm):
+    valor_disponivel = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Disponível",
+        required=False
+    )
+    data_inicio = forms.DateField(
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                'class': 'form-control datepicker',
+                'type': 'text',
+                'autocomplete': 'off'
+            }
+        ),
+        input_formats=['%d-%m-%Y']
+    )
+
+    data_fim = forms.DateField(
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                'class': 'form-control datepicker',
+                'type': 'text',
+                'autocomplete': 'off'
+            }
+        ),
+        input_formats=['%d-%m-%Y']
+    )
+
+    class Meta:
+        model = SolicitacaoContrato
+        fields = [
+            'fornecedor_escolhido',
+            'coordenador',
+            'descricao',
+            'requisitos',
+            'previsto_no_orcamento',
+            'justificativa_fornecedor_escolhido',
+            'valor_disponivel',
+            'data_inicio',
+            'data_fim',
+            'cronograma',
+            'forma_pagamento',
+            'justificativa_orcamento',
+        ]
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        self.fields['descricao'].label = "Escopo de Contratação"
+        self.fields['requisitos'].label = "Requisitos Mínimos"
+
+        self.fields['fornecedor_escolhido'].queryset = EmpresaTerceira.objects.all().order_by('nome')
+
+    def clean_valor_disponivel(self):
+        valor = self.cleaned_data.get('valor_disponivel')
+
+        if not valor:
+            return None
+
+        if valor:
+            valor = (
+                valor.replace('R$', '')
+                     .replace('.', '')
+                     .replace(',', '.')
+                     .strip()
+            )
+            try:
+                return Decimal(valor)
+            except:
+                raise forms.ValidationError("Informe um valor monetário válido.")
+
+        return valor
+
+
 class SolicitacaoOrdemServicoForm(forms.ModelForm):
     valor_previsto = forms.CharField(
         widget=forms.TextInput(attrs={
@@ -426,7 +545,8 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
             'titulo',
             'descricao',
             'valor_previsto',
-            'prazo_execucao'
+            'prazo_execucao',
+            'coordenador'
         ]
         widgets = {
             "prazo_execucao": ISODateInput(attrs={ "class": "form-control"}),
@@ -442,6 +562,7 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
         elif user.grupo == 'gerente':
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(coordenador__centros__in=user.centros.all())
         self.fields['cod_projeto'].widget.attrs.update({'style': 'width:250px;'})
+        self.fields['coordenador'].queryset = User.objects.filter(grupo__in=['coordenador','gerente', 'gerente_lider'], is_active=True)
 
 
 class UploadContratoOSForm(forms.ModelForm):
@@ -451,13 +572,19 @@ class UploadContratoOSForm(forms.ModelForm):
 
 
 class DocumentoContratoTerceiroForm(forms.ModelForm):
-    """valor_total = forms.CharField(required=True)"""
+    valor_total = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Total",
+        required=False)
 
     class Meta:
         model = DocumentoContratoTerceiro
-        fields = ["numero_contrato", "objeto", "arquivo_contrato", "observacao"]
+        fields = ["numero_contrato", "objeto", "arquivo_contrato", "observacao", "valor_total"]
 
-    """def clean_valor_total(self):
+    def clean_valor_total(self):
         valor = self.cleaned_data.get("valor_total")
 
         if valor:
@@ -465,9 +592,10 @@ class DocumentoContratoTerceiroForm(forms.ModelForm):
             valor = valor.replace(".", "").replace(",", ".")
             try:
                 return Decimal(valor)
-            except InvalidOperation:
+            except:
                 raise forms.ValidationError("Informe um valor válido no formato 1.234,56")
-        return None"""
+        return valor
+
 
 
 class DocumentoBMForm(forms.ModelForm):
@@ -735,5 +863,5 @@ class OrdemServicoForm(forms.ModelForm):
         self.fields['coordenador'].queryset = User.objects.filter(grupo__in=['gerente', 'coordenador'], is_active=True)
         self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(guarda_chuva=True)
         self.fields['solicitacao'].queryset = SolicitacaoOrdemServico.objects.filter(status__in=['solicitacao_os', 'pendente_lider', 'pendente_gerente', 'pendente_suprimento', 'aprovada'])
-        self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato'], is_active=True)
+        self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato', 'gerente_lider'], is_active=True)
         self.fields['cod_projeto'].queryset = Contrato.objects.filter(status='ativo')

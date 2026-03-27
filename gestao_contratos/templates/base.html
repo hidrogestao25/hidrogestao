@@ -17,6 +17,7 @@
             background-color: #f8f9fa;
             display: flex;
             flex-direction: column;
+            padding-top: 80px;
         }
 
         .navbar {
@@ -216,7 +217,7 @@
 </head>
 <body>
 
-    <nav class="navbar navbar-expand-lg navbar-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
         <div class="container-fluid">
           <a class="navbar-brand d-flex align-items-center" href="{% url 'home' %}">
             <img src="{% static 'img/HidroBR_logo2.png' %}" alt="Logo" height="50" class="me-2">
@@ -256,16 +257,15 @@
                           </a>
                           <ul class="dropdown-menu">
                               {% if request.user.grupo == 'coordenador' %}
-                                <li><a class="dropdown-item" href="#"><i class="bi bi-umbrella"></i> Solicitação de Contrato Guarda-chuva</a></li>
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Minhas Solicitações</a></li>
+
                               {% elif request.user.grupo == 'gerente' %}
-                                <li><a class="dropdown-item" href="#"><i class="bi bi-umbrella"></i> Solicitação de Contrato Guarda-chuva</a></li>
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Solicitações</a></li>
-                                <!-- <li><a class="dropdown-item" href="{% url 'elaboracao_contrato' %}"><i class="bi bi-feather"></i> Elaboração de Contrato</a></li> -->
+
                               {% elif request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_lider' %}
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_contrato' %}"><i class="bi bi-file-earmark-person-fill"></i> Solicitação de Contratação</a></li>
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-plus-square-fill"></i> Solicitação de Prospecção</a></li>
-                              <li><a class="dropdown-item" href="#"><i class="bi bi-umbrella"></i> Solicitação de Contrato Guarda-chuva</a></li>
+                              <li><a class="dropdown-item" href="{% url 'nova_solicitacao_guarda_chuva' %}"><i class="bi bi-umbrella"></i> Solicitação de Contrato Guarda-chuva</a></li>
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Solicitações</a></li>
                               {% endif %}
                               {% if request.user.grupo in 'suprimento diretoria' %}

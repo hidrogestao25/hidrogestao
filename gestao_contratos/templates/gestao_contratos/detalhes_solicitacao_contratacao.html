@@ -41,8 +41,12 @@ document.addEventListener("DOMContentLoaded", function() {
 <!-- Dados gerais da solicitação -->
 <div class="card mb-3">
     <div class="card-body">
+      {% if solicitacao.guarda_chuva %}
+        <p><strong>Id:</strong> #{{ solicitacao.id }}</p>
+      {% else %}
         <p><strong>Contrato:</strong> {{ solicitacao.contrato }}</p>
         <p><strong>Líder Técnico:</strong> {{ solicitacao.coordenador.get_full_name|default:solicitacao.coordenador }}</p>
+      {% endif %}
         <p><strong>Líder de Contrato:</strong> {{ solicitacao.lider_contrato }}</p>
         <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
         <p><strong>Guarda-chuva:</strong>
@@ -56,25 +60,41 @@ document.addEventListener("DOMContentLoaded", function() {
             {% if solicitacao.previsto_no_orcamento %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}
         </p>
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>
-        <p><strong>Valor Provisionado:</strong>
-          {% if solicitacao.valor_provisionado %} R$ {{ solicitacao.valor_provisionado }} {% else %} Não informado {% endif %}
+        <p><strong>Valor Disponível:</strong>
+          {% if solicitacao.valor_disponivel %} R$ {{ solicitacao.valor_disponivel }} {% else %} Não informado {% endif %}
         </p>
+        {% if not solicitacao.guarda_chuva %}
         <p><strong>Valor Vendido:</strong>
           {% if solicitacao.valor_vendido %} R$ {{ solicitacao.valor_vendido }} {% else %} Não informado {% endif %}
         </p>
-        <p><strong>Valor do Contrato com Cliente:</strong> R$ {{ solicitacao.contrato.valor_total }}</p>
 
+            <p><strong>Valor do Contrato com Cliente:</strong>
+              {% if solicitacao.contrato.valor_total %}
+                R$ {{ solicitacao.contrato.valor_total }}
+              {% else %}
+                Não informado
+              {% endif %}
+             </p>
+        {% endif %}
         <p><strong>Status:</strong> {{ solicitacao.status }}</p>
 
         <p><strong>Arquivo do Contrato:</strong>
             {% if solicitacao.contrato and solicitacao.contrato.arquivo_contrato %}
                 <a href="{{ solicitacao.contrato.arquivo_contrato.url }}" target="_blank">Ver PDF</a>
             {% else %}
-                -
+                Não há contrato com cliente cadastrado no banco
             {% endif %}
         </p>
-        <p><strong>Justificativa da Gerência:</strong> {{ solicitacao.justificativa_gerencia }}</p>
-        <p><strong>Data da Solicitação:</strong> {{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</p>
+        {% if solicitacao.justificativa_gerencia %}
+          <p><strong>Justificativa da Gerência:</strong> {{ solicitacao.justificativa_gerencia }}</p>
+        {% endif %}
+
+        <hr>
+        <div class="text-end text-muted" style="font-size: 0.85rem;">
+            <div><strong>Solicitante:</strong> {{ solicitacao.solicitante }}</div>
+            <div><strong>Data:</strong> {{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</div>
+        </div>
+
     </div>
 </div>
 
@@ -224,63 +244,64 @@ document.addEventListener("DOMContentLoaded", function() {
 </div>
 
 <!-- Eventos -->
-
-  <div class="card mb-3">
-      <div class="card-header">Eventos da Solicitação</div>
-      <div class="card-body">
-          {% if eventos %}
-              <table class="table table-striped">
-                  <thead>
-                      <tr>
-                          <th>Descrição</th>
-                          <th>Data Prevista</th>
-                          <th>Valor Previsto</th>
-                          <th>Realizado</th>
-                          <th>Com Atraso</th>
-                          <th>Valor Pago</th>
-                          <th>Ações</th>
-                      </tr>
-                  </thead>
-                  <tbody>
-                      {% for evento in eventos %}
-                      <tr>
-                          <td>{{ evento.descricao }}</td>
-                          <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
-                          <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
-                          <td>{% if evento.realizado %}✔️{% else %}✖{% endif %}</td>
-                          <td>{% if evento.com_atraso %}✔️{% else %}✖{% endif %}</td>
-                          <td>R$ {{ evento.valor_pago|default:"-" }}</td>
-                          <td>
-                            {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_lider gerente_contrato' %}
-                            <a href="{% url 'duplicar_evento_solicitacao' evento.id %}" class="btn btn-sm btn-outline-secondary"
-                               onclick="return confirm('Deseja duplicar este evento?');">
-                               Duplicar Evento
-                            </a>
-                              <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
-                              <a href="{% url 'excluir_evento' evento.id %}" class="btn btn-sm btn-danger"
-                                 onclick="return confirm('Tem certeza que deseja excluir este evento?')">
-                                 Apagar
-                              </a>
-                            {% endif %}
-                          </td>
-                      </tr>
-                      {% endfor %}
-                  </tbody>
-              </table>
-          {% else %}
-              <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
-          {% endif %}
-          {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' %}
-              <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
-          {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de contratação" %}
-              <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
-          {% elif request.user.grupo == 'lider_contrato' and solicitacao.status == "Solicitação de contratação" %}
-              <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
-          {% elif request.user.grupo == 'coordenador' and solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
-              <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
-          {% endif %}
+  {% if not solicitacao.guarda_chuva %}
+      <div class="card mb-3">
+          <div class="card-header">Eventos da Solicitação</div>
+          <div class="card-body">
+              {% if eventos %}
+                  <table class="table table-striped">
+                      <thead>
+                          <tr>
+                              <th>Descrição</th>
+                              <th>Data Prevista</th>
+                              <th>Valor Previsto</th>
+                              <th>Realizado</th>
+                              <th>Com Atraso</th>
+                              <th>Valor Pago</th>
+                              <th>Ações</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          {% for evento in eventos %}
+                          <tr>
+                              <td>{{ evento.descricao }}</td>
+                              <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
+                              <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
+                              <td>{% if evento.realizado %}✔️{% else %}✖{% endif %}</td>
+                              <td>{% if evento.com_atraso %}✔️{% else %}✖{% endif %}</td>
+                              <td>R$ {{ evento.valor_pago|default:"-" }}</td>
+                              <td>
+                                {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_lider gerente_contrato' %}
+                                <a href="{% url 'duplicar_evento_solicitacao' evento.id %}" class="btn btn-sm btn-outline-secondary"
+                                   onclick="return confirm('Deseja duplicar este evento?');">
+                                   Duplicar Evento
+                                </a>
+                                  <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
+                                  <a href="{% url 'excluir_evento' evento.id %}" class="btn btn-sm btn-danger"
+                                     onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                                     Apagar
+                                  </a>
+                                {% endif %}
+                              </td>
+                          </tr>
+                          {% endfor %}
+                      </tbody>
+                  </table>
+              {% else %}
+                  <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
+              {% endif %}
+              {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' %}
+                  <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+              {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de contratação" %}
+                  <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+              {% elif request.user.grupo == 'lider_contrato' and solicitacao.status == "Solicitação de contratação" %}
+                  <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+              {% elif request.user.grupo == 'coordenador' and solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
+                  <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+              {% endif %}
+          </div>
       </div>
-  </div>
+  {% endif %}
 
 <hr>
   <h4>Histórico</h4>

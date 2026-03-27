@@ -49,7 +49,7 @@
                       Editar Contrato
                   </a>
                 {% endif %}
-                {% if user.grupo in "coordenador gerente gerente_lider lider_contrato gerente_contrato" %}
+                {% if user.grupo in "gerente_lider lider_contrato gerente_contrato" %}
                     <a href="{% url 'solicitar_os' fornecedor.pk %}" class="btn btn-sm btn-success">
                         Solicitar OS
                     </a>

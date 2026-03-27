@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
+{% load custom_tags %}
 
 <div class="container mt-4">
     <h2>Detalhes da Solicitação</h2>
@@ -56,28 +57,134 @@ document.addEventListener("DOMContentLoaded", function() {
             {% if solicitacao.previsto_no_orcamento %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}
         </p>
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>
-        <p><strong>Valor Provisionado:</strong>
-          {% if solicitacao.valor_provisionado %} R$ {{ solicitacao.valor_provisionado }} {% else %} Não informado {% endif %}
+        <p><strong>Valor Disponível:</strong>
+          {% if solicitacao.valor_disponivel %} R$ {{ solicitacao.valor_disponivel }} {% else %} Não informado {% endif %}
+        </p>
+        <p><strong>Forma de pagamento:</strong>
+          {% if solicitacao.forma_pagamento %} {{ solicitacao.forma_pagamento }} dias após entrega {% else %} Não informado {% endif %}
         </p>
         <p><strong>Valor Vendido:</strong>
           {% if solicitacao.valor_vendido %} R$ {{ solicitacao.valor_vendido }} {% else %} Não informado {% endif %}
         </p>
-        <p><strong>Valor do Contrato com Cliente:</strong> R$ {{ solicitacao.contrato.valor_total }}</p>
+        <p><strong>Valor do Contrato com Cliente:</strong>
+          {% if solicitacao.contrato.valor_total %}
+            R$ {{ solicitacao.contrato.valor_total }}
+          {% else %}
+            Não informado
+          {% endif %}
+          </p>
         <p><strong>Data da Solicitação:</strong> {{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</p>
-        <p><strong>Data da Aprovação:</strong> {{ solicitacao.data_aprovacao|date:"d/m/Y H:i" }}</p>
-        <p><strong>Aprovado por:</strong> {{ solicitacao.aprovado_por }}</p>
-        <p><strong>Status:</strong> {{ solicitacao.status }}</p>
+        <p><strong>Aprovado por:</strong>
+          {% if solicitacao.aprovado_por %}
+            {{ solicitacao.aprovado_por.get_full_name }}  ({{ solicitacao.aprovado_por.grupo }})
+          {% else %}
+            Em análise
+          {% endif %}
+        </p>
+        {% if solicitacao.aprovado_por %}
+          <p><strong>Data da Aprovação:</strong> {{ solicitacao.data_aprovacao|date:"d/m/Y H:i" }}</p>
+        {% endif %}
         <p><strong>Triagem Realizada:</strong>
             {% if solicitacao.triagem_realizada %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}
+        </p>
+        <p><strong>Status:</strong> {{ solicitacao.status }}</p>
+        <p><strong>Descrição do Status:</strong>
+          {% if solicitacao.status == "Solicitação de prospecção" %}
+            A solicitação foi encaminhada para avaliação da equipe de Suprimentos.
+          {% elif solicitacao.status == "Aprovada pelo suprimento" %}
+            A equipe de Suprimentos está fazendo a busca e irá fazer uma triagem dos fornecedores.
+          {% elif solicitacao.status == "Triagem realizada" %}
+            A triagem foi enviada para o líder de contrato para selecionar uma das opções.
+          {% elif solicitacao.status == "Fornecedor selecionado" %}
+            O líder de contrato selecionou o fornecedor e foi encaminhada a escolha para aprovação da direção e da gerência de contrato.
+          {% elif solicitacao.status == "Fornecedor aprovado" %}
+            A direção e gerência de contrato aprovaram e a equipe de suprimento deu início ao desenvolvimento das minutas dos Boletins de Medição e do Contrato.
+          {% elif solicitacao.status == "Planejamento do Contrato" %}
+            A equipe de suprimentos está desenvolvendo as minutas do boletim de medição e do contrato.
+          {% elif solicitacao.status == "Aprovação Final" %}
+            A gerência de contrato está avaliando as minutas desenvolvidas pela equipe de suprimento.
+          {% elif solicitacao.status == "Onboarding" %}
+            As minutas foram ambas aprovadas e a equipe de suprimento está marcando uma reunião onboarding com todos os envolvidos.
+          {% else %}
+            ERRO DE STATUS
+          {% endif %}
+
         </p>
         <p><strong>Arquivo do Contrato:</strong>
             {% if solicitacao.contrato and solicitacao.contrato.arquivo_contrato %}
                 <a href="{{ solicitacao.contrato.arquivo_contrato.url }}" target="_blank">Ver PDF</a>
             {% else %}
-                -
+                Não há contrato com cliente cadastrado no banco
             {% endif %}
         </p>
-        <p><strong>Justificativa da Gerência:</strong> {{ solicitacao.justificativa_gerencia }}</p>
+        {% if solicitacao.justificativa_gerencia %}
+          <p><strong>Justificativa da Gerência:</strong> {{ solicitacao.justificativa_gerencia }}</p>
+        {% endif %}
+        <hr>
+        <div class="text-end text-muted" style="font-size: 0.85rem;">
+            <div><strong>Solicitante:</strong> {{ solicitacao.solicitante }}</div>
+            <div><strong>Data:</strong> {{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Fornecedores selecionados na triagem -->
+<div class="card mb-3">
+    <div class="card-header">Fornecedores Selecionados na Triagem</div>
+    <div class="card-body">
+        {% if solicitacao.fornecedores_selecionados.all %}
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Setor de Atuação</th>
+                        <th>Valor Proposto</th>
+                        <th>Indicadores</th>
+                    </tr>
+                </thead>
+                <tbody>
+                  {% for f in solicitacao.fornecedores_selecionados.all %}
+                      {% with prop=propostas_dict|dict_get:f.id %}
+                      {% with ind_list=fornecedores_indicadores|dict_get:f.id %}
+                      <tr>
+                          <td>{{ f.nome }}</td>
+                          <td>{{ f.setor_de_atuacao }}</td>
+
+                          <!-- Valor Proposto -->
+                          <td>
+                              {% if prop and prop.valor_proposta %}
+                                  R$ {{ prop.valor_proposta|floatformat:2 }}
+                              {% else %}
+                                  <span class="text-muted">Não informado</span>
+                              {% endif %}
+                          </td>
+
+                          <!-- Indicadores -->
+                          <td>
+                              {% if ind_list %}
+                                  {% for ind in ind_list %}
+                                      <div class="d-flex flex-wrap gap-1">
+                                          <span class="badge bg-primary">IQ {{ ind.IQ|floatformat:2 }}%</span>
+                                          <span class="badge bg-success">Gestão {{ ind.IS_gestao|floatformat:2 }}%</span>
+                                          <span class="badge bg-warning text-dark">Técnica {{ ind.IS_tecnica|floatformat:2 }}%</span>
+                                          <span class="badge bg-info text-dark">Entrega {{ ind.IS_entrega|floatformat:2 }}%</span>
+                                      </div>
+                                  {% endfor %}
+                              {% else %}
+                                  <span class="text-muted">Sem indicadores</span>
+                              {% endif %}
+                          </td>
+
+                      </tr>
+                      {% endwith %}
+                      {% endwith %}
+                  {% endfor %}
+              </tbody>
+
+            </table>
+        {% else %}
+            <p>Nenhum fornecedor selecionado.</p>
+        {% endif %}
     </div>
 </div>
 
@@ -105,75 +212,118 @@ document.addEventListener("DOMContentLoaded", function() {
         Indicadores do Fornecedor Escolhido
     </div>
     <div class="card-body">
-
         {% if indicadores %}
             {% for ind in indicadores %}
 
-                <p><strong>Entregas Totais:</strong> {{ ind.entregas_total }}</p>
-                <p><strong>Entregas Conformes:</strong> {{ ind.entregas_conformes }}</p>
-                <p><strong>Entregas Não Conformes:</strong> {{ ind.entregas_nao_conformes }}</p>
+            <div class="row">
 
-                <hr>
-
-                <!-- IQ -->
-                <div class="d-flex align-items-center mb-2">
-                    <strong class="me-2" style="min-width: 220px;">Índice de Qualidade:</strong>
-                    <span class="me-2" style="width:70px;">{{ ind.IQ|floatformat:2 }}%</span>
-
-                    <div class="progress flex-grow-1" style="height: 14px;">
-                        <div class="progress-bar
-                            {% if ind.IQ < 50 %}bg-danger
-                            {% elif ind.IQ < 80 %}bg-warning
-                            {% else %}bg-success{% endif %}"
-                            style="width: {{ ind.IQ|floatformat:2|cut:"," }}%;">
-                        </div>
-                    </div>
+                <!-- COLUNA ESQUERDA - ENTREGAS -->
+                <div class="col-md-4">
+                    <p><strong>Entregas Totais:</strong> {{ ind.entregas_total }}</p>
+                    <p><strong>Entregas Conformes:</strong> {{ ind.entregas_conformes }}</p>
+                    <p><strong>Entregas Não Conformes:</strong> {{ ind.entregas_nao_conformes }}</p>
                 </div>
 
-                <!-- IP -->
-                <div class="d-flex align-items-center mb-2">
-                    <strong class="me-2" style="min-width: 220px;">Índice de Pontualidade:</strong>
-                    <span class="me-2" style="width:70px;">{{ ind.IP|floatformat:2 }}%</span>
+                <div class="col-md-1 d-flex justify-content-center">
+                     <div class="vr"></div>
+                 </div>
 
-                    <div class="progress flex-grow-1" style="height: 14px;">
-                        <div class="progress-bar
-                            {% if ind.IP < 50 %}bg-danger
-                            {% elif ind.IP < 80 %}bg-warning
-                            {% else %}bg-success{% endif %}"
-                            style="width: {{ ind.IP|floatformat:2|cut:"," }}%;">
+                <!-- COLUNA DIREITA - INDICADORES -->
+                <div class="col-md-7">
+
+                    <!-- IQ -->
+                    <div class="d-flex align-items-center mb-2">
+                        <strong class="me-2" style="min-width: 220px;">Índice de Qualidade:</strong>
+                        <span class="me-2" style="width:70px;">{{ ind.IQ|floatformat:2 }}%</span>
+
+                        <div class="progress flex-grow-1" style="height: 14px;">
+                            <div class="progress-bar
+                                {% if ind.IQ < 50 %}bg-danger
+                                {% elif ind.IQ < 80 %}bg-warning
+                                {% else %}bg-success{% endif %}"
+                                style="width: {{ ind.IQ|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IQ|floatformat:2|cut:","|slice:"-2:" }}%;">
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- INC -->
-                <div class="d-flex align-items-center mb-2">
-                    <strong class="me-2" style="min-width: 220px;">Índice de Não Conformidade:</strong>
-                    <span class="me-2" style="width:70px;">{{ ind.INC|floatformat:2 }}%</span>
+                    <!-- IP -->
+                    <div class="d-flex align-items-center mb-2">
+                        <strong class="me-2" style="min-width: 220px;">Índice de Pontualidade:</strong>
+                        <span class="me-2" style="width:70px;">{{ ind.IP|floatformat:2 }}%</span>
 
-                    <div class="progress flex-grow-1" style="height: 14px;">
-                        <div class="progress-bar
-                            {% if ind.INC < 50 %}bg-danger
-                            {% elif ind.INC < 80 %}bg-warning
-                            {% else %}bg-success{% endif %}"
-                            style="width: {{ ind.INC|floatformat:2|cut:"," }}%;">
+                        <div class="progress flex-grow-1" style="height: 14px;">
+                            <div class="progress-bar
+                                {% if ind.IP < 50 %}bg-danger
+                                {% elif ind.IP < 80 %}bg-warning
+                                {% else %}bg-success{% endif %}"
+                                style="width: {{ ind.IP|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IP|floatformat:2|cut:","|slice:"-2:" }}%;">
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- IS -->
-                <div class="d-flex align-items-center mb-3">
-                    <strong class="me-2" style="min-width: 220px;">Índice de Satisfação:</strong>
-                    <span class="me-2" style="width:70px;">{{ ind.IS|floatformat:2 }}%</span>
+                    <!-- INC -->
+                    <div class="d-flex align-items-center mb-2">
+                        <strong class="me-2" style="min-width: 220px;">Índice de Não Conformidade:</strong>
+                        <span class="me-2" style="width:70px;">{{ ind.INC|floatformat:2 }}%</span>
 
-                    <div class="progress flex-grow-1" style="height: 14px;">
-                        <div class="progress-bar
-                            {% if ind.IS < 50 %}bg-danger
-                            {% elif ind.IS < 80 %}bg-warning
-                            {% else %}bg-success{% endif %}"
-                            style="width: {{ ind.IS|floatformat:2|cut:"," }}%;">
+                        <div class="progress flex-grow-1" style="height: 14px;">
+                            <div class="progress-bar
+                                {% if ind.INC < 50 %}bg-danger
+                                {% elif ind.INC < 80 %}bg-warning
+                                {% else %}bg-success{% endif %}"
+                                style="width: {{ ind.INC|floatformat:2|cut:","|slice:":-2" }}.{{ ind.INC|floatformat:2|cut:","|slice:"-2:" }}%;">
+                            </div>
                         </div>
                     </div>
+
+                    <!-- IS Gestão -->
+                    <div class="d-flex align-items-center mb-2">
+                        <strong class="me-2" style="min-width: 220px;">Índice de Satisfação de Gestão:</strong>
+                        <span class="me-2" style="width:70px;">{{ ind.IS_gestao|floatformat:2 }}%</span>
+
+                        <div class="progress flex-grow-1" style="height: 14px;">
+                            <div class="progress-bar
+                                {% if ind.IS_gestao < 50 %}bg-danger
+                                {% elif ind.IS_gestao < 80 %}bg-warning
+                                {% else %}bg-success{% endif %}"
+                                style="width: {{ ind.IS_gestao|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IS_gestao|floatformat:2|cut:","|slice:"-2:" }}%;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- IS Técnica -->
+                    <div class="d-flex align-items-center mb-2">
+                        <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Técnico:</strong>
+                        <span class="me-2" style="width:70px;">{{ ind.IS_tecnica|floatformat:2 }}%</span>
+
+                        <div class="progress flex-grow-1" style="height: 14px;">
+                            <div class="progress-bar
+                                {% if ind.IS_tecnica < 50 %}bg-danger
+                                {% elif ind.IS_tecnica < 80 %}bg-warning
+                                {% else %}bg-success{% endif %}"
+                                style="width: {{ ind.IS_tecnica|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IS_tecnica|floatformat:2|cut:","|slice:"-2:" }}%;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- IS Entrega -->
+                    <div class="d-flex align-items-center mb-2">
+                        <strong class="me-2" style="min-width: 220px;">Índice de Satisfação de Entrega:</strong>
+                        <span class="me-2" style="width:70px;">{{ ind.IS_entrega|floatformat:2 }}%</span>
+
+                        <div class="progress flex-grow-1" style="height: 14px;">
+                            <div class="progress-bar
+                                {% if ind.IS_entrega < 50 %}bg-danger
+                                {% elif ind.IS_entrega < 80 %}bg-warning
+                                {% else %}bg-success{% endif %}"
+                                style="width: {{ ind.IS_entrega|floatformat:2|cut:","|slice:":-2" }}.{{ ind.IS_entrega|floatformat:2|cut:","|slice:"-2:" }}%;">
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
+            </div>
+
 
             {% endfor %}
         {% else %}
@@ -181,35 +331,9 @@ document.addEventListener("DOMContentLoaded", function() {
         {% endif %}
 
     </div>
+
 </div>
 {% endif %}
-
-<!-- Fornecedores selecionados na triagem -->
-<div class="card mb-3">
-    <div class="card-header">Fornecedores Selecionados na Triagem</div>
-    <div class="card-body">
-        {% if solicitacao.fornecedores_selecionados.all %}
-            <table class="table table-bordered">
-                <thead>
-                    <tr>
-                        <th>Nome</th>
-                        <th>Setor de Atuação</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for f in solicitacao.fornecedores_selecionados.all %}
-                    <tr>
-                        <td>{{ f.nome }}</td>
-                        <td>{{ f.setor_de_atuacao }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <p>Nenhum fornecedor selecionado.</p>
-        {% endif %}
-    </div>
-</div>
 
 <!-- Aprovação e Justificativa da Gerência -->
 <div class="card mb-3">
@@ -217,11 +341,11 @@ document.addEventListener("DOMContentLoaded", function() {
     <div class="card-body">
         <p><strong>Aprovação da Gerência:</strong>
             {% if solicitacao.aprovacao_fornecedor_gerente == 'aprovado' %}
-                ✔️ Aprovado
+                <span class="badge bg-success">✔️ Aprovado</span>
             {% elif solicitacao.aprovacao_fornecedor_gerente == 'reprovado' %}
-                <span style="color:red;">✖ Reprovado</span>
+                <span class="badge bg-danger">✖ Reprovado</span>
             {% else %}
-              Em analise
+              <span class="badge bg-warning text-dark">Em Analise</span>
             {% endif %}
         </p>
         {% if solicitacao.reprovacao_gerencia %}
@@ -231,11 +355,11 @@ document.addEventListener("DOMContentLoaded", function() {
         {% endif %}
         <p><strong>Aprovação da Diretoria:</strong>
             {% if solicitacao.aprovacao_fornecedor_diretor == 'aprovado' %}
-                ✔️ Aprovado
+                <span class="badge bg-success">✔️ Aprovado</span>
             {% elif solicitacao.aprovacao_fornecedor_diretor == 'reprovado' %}
-                <span style="color:red;">✖ Reprovado</span>
+                <span class="badge bg-danger">✖ Reprovado</span>
             {% else %}
-              Em analise
+              <span class="badge bg-warning text-dark">Em Analise</span>
             {% endif %}
         </p>
         {% if solicitacao.reprovacao_diretoria %}
@@ -274,16 +398,16 @@ document.addEventListener("DOMContentLoaded", function() {
                           <td>{% if evento.com_atraso %}✔️{% else %}✖{% endif %}</td>
                           <td>R$ {{ evento.valor_pago|default:"-" }}</td>
                           <td>
-                            {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_contrato' %}
-                            <a href="{% url 'duplicar_evento' evento.id %}" class="btn btn-sm btn-outline-secondary"
-                               onclick="return confirm('Deseja duplicar este evento?');">
-                               Duplicar Evento
-                            </a>
-                              <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
-                              <a href="{% url 'excluir_evento' evento.id %}" class="btn btn-sm btn-danger"
-                                 onclick="return confirm('Tem certeza que deseja excluir este evento?')">
-                                 Apagar
-                              </a>
+                            {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_contrato gerente_lider' %}
+                                <a href="{% url 'duplicar_evento' evento.id %}" class="btn btn-sm btn-outline-secondary"
+                                   onclick="return confirm('Deseja duplicar este evento?');">
+                                   Duplicar Evento
+                                </a>
+                                <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
+                                <a href="{% url 'excluir_evento' evento.id %}" class="btn btn-sm btn-danger"
+                                   onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                                   Apagar
+                                </a>
                             {% endif %}
                           </td>
                       </tr>
@@ -293,7 +417,7 @@ document.addEventListener("DOMContentLoaded", function() {
           {% else %}
               <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
           {% endif %}
-          {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_contrato' %}
+          {% if request.user.grupo in 'suprimento gerente gerente_lider gerente_contrato' %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
           {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de prospecção" %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
@@ -305,31 +429,39 @@ document.addEventListener("DOMContentLoaded", function() {
       </div>
   </div>
 
+<div class="card mb-3">
+  <div class="card-header">Histórico</div>
+  <div class="card-body">
+
+      {% if origem %}
+          <p><strong>Solicitação de Origem:</strong>
+             <a href="{% url 'detalhes_contrato' origem.pk %}">{{ origem.contrato }}</a>
+          </p>
+      {% endif %}
+
+      {% if revisoes %}
+          <p><strong>Revisões criadas a partir desta:</strong></p>
+          <ul>
+              {% for revisao in revisoes %}
+                  <li>
+                      <a href="{% url 'detalhes_contrato' revisao.pk %}">
+                          {{ revisao.contrato }} - Criada em {{ revisao.criado_em|date:"d/m/Y H:i" }}
+                      </a>
+                  </li>
+              {% endfor %}
+          </ul>
+      {% else %}
+          <p>Sem revisões relacionadas.</p>
+      {% endif %}
+  </div>
+</div>
+
 <hr>
-  <h4>Histórico</h4>
-
-  {% if origem %}
-      <p><strong>Solicitação de Origem:</strong>
-         <a href="{% url 'detalhes_contrato' origem.pk %}">{{ origem.contrato }}</a>
-      </p>
-  {% endif %}
-
-  {% if revisoes %}
-      <p><strong>Revisões criadas a partir desta:</strong></p>
-      <ul>
-          {% for revisao in revisoes %}
-              <li>
-                  <a href="{% url 'detalhes_contrato' revisao.pk %}">
-                      {{ revisao.contrato }} - Criada em {{ revisao.criado_em|date:"d/m/Y H:i" }}
-                  </a>
-              </li>
-          {% endfor %}
-      </ul>
-  {% else %}
-      <p>Sem revisões relacionadas.</p>
-  {% endif %}
 
 {% if request.user.grupo == 'diretoria' %}
+  {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
+      <a href="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}" class="btn btn-success mt-3">Avaliar Fornecedor</a>
+  {% endif %}
   {% if solicitacao.aprovacao_fornecedor_diretor == 'reprovado'  %}
     <div class="card mb-3">
       <a href="{% url 'nova_prospeccao' solicitacao.id %}" class="btn btn-sm btn-primary">Nova Prospecção</a>
@@ -339,20 +471,104 @@ document.addEventListener("DOMContentLoaded", function() {
   {% endif %}
 {% endif %}
 
-<!-- Botões de aprovação para gerente -->
-{% if request.user.grupo == 'gerente_contrato' and solicitacao.contrato and solicitacao.contrato.arquivo_contrato %}
-    <form method="post">
-        {% csrf_token %}
-        <div class="mb-3">
-            <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
-            <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
-        </div>
-        <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
-        <button type="submit" name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
-    </form>
+<!-- Botões de aprovação para suprimento-->
+{% if request.user.grupo == 'suprimento' %}
+    {% if solicitacao.aprovado == None %}
+        <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success mt-3">Aprovar</a>
+        <a href="{% url 'aprovar_solicitacao' solicitacao.id 'reprovar' %}" class="btn btn-danger mt-3">Reprovar</a>
+    {% endif %}
+
+    {% if solicitacao.aprovado %}
+        {% if solicitacao.triagem_realizada %}
+            {% if not solicitacao.fornecedor_escolhido %}
+                <a href="{% url 'triagem_fornecedores' solicitacao.id %}" class="btn btn-success mt-3">Refazer Triagem</a>
+            {% endif %}
+        {% else %}
+            <a href="{% url 'triagem_fornecedores' solicitacao.id %}" class="btn btn-primary mt-3">Fazer Triagem</a>
+        {% endif %}
+    {% endif %}
+
+    {% if solicitacao.status == "Fornecedor aprovado" or solicitacao.status == "Planejamento do Contrato" %}
+      {% with bm=solicitacao.minuta_boletins_medicao %}
+        {% if bm %}
+          <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-warning mt-3">
+            Revisar Minuta do BM
+          </a>
+        {% else %}
+          <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-primary mt-3">
+            Inserir Minuta do BM
+          </a>
+        {% endif %}
+      {% endwith %}
+    {% endif %}
+
+
+    {% if solicitacao.status == "Fornecedor aprovado" or solicitacao.status == "Planejamento do Contrato" %}
+        {% with contrato=solicitacao.contrato_relacionado %}
+            {% if contrato %}
+                <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Revisar Contrato</a>
+            {% else %}
+                <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Cadastrar Contrato</a>
+            {% endif %}
+        {% endwith %}
+    {% endif %}
+
 {% endif %}
 
-<a href="{% url 'lista_solicitacoes' %}" class="btn btn-secondary mt-3">Voltar</a>
+<!--Botões para Lider de contrato e para gerente lider-->
+{% if request.user.grupo in 'lider_contrato gerente_lider' %}
+    {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user %}
+      <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info mt-3">Selecionar Fornecedor</a>
+    {% endif %}
+{% endif %}
+
+<!-- Botões de aprovação para gerente -->
+{% if request.user.grupo == 'gerente_contrato' %}
+  {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
+      <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success mt-3">Avaliar Fornecedor</a>
+  {% endif %}
+
+  {% if solicitacao.contrato and solicitacao.contrato.arquivo_contrato %}
+      <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+              <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
+              <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
+          </div>
+          <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
+          <button type="submit" name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+      </form>
+  {% endif %}
+
+  {% with contrato=solicitacao.contrato_relacionado %}
+      {% if contrato %}
+          {% if not solicitacao.aprovacao_gerencia and not solicitacao.reprovacao_gerencia %}
+              <!-- Nenhuma avaliação feita ainda -->
+              <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-primary mt-3">
+                  Avaliar Contrato
+              </a>
+          {% else %}
+              <!-- Já houve aprovação ou reprovação -->
+              <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-warning mt-3">
+                  Reavaliar Contrato
+              </a>
+          {% endif %}
+      {% endif %}
+  {% endwith %}
+  {% if solicitacao.minuta_boletins_medicao %}
+      {% if solicitacao.minuta_boletins_medicao.status_gerente == 'pendente' %}
+          <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary mt-3">
+              Avaliar Minuta BM
+          </a>
+      {% else %}
+          <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning mt-3">
+              Revisar Minuta BM
+          </a>
+      {% endif %}
+  {% endif %}
+{% endif %}
+
+<a href="javascript:history.back()"class="btn btn-secondary mt-3">Voltar</a>
 
 
 </div>

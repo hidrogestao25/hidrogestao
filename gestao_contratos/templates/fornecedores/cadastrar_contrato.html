@@ -39,14 +39,14 @@
                    value="{{ form.prazo_fim.value|date:'Y-m-d' }}"
                    class="form-control" required>
         </div>
-
-        <div class="mb-3">
-            <label for="valor_total" class="form-label">Valor Total (R$)</label>
-            <input type="text" id="valor_total" name="valor_total"
-                   value="{{ form.valor_total.value|default_if_none:'' }}"
-                   class="form-control" required>
-        </div>
         -->
+        {% if not solicitacao.valor_total %}
+        <div class="mb-3">
+            <label for="{{ form.valor_total.id_for_label}} " class="form-label">Valor Total (R$)</label>
+              {{ form.valor_total }}
+        </div>
+        {% endif %}
+
         <div class="mb-3">
             <label for="observacao" class="form-label">Observações</label>
             <input type="text" id="observacao" name="observacao"
@@ -69,7 +69,7 @@
         <button type="submit" class="btn btn-success">
             {% if contrato %} Atualizar Contrato {% else %} Salvar Contrato {% endif %}
         </button>
-        <a href="{% url 'elaboracao_contrato' %}" class="btn btn-secondary">Voltar</a>
+        <a href="javascript:history.back()" class="btn btn-secondary">Voltar</a>
     </form>
 </div>
 
@@ -77,9 +77,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
 <script>
-    $(document).ready(function(){
-        $('#valor_total').mask('#.##0,00', {reverse: true});
-    });
+  $(document).ready(function(){
+      $('.money').mask('000.000.000.000.000,00', {reverse: true});
+  });
 </script>
 
 {% endblock %}

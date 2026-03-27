@@ -29,7 +29,7 @@
                                 <input type="radio" name="fornecedor_escolhido" value="{{ f.id }}"
                                     {% if solicitacao.fornecedor_escolhido == f %}checked{% endif %}>
                                 {% endif %}
-                                {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido == f %}
+                                {% if request.user.grupo in "gerente_contrato diretoria" and solicitacao.fornecedor_escolhido == f %}
                                     ✅ Escolhido pelo líder de contrato
                                 {% endif %}
                             </td>
@@ -89,34 +89,31 @@
     {% endif %}
 
     {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido %}
-      <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
-          {% csrf_token %}
-          <div class="mb-3">
-              <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
-              <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
-          </div>
-          <button type="submit" name="acao" value="aprovar" class="btn btn-success">
-              Aprovar fornecedor
-          </button>
-          <button type="submit" name="acao" value="reprovar" class="btn btn-danger">
-              Reprovar fornecedor
-          </button>
-      </form>
+    <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
+      {% csrf_token %}
+      <button type="submit" name="acao" value="aprovar" class="btn btn-success">
+          Aprovar fornecedor
+      </button>
+
+      <!-- Botão que abre o modal -->
+      <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarGerente">
+          Reprovar fornecedor
+      </button>
+    </form>
+
     {% endif %}
     {% if request.user.grupo == "diretoria" and solicitacao.fornecedor_escolhido %}
-      <form method="post" action="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}">
-          {% csrf_token %}
-          <div class="mb-3">
-              <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
-              <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
-          </div>
-          <button type="submit" name="acao" value="aprovar" class="btn btn-success">
-              Aprovar fornecedor
-          </button>
-          <button type="submit" name="acao" value="reprovar" class="btn btn-danger">
-              Reprovar fornecedor
-          </button>
-      </form>
+    <form method="post" action="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}">
+      {% csrf_token %}
+      <button type="submit" name="acao" value="aprovar" class="btn btn-success">
+          Aprovar fornecedor
+      </button>
+
+      <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarDiretor">
+          Reprovar fornecedor
+      </button>
+    </form>
+
     {% endif %}
 
     <div class="mt-4">
@@ -134,5 +131,62 @@
         <a href="{% url 'lista_solicitacoes' %}" class="btn btn-secondary">Voltar</a>
     </div>
 </div>
+
+<!-- Modal de reprovação do gerente-->
+<div class="modal fade" id="modalReprovarGerente" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title">Reprovar Fornecedor</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+
+        <div class="modal-body">
+          <label class="form-label">Justificativa da reprovação:</label>
+          <textarea class="form-control" name="justificativa" rows="4" required></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" name="acao" value="reprovar" class="btn btn-danger">
+            Confirmar reprovação
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de reprovação do diretor -->
+<div class="modal fade" id="modalReprovarDiretor" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title">Reprovar Fornecedor</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+
+        <div class="modal-body">
+          <label class="form-label">Justificativa da reprovação:</label>
+          <textarea class="form-control" name="justificativa" rows="4" required></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" name="acao" value="reprovar" class="btn btn-danger">
+            Confirmar reprovação
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 {% endblock %}

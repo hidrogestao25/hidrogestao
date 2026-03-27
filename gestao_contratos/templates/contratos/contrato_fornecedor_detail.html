@@ -6,11 +6,13 @@
       <h5>Detalhes do Contrato com Fornecedor</h5>
     </div>
     <div class="card-body">
+      {% if not contrato.guarda_chuva %}
       <p><strong>Código do Projeto:</strong> {{ contrato.cod_projeto.cod_projeto }}</p>
-      <p><strong>Cliente:</strong>
-        <a href="{% url 'cliente_detalhe' contrato.cod_projeto.cliente.id %}" class="text-decoration-none">
-          {{ contrato.cod_projeto.cliente }}
-        </a></p>
+        <p><strong>Cliente:</strong>
+          <a href="{% url 'cliente_detalhe' contrato.cod_projeto.cliente.id %}" class="text-decoration-none">
+            {{ contrato.cod_projeto.cliente }}
+          </a></p>
+      {% endif %}
       <p><strong>Líder Técnico:</strong> {{ contrato.coordenador.get_full_name|default:contrato.coordenador }}</p>
       <p><strong>Líder de Contrato:</strong> {{ contrato.lider_contrato.get_full_name|default:contrato.lider_contrato }}</p>
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
@@ -180,8 +182,8 @@
                         {% endif %}
                     {% endwith %}
                   {% endif %}
-              {% elif request.user.grupo in 'gerente coordenador' %}
-                  {% if  request.user.grupo in 'gerente' %}
+              {% elif request.user.grupo in 'gerente coordenador gerente_lider' %}
+                  {% if  request.user.grupo in 'gerente gerente_lider' %}
                       <a href="{% url 'detalhes_entrega' evento.id %}" class="btn btn-sm btn-outline-info">
                         Detalhes da Entrega
                       </a>
@@ -292,13 +294,13 @@
     {% else %}
       <p><em>Nenhuma Ordem de Serviço cadastrada para este contrato.</em></p>
     {% endif %}
-    <!-- {% if user.grupo in "coordenador,gerente,gerente_contrato,lider_contrato" %}
+     {% if user.grupo in "gerente_lider,gerente_contrato,lider_contrato" %}
       <div class="text-end">
-        <a href="{% url 'solicitar_os' %}" class="btn btn-custom">
+        <a href="{% url 'solicitar_os' contrato.pk %}" class="btn btn-custom">
             + Solicitar Nova OS
         </a>
       </div>
-    {% endif %} -->
+    {% endif %}
   {% endif %}
 
 
@@ -535,7 +537,11 @@
 
   <h5>📊 Gráfico de Pagamentos</h5>
   <div id="grafico-pagamentos">
-    {{ plot_div|safe }}
+    {% if plot_div %}
+        {{ plot_div|safe }}
+    {% else %}
+      Não há nenhuma previsão ou pagamento cadastrado.
+    {% endif %}
   </div>
 
   <hr>
@@ -545,7 +551,7 @@
   </div>
 </div>
 <div class="card-footer text-end">
-  <a href="{% url 'lista_contratos_fornecedores' %}" class="btn btn-custom">← Voltar</a>
+  <a href="javascript:history.back()" class="btn btn-secondary">← Voltar</a>
 </div>
 
   </div>
