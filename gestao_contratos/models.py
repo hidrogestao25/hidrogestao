@@ -593,6 +593,10 @@ class SolicitacaoOrdemServico(models.Model):
     aprovado_gerente_em =models.DateTimeField(null=True, blank=True)
     justificativa_reprovacao_gerente = models.TextField(null=True, blank=True)
 
+    aprovacao_diretor = models.CharField(max_length=100, null=True, blank=True)
+    aprovado_diretor_em =models.DateTimeField(null=True, blank=True)
+    justificativa_reprovacao_diretor = models.TextField(null=True, blank=True)
+
     def __str__(self):
         return f"Solicitação {self.id} - {self.titulo} - {self.contrato.empresa_terceira}"
 

@@ -77,6 +77,22 @@ document.addEventListener("DOMContentLoaded", function() {
              </p>
         {% endif %}
         <p><strong>Status:</strong> {{ solicitacao.status }}</p>
+        <p><strong>Descrição do Status:</strong>
+          {% if solicitacao.status == "Solicitação de contratação" %}
+            A solicitação foi encaminhada para avaliação da equipe de Suprimentos.
+          {% elif solicitacao.status == "Fornecedor aprovado" %}
+            A direção e gerência de contrato aprovaram e a equipe de suprimento deu início ao desenvolvimento das minutas dos Boletins de Medição e do Contrato.
+          {% elif solicitacao.status == "Planejamento do Contrato" %}
+            A equipe de suprimentos está desenvolvendo as minutas do boletim de medição e do contrato.
+          {% elif solicitacao.status == "Aprovação Final" %}
+            A gerência de contrato está avaliando as minutas desenvolvidas pela equipe de suprimento.
+          {% elif solicitacao.status == "Onboarding" %}
+            As minutas foram ambas aprovadas e a equipe de suprimento está marcando uma reunião onboarding com todos os envolvidos.
+          {% else %}
+            ERRO DE STATUS
+          {% endif %}
+
+        </p>
 
         <p><strong>Arquivo do Contrato:</strong>
             {% if solicitacao.contrato and solicitacao.contrato.arquivo_contrato %}

@@ -159,7 +159,7 @@
                         </div>
 
                     {% elif user.grupo == "diretoria" %}
-                        {% if bm.status_coordenador == "aprovado" and bm.status_gerente == "aprovado" %}
+                        {% if bm.status_gerente == "aprovado" %}
                             <div class="d-flex gap-1">
                                 <button type="button" class="btn btn-sm btn-success btn-aprovar-pagamento"
                                         data-bm-id="{{ bm.id }}"
