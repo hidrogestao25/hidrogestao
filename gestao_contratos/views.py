@@ -125,7 +125,6 @@ class OSCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
 #def is_financeiro(user):
 #    return user.is_authenticated and getattr(user, "grupo", None) == "financeiro"
 
-
 def home(request):
     user = request.user
     hoje = timezone.now().date()
