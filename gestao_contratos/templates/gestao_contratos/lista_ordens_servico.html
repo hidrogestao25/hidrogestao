@@ -4,11 +4,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Ordens de Serviço Cadastradas</h2>
 
-    {% if user.grupo in "coordenador lider_contrato" %}
-        <a href="{% url 'solicitar_os' %}" class="btn btn-custom">
-            + Solicitar Nova OS
-        </a>
-    {% endif %}
+    
     {% if user.grupo == "suprimento" %}
       <a href="{% url 'nova_os' %}" class="btn btn-custom">+ Adicionar Ordem de Serviço</a>
     {% endif %}

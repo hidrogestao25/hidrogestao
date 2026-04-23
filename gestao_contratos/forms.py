@@ -178,7 +178,23 @@ class ContratoFornecedorForm(forms.ModelForm):
 
     class Meta:
         model = ContratoTerceiros
-        fields = ['lider_contrato','condicao_pagamento', 'num_contrato_arquivo', 'num_contrato', 'observacao', 'cod_projeto', 'prospeccao', 'empresa_terceira', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto']
+        fields = [
+            'lider_contrato','condicao_pagamento',
+            'num_contrato_arquivo',
+            'num_contrato',
+            'observacao',
+            'cod_projeto',
+            'prospeccao',
+            'empresa_terceira',
+            'coordenador',
+            'data_inicio',
+            'data_fim',
+            'valor_total',
+            'status',
+            'objeto',
+            'guarda_chuva',
+            ]
+
         widgets = {
             'cod_projeto': forms.Select(attrs={'class': 'form-select'}),
             'num_contrato': forms.TextInput(attrs={'class': 'form-control'}),
@@ -557,12 +573,20 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
         user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
 
-        if user.grupo == 'coordenador':
+        self.fields['cod_projeto'].queryset = Contrato.objects.none()
+
+        if user and user.grupo == 'coordenador':
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(coordenador=user)
-        elif user.grupo == 'gerente':
-            self.fields['cod_projeto'].queryset = Contrato.objects.filter(coordenador__centros__in=user.centros.all())
+        elif user and user.grupo == 'gerente':
+            self.fields['cod_projeto'].queryset = Contrato.objects.filter(
+                coordenador__centros__in=user.centros.all()
+            ).distinct()
+
         self.fields['cod_projeto'].widget.attrs.update({'style': 'width:250px;'})
-        self.fields['coordenador'].queryset = User.objects.filter(grupo__in=['coordenador','gerente', 'gerente_lider'], is_active=True)
+        self.fields['coordenador'].queryset = User.objects.filter(
+            grupo__in=['coordenador', 'gerente', 'gerente_lider'],
+            is_active=True
+        )
 
 
 class UploadContratoOSForm(forms.ModelForm):

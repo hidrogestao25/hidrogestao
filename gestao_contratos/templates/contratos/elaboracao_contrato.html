@@ -43,7 +43,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if request.user.grupo == 'gerente' and item.contrato.arquivo_contrato %}
+                            {% if item.contrato.arquivo_contrato and request.user.grupo == 'gerente' or item.contrato.arquivo_contrato and request.user.grupo == 'gerente_lider' %}
                                 <!-- Botão Avaliar para gerentes -->
                                 <a href="{% url 'detalhes_contrato' item.solicitacao.id %}" class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
                                     Avaliar

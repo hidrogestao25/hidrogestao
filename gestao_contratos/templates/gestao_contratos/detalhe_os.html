@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load custom_tags %}
 
 {% block content %}
 <div class="container mt-4">
@@ -142,7 +143,7 @@
                     Voltar
                 </a>
 
-                {% if request.user.grupo in 'gerente,gerente_contrato,suprimento' %}
+                {% if request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'suprimento' %}
                     {% if os.status != 'finalizada' %}
                         <a href="{% url 'editar_ordem_servico' os.id  %}" class="btn btn-warning">
                             Editar OS
@@ -150,7 +151,8 @@
                     {% endif %}
                 {% endif %}
 
-                {% if request.user.grupo == 'lider_contrato' and os.status == 'pendente_lider' %}
+                {% if request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:os.coordenador %}
+                {% if os.status == 'pendente_lider' and os.lider_contrato == request.user or os.status == 'pendente_lider' and request.user.grupo == 'gerente_lider' %}
                     <a href="{% url 'aprovar_os_lider' os.id 'aprovar' %}" class="btn btn-success"
                     onclick="return confirm('Confirmar aprovação da Ordem de Serviço?')">
                         Aprovar OS
@@ -159,6 +161,7 @@
                     onclick="return confirm('Confirmar reprovação da Ordem de Serviço?')">
                         Reprovar OS
                     </a>
+                {% endif %}
                 {% endif %}
 
                 {% if request.user.grupo == 'suprimento' and os.status == 'pendente_suprimento' %}

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load custom_tags %}
 
 {% block content %}
 <div class="container mt-4">
@@ -164,8 +165,8 @@
                                 {% endif %}
                             {% endif %}
 
-                            {% if request.user.grupo in 'lider_contrato gerente_lider' %}
-                              {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user %}
+                            {% if request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
+                              {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user or solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and request.user.grupo == 'gerente_lider' %}
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                               {% endif %}
                               {% if solicitacao.minuta_boletins_medicao %}
