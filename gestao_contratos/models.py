@@ -389,7 +389,11 @@ class PropostaFornecedor(models.Model):
         unique_together = ("solicitacao", "fornecedor")
 
     def __str__(self):
-        return f"Proposta {self.fornecedor} - {self.solicitacao.contrato}"
+        if self.solicitacao is not None:
+            return f"Proposta {self.fornecedor} - {self.solicitacao.contrato}"
+        if self.solicitacao_contrato is not None:
+            return f"Proposta {self.fornecedor} - {self.solicitacao_contrato.contrato}"
+
 
 # --------------------------
 # Solicitação de Contratação
@@ -436,7 +440,7 @@ class ContratoTerceiros(models.Model):
     data_fim = models.DateField(null=True, blank=True)
     valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     objeto = models.TextField()
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Em elaboracao')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao')
     observacao = models.TextField(null=True, blank=True)
 
     num_contrato_arquivo = models.FileField(
@@ -893,6 +897,10 @@ class DocumentoBM(models.Model):
     @property
     def aprovado_por_ambos(self):
         return self.status_coordenador == "aprovado" and self.status_gerente == "aprovado"
+
+    @property
+    def aprovado_gerente(self):
+        return self.status_gerente == "aprovado"
 
     @property
     def reprovado_por_alguem(self):

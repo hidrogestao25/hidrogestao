@@ -44,24 +44,25 @@ eventos_hoje = Evento.objects.filter(data_prevista=hoje)
 
 for evento in eventos_hoje:
     contrato = evento.contrato_terceiro
-    if contrato and contrato.coordenador and contrato.coordenador.email:
-        coordenador = contrato.coordenador
-        email_destino = coordenador.email
-        print(f"👥 Usuário Coordenador: {email_destino}")
-        assunto = f"Lembrete de entrega - Evento #{evento.id}"
-        mensagem = (
-            f"Olá {coordenador.first_name or coordenador.username},\n\n"
-            f"Este é um lembrete automático para a entrega prevista hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
-            f"Fornecedor: {evento.empresa_terceira}\n"
-            f"Descrição: {evento.descricao}\n"
-            f"Contrato: {contrato.num_contrato or 'N/A'}\n\n"
-            f"Atenciosamente,\nSistema Hidrogestão"
-        )
-        try:
-            send_mail(assunto, mensagem, "hidro.gestao25@gmail.com", [email_destino])
-            print(f"📧 E-mail enviado para {email_destino} (Evento {evento.id})")
-        except Exception as e:
-            print(f"⚠️ Erro ao enviar e-mail para {email_destino}: {e}")
+    if contrato.status != 'encerrado':
+        if contrato and contrato.coordenador and contrato.coordenador.email:
+            coordenador = contrato.coordenador
+            email_destino = coordenador.email
+            print(f"👥 Usuário Coordenador: {email_destino}")
+            assunto = f"Lembrete de entrega - Evento #{evento.id}"
+            mensagem = (
+                f"Olá {coordenador.first_name or coordenador.username},\n\n"
+                f"Este é um lembrete automático para a entrega prevista hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
+                f"Fornecedor: {evento.empresa_terceira}\n"
+                f"Descrição: {evento.descricao}\n"
+                f"Contrato: {contrato.num_contrato or 'N/A'}\n\n"
+                f"Atenciosamente,\nSistema Hidrogestão"
+            )
+            try:
+                send_mail(assunto, mensagem, "hidro.gestao25@gmail.com", [email_destino])
+                print(f"📧 E-mail enviado para {email_destino} (Evento {evento.id})")
+            except Exception as e:
+                print(f"⚠️ Erro ao enviar e-mail para {email_destino}: {e}")
 
 # --- 4️⃣ VERIFICAÇÃO DE CONTRATOS (data_fim = hoje) ---
 contratos_hoje = ContratoTerceiros.objects.filter(data_fim=hoje)
@@ -72,34 +73,35 @@ emails_suprimento = [u.email for u in usuarios_suprimento]
 print(f"👥 Usuários suprimento: {emails_suprimento}")
 
 for contrato in contratos_hoje:
-    destinatarios = []
+    if contrato.status != 'encerrado':
+        destinatarios = []
 
-    # adiciona o e-mail do coordenador, se existir
-    if contrato.coordenador and contrato.coordenador.email:
-        destinatarios.append(contrato.coordenador.email)
+        # adiciona o e-mail do coordenador, se existir
+        if contrato.coordenador and contrato.coordenador.email:
+            destinatarios.append(contrato.coordenador.email)
 
-    # adiciona todos os e-mails do grupo suprimento
-    destinatarios.extend(emails_suprimento)
+        # adiciona todos os e-mails do grupo suprimento
+        destinatarios.extend(emails_suprimento)
 
-    # remove duplicados
-    destinatarios = list(set(destinatarios))
+        # remove duplicados
+        destinatarios = list(set(destinatarios))
 
-    if not destinatarios:
-        print(f"⚠️ Nenhum destinatário encontrado para contrato {contrato.id}")
-        continue
+        if not destinatarios:
+            print(f"⚠️ Nenhum destinatário encontrado para contrato {contrato.id}")
+            continue
 
-    assunto = f"Encerramento de contrato - {contrato.empresa_terceira}"
-    mensagem = (
-        f"Olá,\n\n"
-        f"O contrato nº {contrato.num_contrato or 'N/A'} referente ao projeto {contrato.cod_projeto} "
-        f"com a empresa {contrato.empresa_terceira} encerra hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
-        f"Por favor, verifique as providências necessárias.\n\n"
-        f"Atenciosamente,\nSistema Hidrogestão"
-    )
-    try:
-        send_mail(assunto, mensagem, "hidro.gestao25@gmail.com", destinatarios)
-        print(f"📧 E-mail enviado: Contrato {contrato.id} -> {destinatarios}")
-    except Exception as e:
-        print(f"⚠️ Erro ao enviar e-mail para {destinatarios}: {e}")
+        assunto = f"Encerramento de contrato - {contrato.empresa_terceira}"
+        mensagem = (
+            f"Olá,\n\n"
+            f"O contrato nº {contrato.num_contrato or 'N/A'} referente ao projeto {contrato.cod_projeto} "
+            f"com a empresa {contrato.empresa_terceira} encerra hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
+            f"Por favor, verifique as providências necessárias.\n\n"
+            f"Atenciosamente,\nSistema Hidrogestão"
+        )
+        try:
+            send_mail(assunto, mensagem, "hidro.gestao25@gmail.com", destinatarios)
+            print(f"📧 E-mail enviado: Contrato {contrato.id} -> {destinatarios}")
+        except Exception as e:
+            print(f"⚠️ Erro ao enviar e-mail para {destinatarios}: {e}")
 
 print("✅ Rotina concluída com sucesso.")

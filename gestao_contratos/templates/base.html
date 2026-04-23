@@ -231,7 +231,7 @@
                         {% for centro in user.centros.all %}
                             <span class="badge bg-warning text-dark me-1">{{ centro.nome }}</span>
                         {% endfor %}
-                    
+
                     {% endif %}
                 </div>
                 {% endif %}
@@ -258,10 +258,11 @@
                               {% if request.user.grupo == 'coordenador' %}
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Minhas Solicitações</a></li>
 
-                              {% elif request.user.grupo == 'gerente' %}
+                              {% elif request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' %}
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Solicitações</a></li>
+                              {% endif %}
 
-                              {% elif request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_lider' %}
+                              {% if request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_lider' %}
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_contrato' %}"><i class="bi bi-file-earmark-person-fill"></i> Solicitação de Contratação</a></li>
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_prospeccao' %}"><i class="bi bi-plus-square-fill"></i> Solicitação de Prospecção</a></li>
                               <li><a class="dropdown-item" href="{% url 'nova_solicitacao_guarda_chuva' %}"><i class="bi bi-umbrella"></i> Solicitação de Contrato Guarda-chuva</a></li>

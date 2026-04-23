@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load custom_tags %}
 
 {% block content %}
 <div class="container mt-4">
@@ -35,12 +36,14 @@
         </li>
     </ul>
 
-    {% if request.user.grupo == "lider_contrato" and bm.status_coordenador == 'pendente' %}
+    {% if request.user.grupo == "lider_contrato" or request.user.grupo == "gerente_lider" and request.user|shares_center_with:solicitacao.coordenador %}
+    {% if bm.status_coordenador == 'pendente' %}
         <form method="post">
             {% csrf_token %}
             <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
             <button name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
         </form>
+    {% endif %}
     {% endif %}
 
     {% if request.user.grupo == "gerente_contrato" %}

@@ -195,7 +195,7 @@
                   {% endif %}
                 </td>
 
-                {% if request.user.grupo == 'coordenador' or request.user.grupo == 'gerente' %}
+                {% if request.user.grupo == 'coordenador' %}
                 <td>
                   <div class="d-flex gap-1">
 
@@ -211,6 +211,29 @@
                       class="btn btn-sm btn-danger btn-reprovar"
                       data-bm-id="{{ item.bm.id }}"
                       {% if item.bm.status_coordenador != "pendente" %}
+                        disabled
+                      {% endif %}
+                    >Reprovar</button>
+
+                  </div>
+                </td>
+                {% endif %}
+                {% if request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' %}
+                <td>
+                  <div class="d-flex gap-1">
+
+                    <button type="button"
+                      class="btn btn-sm btn-success btn-aprovar"
+                      data-bm-id="{{ item.bm.id }}"
+                      {% if item.bm.status_gerente != "pendente" %}
+                        disabled
+                      {% endif %}
+                    >Aprovar</button>
+
+                    <button type="button"
+                      class="btn btn-sm btn-danger btn-reprovar"
+                      data-bm-id="{{ item.bm.id }}"
+                      {% if item.bm.status_gerente != "pendente" %}
                         disabled
                       {% endif %}
                     >Reprovar</button>

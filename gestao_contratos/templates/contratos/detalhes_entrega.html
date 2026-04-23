@@ -148,7 +148,7 @@
                                     {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>Reprovar</button>
                         </div>
 
-                    {% elif user.grupo == "gerente" %}
+                    {% elif user.grupo == "gerente" or request.user.grupo == 'gerente_lider' %}
                         <div class="d-flex gap-1">
                             <button type="button" class="btn btn-sm btn-success btn-aprovar"
                                     data-bm-id="{{ bm.id }}"
