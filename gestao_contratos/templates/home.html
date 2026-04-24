@@ -7,7 +7,7 @@
 
 {% if user.is_authenticated %}
 
-    <!-- 🟦 Tela inicial com logotipo animado e mensagem -->
+    <!-- Tela inicial com logotipo animado e mensagem -->
     <div id="welcome-container" class="text-center mb-4 fade-in">
         <div class="welcome-animation">
             <img src="{% static 'img/logo-favicon.png' %}" alt="Logo HIDROGestão" class="moving-logo">
@@ -18,7 +18,7 @@
         </div>
     </div>
 
-    <!-- 🟨 Painéis (dashboard) -->
+    <!-- Painéis (dashboard) -->
     <div id="dashboard-content" class="fade-out" style="display: none;">
         {% if painel_titulo %}
             <h2 class="text-center mb-4">{{ painel_titulo }}</h2>
@@ -179,7 +179,7 @@
                                     <li class="list-group-item d-flex justify-content-between align-items-center">
                                         <div>
                                             <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
-                                            <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
+                                            <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
 
                                             <!-- STATUS VISUAL -->
                                             <div class="mt-1">
@@ -215,7 +215,7 @@
             <div class="col-md-6 mb-4 animated-card">
                 <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-danger text-white">
-                        <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
+                        <h5 class="mb-0">Entregas Atrasadas</h5>
                     </div>
 
                     <div class="card-body">
@@ -557,7 +557,7 @@
                                       <li class="list-group-item d-flex justify-content-between align-items-center">
                                           <div>
                                               <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
-                                              <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
+                                              <small>Parcela {{ bm.parcela_paga }} -Â Valor: R$ {{ bm.valor_pago }}</small><br>
 
                                               <!-- STATUS VISUAL -->
                                               <div class="mt-1">
@@ -880,7 +880,7 @@
                   <div class="col-md-6 mb-4 animated-card">
                       <div class="card shadow-sm dashboard-card">
                           <div class="card-header bg-danger text-white">
-                              <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
+                              <h5 class="mb-0">Entregas Atrasadas</h5>
                           </div>
 
                           <div class="card-body">
@@ -1100,7 +1100,7 @@
                                           <li class="list-group-item d-flex justify-content-between align-items-center">
                                               <div>
                                                   <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
-                                                  <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
+                                                  <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
 
                                                   <!-- STATUS VISUAL -->
                                                   <div class="mt-1">
@@ -1136,7 +1136,7 @@
                   <div class="col-md-6 mb-4 animated-card">
                       <div class="card shadow-sm dashboard-card">
                           <div class="card-header bg-danger text-white">
-                              <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
+                              <h5 class="mb-0">Entregas Atrasadas</h5>
                           </div>
 
                           <div class="card-body">
@@ -1436,7 +1436,7 @@
                                       <li class="list-group-item d-flex justify-content-between align-items-center">
                                           <div>
                                               <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
-                                              <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
+                                              <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
 
                                               <!-- STATUS VISUAL -->
                                               <div class="mt-1">
@@ -1472,7 +1472,7 @@
               <div class="col-md-6 mb-4 animated-card">
                   <div class="card shadow-sm dashboard-card">
                       <div class="card-header bg-danger text-white">
-                          <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
+                          <h5 class="mb-0">Entregas Atrasadas</h5>
                       </div>
 
                       <div class="card-body">
@@ -1802,7 +1802,7 @@
                   <div class="col-md-6 mb-4 animated-card">
                       <div class="card shadow-sm dashboard-card">
                           <div class="card-header bg-danger text-white">
-                              <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
+                              <h5 class="mb-0">Entregas Atrasadas</h5>
                           </div>
 
                           <div class="card-body">
@@ -2022,7 +2022,7 @@
                                           <li class="list-group-item d-flex justify-content-between align-items-center">
                                               <div>
                                                   <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
-                                                  <small>Parcela {{ bm.parcela_paga }} — Valor: R$ {{ bm.valor_pago }}</small><br>
+                                                  <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
 
                                                   <!-- STATUS VISUAL -->
                                                   <div class="mt-1">
@@ -2058,7 +2058,7 @@
                   <div class="col-md-6 mb-4 animated-card">
                       <div class="card shadow-sm dashboard-card">
                           <div class="card-header bg-danger text-white">
-                              <h5 class="mb-0">🚨 Entregas Atrasadas</h5>
+                              <h5 class="mb-0">Entregas Atrasadas</h5>
                           </div>
 
                           <div class="card-body">
@@ -2256,7 +2256,7 @@
 {% endif %}
 </div>
 
-<!-- 🎨 Estilos -->
+<!-- Estilos -->
 <style>
 /* ===== ANIMAÇÃO DO LOGO ===== */
 .welcome-animation {
@@ -2312,7 +2312,7 @@
 }
 </style>
 
-<!-- ⚡ Script -->
+<!-- Script -->
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     const welcome = document.getElementById("welcome-container");

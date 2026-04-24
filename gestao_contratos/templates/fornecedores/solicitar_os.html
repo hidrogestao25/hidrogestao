@@ -7,15 +7,29 @@
     <div class="card-header bg-success text-white">
       <h5 class="mb-0">Solicitação de Ordem de Serviço</h5>
     </div>
+    {% if contrato %}
     <div class="alert alert-info">
         <b>Contrato:</b> {{ contrato.num_contrato }} <br>
         <b>Fornecedor:</b> {{ contrato.empresa_terceira }}
     </div>
+    {% endif %}
 
     <div class="card-body">
 
       <form method="post">
         {% csrf_token %}
+
+        {% if seleciona_contrato %}
+        <div class="mb-3">
+          <label class="form-label fw-bold">Contrato</label>
+          {{ form.contrato }}
+          {% if form.contrato.errors %}
+            <div class="text-danger small">
+              {{ form.contrato.errors }}
+            </div>
+          {% endif %}
+        </div>
+        {% endif %}
 
         <div class="mb-3">
           <label class="form-label fw-bold">

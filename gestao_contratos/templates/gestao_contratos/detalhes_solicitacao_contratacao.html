@@ -51,13 +51,13 @@ document.addEventListener("DOMContentLoaded", function() {
         <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
         <p><strong>Guarda-chuva:</strong>
           {% if solicitacao.guarda_chuva %}
-            ✔️
+            Sim
           {% else %}
-            <span style="color:red;">✖</span>
+            <span style="color:red;">Não</span>
           {% endif %}
         </p>
         <p><strong>Previsto no Orçamento:</strong>
-            {% if solicitacao.previsto_no_orcamento %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}
+            {% if solicitacao.previsto_no_orcamento %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}
         </p>
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>
         <p><strong>Valor Disponível:</strong>
@@ -226,9 +226,9 @@ document.addEventListener("DOMContentLoaded", function() {
     <div class="card-body">
         <p><strong>Aprovação da Gerência:</strong>
             {% if solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
-                <span class="badge bg-success me-1">✔️ Aprovado</span>
+          <span class="badge bg-success me-1">Aprovado</span>
             {% elif solicitacao.aprovacao_fornecedor_gerente == "reprovado" %}
-                <span class="badge bg-warning text-dark me-1">✖ Reprovado</span>
+          <span class="badge bg-warning text-dark me-1">Reprovado</span>
             {% else %}
               <span class="badge bg-secondary me-1">Em analise</span>
             {% endif %}
@@ -242,9 +242,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
         <p><strong>Aprovação da Diretoria:</strong>
             {% if solicitacao.aprovacao_fornecedor_diretor == "aprovado" %}
-                <span class="badge bg-success me-1">✔️ Aprovado</span>
+          <span class="badge bg-success me-1">Aprovado</span>
             {% elif solicitacao.aprovacao_fornecedor_diretor == "reprovado" %}
-                <span class="badge bg-warning text-dark me-1">✖ Reprovado</span>
+          <span class="badge bg-warning text-dark me-1">Reprovado</span>
             {% else %}
               <span class="badge bg-secondary me-1">Em analise</span>
             {% endif %}
@@ -283,8 +283,8 @@ document.addEventListener("DOMContentLoaded", function() {
                               <td>{{ evento.descricao }}</td>
                               <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
                               <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
-                              <td>{% if evento.realizado %}✔️{% else %}✖{% endif %}</td>
-                              <td>{% if evento.com_atraso %}✔️{% else %}✖{% endif %}</td>
+                  <td>{% if evento.realizado %}Sim{% else %}Não{% endif %}</td>
+                  <td>{% if evento.com_atraso %}Sim{% else %}Não{% endif %}</td>
                               <td>R$ {{ evento.valor_pago|default:"-" }}</td>
                               <td>
                                 {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_lider gerente_contrato' %}
@@ -396,7 +396,7 @@ function validarJustificativa(idCampo){
     let campo = document.getElementById(idCampo).value.trim();
 
     if(campo === ""){
-        alert("É obrigatório informar a justificativa para reprovar.");
+  alert("É obrigatório informar a justificativa para reprovar.");
         return false;
     }
 

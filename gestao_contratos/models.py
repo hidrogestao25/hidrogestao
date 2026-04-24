@@ -2,6 +2,8 @@ from decimal import Decimal
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.auth.models import AbstractUser, Group, Permission
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 from django.conf import settings
 
@@ -1074,3 +1076,32 @@ class CalendarioPagamento(models.Model):
 
     def __str__(self):
         return self.data_pagamento.strftime('%d/%m/%Y')
+
+
+class RegistroAuditoria(models.Model):
+    ACAO_CHOICES = [
+        ("criado", "Criado"),
+        ("atualizado", "Atualizado"),
+    ]
+
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveBigIntegerField()
+    content_object = GenericForeignKey("content_type", "object_id")
+    acao = models.CharField(max_length=20, choices=ACAO_CHOICES)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="registros_auditoria",
+    )
+    modelo = models.CharField(max_length=100)
+    representacao_objeto = models.CharField(max_length=255)
+    detalhes = models.TextField(blank=True, null=True)
+    data_hora = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-data_hora"]
+
+    def __str__(self):
+        return f"{self.get_acao_display()} - {self.modelo} #{self.object_id}"

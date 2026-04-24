@@ -30,7 +30,7 @@
         </tr>
         <tr>
             <th>Previsto no Orçamento</th>
-            <td>{% if solicitacao.previsto_no_orcamento %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}</td>
+            <td>{% if solicitacao.previsto_no_orcamento %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}</td>
         </tr>
         <tr>
             <th>Valor Total</th>
@@ -52,7 +52,7 @@
         </tr>
         <tr>
             <th>Triagem Realizada</th>
-            <td>{% if solicitacao.triagem_realizada %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}</td>
+            <td>{% if solicitacao.triagem_realizada %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}</td>
         </tr>
     </table>
 
@@ -90,9 +90,9 @@
                 <a href="{{ contrato_doc.arquivo_contrato.url }}" target="_blank" class="btn btn-sm btn-outline-primary">Ver Contrato em PDF</a>
             {% endif %}
             {% if solicitacao.aprovacao_gerencia == True %}
-              <span class="badge bg-success me-1">✔️ Aprovado</span>
+                  <span class="badge bg-success me-1">Aprovado</span>
             {% elif solicitaca.reprovacao_gerencia == True %}
-              <span class="badge bg-warning text-dark me-1">✖ Reprovado</span>
+                  <span class="badge bg-warning text-dark me-1">Reprovado</span>
             {% endif %}
         </div>
     </div>

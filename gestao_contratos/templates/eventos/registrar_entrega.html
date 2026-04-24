@@ -107,7 +107,7 @@
 
         <div class="d-flex justify-content-end gap-2">
           <a href="{% url 'contrato_fornecedor_detalhe' contrato.pk %}" class="btn btn-secondary">Cancelar</a>
-          <button type="submit" class="btn btn-success">Salvar</button>
+          {% if can_manage_delivery %}<button type="submit" class="btn btn-success">Salvar</button>{% endif %}
         </div>
       </form>
 
@@ -136,7 +136,7 @@
               <th>Observação</th>
               <th>Arquivo</th>
 
-              {% if request.user.grupo == 'coordenador' or request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' %}
+              {% if can_approve_bm_as_lider or can_approve_bm_as_gerente or request.user.grupo == 'suprimento' %}
               <th>Ações</th>
               {% endif %}
             </tr>
@@ -195,7 +195,7 @@
                   {% endif %}
                 </td>
 
-                {% if request.user.grupo == 'coordenador' %}
+                {% if can_approve_bm_as_lider %}
                 <td>
                   <div class="d-flex gap-1">
 
@@ -218,7 +218,7 @@
                   </div>
                 </td>
                 {% endif %}
-                {% if request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' %}
+                {% if can_approve_bm_as_gerente %}
                 <td>
                   <div class="d-flex gap-1">
 
@@ -677,7 +677,7 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   });
   /* ------------------------
-      APROVAÇÃO / REPROVAÇÃO
+                        APROVAÇÃO / REPROVAÇÃO
   ------------------------ */
 
   const csrfToken = "{{ csrf_token }}";
@@ -757,3 +757,4 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 
 {% endblock %}
+

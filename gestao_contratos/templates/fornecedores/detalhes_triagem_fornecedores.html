@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load custom_tags %}
 {% block content %}
 
@@ -25,12 +25,12 @@
                         {% with prop=propostas_dict|dict_get:f.id %}
                         <tr>
                             <td>
-                                {% if request.user == solicitacao.lider_contrato %}
+                                {% if request.user.grupo == "lider_contrato" and request.user == solicitacao.lider_contrato or request.user.grupo == "gerente_contrato" or request.user.grupo == "gerente_lider" and request.user|shares_center_with:solicitacao.coordenador %}
                                 <input type="radio" name="fornecedor_escolhido" value="{{ f.id }}"
                                     {% if solicitacao.fornecedor_escolhido == f %}checked{% endif %}>
                                 {% endif %}
-                                {% if request.user.grupo in "gerente_contrato diretoria" and solicitacao.fornecedor_escolhido == f %}
-                                    ✅ Escolhido pelo líder de contrato
+                                {% if request.user.grupo == "diretoria" and solicitacao.fornecedor_escolhido == f %}
+                                    ✓ Fornecedor escolhido
                                 {% endif %}
                             </td>
                             <td>{{ f.nome }}</td>
@@ -64,7 +64,7 @@
 
 
 
-            {% if request.user == solicitacao.lider_contrato and not solicitacao.fornecedor_escolhido %}
+            {% if request.user.grupo == "lider_contrato" and request.user == solicitacao.lider_contrato and not solicitacao.fornecedor_escolhido or request.user.grupo == "gerente_contrato" and not solicitacao.fornecedor_escolhido or request.user.grupo == "gerente_lider" and request.user|shares_center_with:solicitacao.coordenador and not solicitacao.fornecedor_escolhido %}
             <div class="mb-3">
                 <label for="justificativa_fornecedor_escolhido" class="form-label">
                     Justificativa pela escolha do fornecedor:
@@ -81,14 +81,14 @@
         <p>Nenhum fornecedor selecionado na triagem.</p>
     {% endif %}
 
-    {% if request.user.grupo == "gerente_contrato" and solicitacao.justificativa_fornecedor_escolhido %}
+    {% if request.user.grupo == "gerente_contrato" and solicitacao.justificativa_fornecedor_escolhido or request.user.grupo == "gerente_lider" and request.user|shares_center_with:solicitacao.coordenador and solicitacao.justificativa_fornecedor_escolhido %}
     <div class="alert alert-info mt-4">
         <strong>Justificativa do Líder de Contrato:</strong><br>
         {{ solicitacao.justificativa_fornecedor_escolhido }}
     </div>
     {% endif %}
 
-    {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido %}
+    {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido or request.user.grupo == "lider_contrato" and request.user == solicitacao.lider_contrato and solicitacao.fornecedor_escolhido or request.user.grupo == "gerente_lider" and request.user|shares_center_with:solicitacao.coordenador and solicitacao.fornecedor_escolhido %}
     <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
       {% csrf_token %}
       <button type="submit" name="acao" value="aprovar" class="btn btn-success">
@@ -117,7 +117,7 @@
     {% endif %}
 
     <div class="mt-4">
-        {% if not solicitacao.nenhum_fornecedor_ideal and request.user == solicitacao.lider_contrato %}
+        {% if not solicitacao.nenhum_fornecedor_ideal and request.user.grupo == "lider_contrato" and request.user == solicitacao.lider_contrato or not solicitacao.nenhum_fornecedor_ideal and request.user.grupo == "gerente_contrato" or not solicitacao.nenhum_fornecedor_ideal and request.user.grupo == "gerente_lider" and request.user|shares_center_with:solicitacao.coordenador %}
         <form method="post" action="{% url 'nenhum_fornecedor_ideal' solicitacao.id %}" style="display:inline;">
             {% csrf_token %}
             <button type="submit" class="btn btn-warning btn-sm">
@@ -132,7 +132,7 @@
     </div>
 </div>
 
-<!-- Modal de reprovação do gerente-->
+<!-- Modal de reprovação do gerente -->
 <div class="modal fade" id="modalReprovarGerente" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -190,3 +190,6 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 {% endblock %}
+
+
+

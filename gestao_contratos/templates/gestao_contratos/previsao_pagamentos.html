@@ -17,7 +17,7 @@
       <div class="col-md-3">
         <label for="{{ form.data_limite.id_for_label }}" class="form-label">
           Data Limite
-          <i class="bi bi-info-circle" title="Última data a considerar nos filtros de previsão e pagamento."></i>
+                  <i class="bi bi-info-circle" title="Última data a considerar nos filtros de previsão e pagamento."></i>
         </label>
         {{ form.data_limite }}
       </div>
@@ -164,7 +164,7 @@
         </tr>
       {% endfor %}
 
-      <!-- 🔸 Linha de totais gerais -->
+      <!-- Linha de totais gerais -->
       <tr class="fw-bold table-secondary">
         <td colspan="5" class="text-end">Totais Gerais:</td>
         <td>R$ {{ total_bm_previsto|floatformat:2 }}</td>
@@ -291,7 +291,7 @@
 
 {% if grafico_barra %}
   <div class="mt-5">
-    <h4>Pagamentos Previsto x Pago (Últimos 12 meses e Próximos 12 meses)</h4>
+        <h4>Pagamentos Previsto x Pago (Últimos 12 meses e Próximos 12 meses)</h4>
     {{ grafico_barra|safe }}
   </div>
 {% endif %}

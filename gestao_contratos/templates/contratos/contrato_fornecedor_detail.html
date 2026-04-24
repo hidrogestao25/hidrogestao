@@ -31,7 +31,7 @@
         {% endif %}">
         <strong>Data Fim:</strong> {{ contrato.data_fim|date:"d/m/Y" }}
         {% if contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
-             |  ⚠️  O contrato com fornecedor ultrapassou a data final
+             | O contrato com fornecedor ultrapassou a data final
         {% endif %}
       </p>
       <p><strong>Forma de Pagamento:</strong>
@@ -53,7 +53,7 @@
       {% if contrato.num_contrato_arquivo %}
         <p>
           <a href="{{ contrato.num_contrato_arquivo.url }}" class="btn btn-sm btn-outline-primary">
-            📎 Baixar Contrato com Fornecedor
+            Baixar Contrato com Fornecedor
           </a>
         </p>
       {% endif %}
@@ -68,7 +68,7 @@
   {# Bloco da proposta do fornecedor selecionado #}
   {% if proposta_fornecedor %}
     <div class="mt-3">
-      <h6>📄 Proposta do Fornecedor Selecionado</h6>
+      <h6>Proposta do Fornecedor Selecionado</h6>
       <p><strong>Fornecedor:</strong> {{ proposta_fornecedor.fornecedor }}</p>
       <p><strong>Valor Proposta:</strong> R$ {{ proposta_fornecedor.valor_proposta|floatformat:2 }}</p>
       <p><strong>Condição de Pagamento:</strong> {{ proposta_fornecedor.get_condicao_pagamento_display }}</p>
@@ -78,7 +78,7 @@
       {% if proposta_fornecedor.arquivo_proposta %}
         <p>
           <a href="{{ proposta_fornecedor.arquivo_proposta.url }}" class="btn btn-sm btn-outline-primary">
-            📎 Baixar Proposta
+            Baixar Proposta
           </a>
         </p>
       {% endif %}
@@ -90,7 +90,7 @@
   <hr>
 
   {# Bloco de eventos vinculados ao contrato #}
-  <h5>📌 Eventos do Contrato</h5>
+  <h5>Eventos do Contrato</h5>
   {% if eventos %}
     <table class="table table-sm table-bordered align-middle">
       <thead class="table-light">
@@ -124,7 +124,7 @@
             <td>{{ evento.descricao }}</td>
             <td>
               {% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
-                ⚠️ {{ evento.data_prevista|date:"d/m/Y" }} <br>Entrega Atrasada!!!
+                {{ evento.data_prevista|date:"d/m/Y" }} <br>Entrega Atrasada!!!
               {% else %}
                 {{ evento.data_prevista|date:"d/m/Y" }}
               {% endif %}
@@ -136,7 +136,7 @@
               <td>
                 R$ {{ evento.valor_pago|floatformat:2 }}
                 {% if evento.valor_pago != evento.valor_previsto %}
-                  <br>⚠️ Valor diferente do previsto!
+                    <br>Valor diferente do previsto!
                 {% endif %}
               </td>
             {% else %}
@@ -152,19 +152,19 @@
               {% if evento.realizado %}
                 {% if evento.valor_pago != evento.valor_previsto %}
                   {% if not evento.valor_pago %}
-                    💳 Pagamento não realizado
+                Pagamento não realizado
                   {% elif evento.valor_pago == 0 %}
-                    💳 Pagamento não realizado
+                Pagamento não realizado
                   {% elif evento.valor_pago <= evento.valor_previsto %}
-                    💳 Pagamento abaixo do previsto
+                Pagamento abaixo do previsto
                   {% elif evento.valor_pago >= evento.valor_previsto %}
-                    ✅ Finalizado
+                  Finalizado
                   {% endif %}
                 {% else %}
-                ✅ Finalizado
+                  Finalizado
                 {% endif %}
               {% else %}
-                ⏳ Pendente
+                âÂÂ³ Pendente
               {% endif %}
             </td>
             <td>
@@ -177,13 +177,13 @@
                         {% if avaliacao %}
                             <!-- Avaliação já feita -->
                             <button class="btn btn-sm btn-secondary" disabled>
-                                Avaliado ✔
+                        Avaliado
                             </button>
                         {% endif %}
                     {% endwith %}
                   {% endif %}
-              {% elif request.user.grupo in 'gerente coordenador gerente_lider' %}
-                  {% if  request.user.grupo in 'gerente gerente_lider' %}
+              {% elif request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'gerente_lider' %}
+                  {% if request.user.grupo == 'gerente_contrato' or request.user.grupo == 'gerente_lider' %}
                       <a href="{% url 'detalhes_entrega' evento.id %}" class="btn btn-sm btn-outline-info">
                         Detalhes da Entrega
                       </a>
@@ -193,13 +193,13 @@
                         {% if avaliacao %}
                             <!-- Avaliação já feita -->
                             <button class="btn btn-sm btn-secondary" disabled>
-                                Avaliado ✔
+                        Avaliado
                             </button>
                         {% else %}
                             <!-- Evento realizado, mas sem avaliação -->
                             <a href="{% url 'avaliar_evento_fornecedor' evento.id %}"
                                class="btn btn-sm btn-outline-primary">
-                               Avaliar Evento ⭐
+                               Avaliar Evento âÂ­Â
                             </a>
                         {% endif %}
                     {% endwith %}
@@ -208,10 +208,7 @@
                     Registrar Entrega
                   </a>
 
-              {% elif request.user.grupo in "suprimento lider_contrato gerente_contrato" %}
-                  <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
-                    Registrar Entrega
-                  </a>
+              {% elif request.user.grupo == "suprimento" %}
                   <a href="{% url 'duplicar_evento_contrato' evento.id %}" class="btn btn-sm btn-outline-secondary"
                      onclick="return confirm('Deseja duplicar este evento?');">
                      Duplicar Evento
@@ -226,7 +223,7 @@
                         {% if avaliacao %}
                             <!-- Avaliação já feita -->
                             <button class="btn btn-sm btn-secondary" disabled>
-                                Avaliado ✔
+                        Avaliado
                             </button>
                         {% endif %}
                     {% endwith %}
@@ -249,7 +246,7 @@
   {% if contrato.guarda_chuva %}
     <hr>
 
-    <h5>🧾 Ordens de Serviço Vinculadas</h5>
+  <h5>Ordens de Serviço Vinculadas</h5>
 
     {% if ordens_servico %}
       <table class="table table-striped table-hover align-middle">
@@ -294,7 +291,7 @@
     {% else %}
       <p><em>Nenhuma Ordem de Serviço cadastrada para este contrato.</em></p>
     {% endif %}
-     {% if user.grupo in "gerente_lider,gerente_contrato,lider_contrato" %}
+     {% if user.grupo == "gerente_lider" or user.grupo == "gerente_contrato" or user.grupo == "lider_contrato" %}
       <div class="text-end">
         <a href="{% url 'solicitar_os' contrato.pk %}" class="btn btn-custom">
             + Solicitar Nova OS
@@ -306,7 +303,7 @@
 
   <hr>
 
-  <h5>📊 Indicadores do Fornecedor</h5>
+  <h5>Indicadores do Fornecedor</h5>
 
   <div class="row mt-3">
 
@@ -535,7 +532,7 @@
   <!-- plotlyjs (carregar biblioteca só uma vez na base ou aqui) -->
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 
-  <h5>📊 Gráfico de Pagamentos</h5>
+  <h5>Gráfico de Pagamentos</h5>
   <div id="grafico-pagamentos">
     {% if plot_div %}
         {{ plot_div|safe }}
@@ -545,7 +542,7 @@
   </div>
 
   <hr>
-  <h5>📈 Comparativo Financeiro</h5>
+  <h5>Comparativo Financeiro</h5>
   <div id="grafico-comparativo">
     {{ comparativo_div|safe }}
   </div>

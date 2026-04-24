@@ -48,13 +48,13 @@ document.addEventListener("DOMContentLoaded", function() {
         <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
         <p><strong>Guarda-chuva:</strong>
           {% if solicitacao.guarda_chuva %}
-            ✔️
+            Sim
           {% else %}
-            <span style="color:red;">✖</span>
+            <span style="color:red;">Não</span>
           {% endif %}
         </p>
         <p><strong>Previsto no Orçamento:</strong>
-            {% if solicitacao.previsto_no_orcamento %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}
+            {% if solicitacao.previsto_no_orcamento %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}
         </p>
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>
         <p><strong>Valor Disponível:</strong>
@@ -85,7 +85,7 @@ document.addEventListener("DOMContentLoaded", function() {
           <p><strong>Data da Aprovação:</strong> {{ solicitacao.data_aprovacao|date:"d/m/Y H:i" }}</p>
         {% endif %}
         <p><strong>Triagem Realizada:</strong>
-            {% if solicitacao.triagem_realizada %}✔️{% else %}<span style="color:red;">✖</span>{% endif %}
+            {% if solicitacao.triagem_realizada %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}
         </p>
         <p><strong>Status:</strong> {{ solicitacao.status }}</p>
         <p><strong>Descrição do Status:</strong>
@@ -341,9 +341,9 @@ document.addEventListener("DOMContentLoaded", function() {
     <div class="card-body">
         <p><strong>Aprovação da Gerência:</strong>
             {% if solicitacao.aprovacao_fornecedor_gerente == 'aprovado' %}
-                <span class="badge bg-success">✔️ Aprovado</span>
+                  <span class="badge bg-success">Aprovado</span>
             {% elif solicitacao.aprovacao_fornecedor_gerente == 'reprovado' %}
-                <span class="badge bg-danger">✖ Reprovado</span>
+                  <span class="badge bg-danger">Reprovado</span>
             {% else %}
               <span class="badge bg-warning text-dark">Em Analise</span>
             {% endif %}
@@ -355,9 +355,9 @@ document.addEventListener("DOMContentLoaded", function() {
         {% endif %}
         <p><strong>Aprovação da Diretoria:</strong>
             {% if solicitacao.aprovacao_fornecedor_diretor == 'aprovado' %}
-                <span class="badge bg-success">✔️ Aprovado</span>
+                  <span class="badge bg-success">Aprovado</span>
             {% elif solicitacao.aprovacao_fornecedor_diretor == 'reprovado' %}
-                <span class="badge bg-danger">✖ Reprovado</span>
+                  <span class="badge bg-danger">Reprovado</span>
             {% else %}
               <span class="badge bg-warning text-dark">Em Analise</span>
             {% endif %}
@@ -394,8 +394,8 @@ document.addEventListener("DOMContentLoaded", function() {
                           <td>{{ evento.descricao }}</td>
                           <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
                           <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
-                          <td>{% if evento.realizado %}✔️{% else %}✖{% endif %}</td>
-                          <td>{% if evento.com_atraso %}✔️{% else %}✖{% endif %}</td>
+                  <td>{% if evento.realizado %}Sim{% else %}Não{% endif %}</td>
+                  <td>{% if evento.com_atraso %}Sim{% else %}Não{% endif %}</td>
                           <td>R$ {{ evento.valor_pago|default:"-" }}</td>
                           <td>
                             {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_contrato gerente_lider' %}
@@ -516,14 +516,14 @@ document.addEventListener("DOMContentLoaded", function() {
 {% endif %}
 
 <!--Botões para Lider de contrato e para gerente lider-->
-{% if request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
-    {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user or solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and request.user.grupo == 'gerente_lider' %}
+{% if request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
+    {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user or solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and request.user.grupo == 'gerente_contrato' or solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and request.user.grupo == 'gerente_lider' %}
       <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info mt-3">Selecionar Fornecedor</a>
     {% endif %}
 {% endif %}
 
 <!-- Botões de aprovação para gerente -->
-{% if request.user.grupo == 'gerente_contrato' %}
+{% if request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' and request.user == solicitacao.lider_contrato or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
   {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
       <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success mt-3">Avaliar Fornecedor</a>
   {% endif %}
@@ -574,3 +574,4 @@ document.addEventListener("DOMContentLoaded", function() {
 </div>
 
 {% endblock %}
+

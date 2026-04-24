@@ -62,7 +62,7 @@
       {% if os.arquivo_os %}
         <p>
           <a href="{{ os.arquivo_os.url }}" class="btn btn-sm btn-outline-primary">
-            📎 Baixar Contrato da OS
+            Baixar Contrato da OS
           </a>
         </p>
       {% endif %}
@@ -70,7 +70,7 @@
       <hr>
 
       <!-- INDICADORES DO FORNECEDOR -->
-      <h5>📊 Indicadores do Fornecedor</h5>
+  <h5>Indicadores do Fornecedor</h5>
 
       <div class="row mt-3">
 
@@ -143,11 +143,11 @@
                 <div class="row mb-2">
                     <div class="col-md-4">
                         <strong>Data da Entrega:</strong><br>
-                        {{ os.data_entrega|default:"—" }}
+                        {{ os.data_entrega|default:"âââ€šÂ¬ââ‚¬Â" }}
                     </div>
                     <div class="col-md-4">
                         <strong>Avaliação:</strong><br>
-                        {{ os.avaliacao|default:"—" }}
+                        {{ os.avaliacao|default:"âââ€šÂ¬ââ‚¬Â" }}
                     </div>
                     <div class="col-md-4">
                         <strong>Status:</strong><br>
@@ -167,16 +167,16 @@
                         {% if os.valor_pago %}
                             R$ {{ os.valor_pago|floatformat:2 }}
                         {% else %}
-                            —
+                            âââ€šÂ¬ââ‚¬Â
                         {% endif %}
                     </div>
                     <div class="col-md-4">
                         <strong>Data do Pagamento:</strong><br>
-                        {{ os.data_pagamento|default:"—" }}
+                        {{ os.data_pagamento|default:"âââ€šÂ¬ââ‚¬Â" }}
                     </div>
                     <div class="col-md-4">
                         <strong>Evidência:</strong><br>
-                        {{ os.caminho_evidencia|default:"—" }}
+                        {{ os.caminho_evidencia|default:"âââ€šÂ¬ââ‚¬Â" }}
                     </div>
                 </div>
 
@@ -197,7 +197,7 @@
     <!-- FOOTER -->
     <div class="card-footer text-end">
       <div class="d-flex justify-content-end gap-2">
-        {% if request.user.grupo in "gerente,coordenador,suprimento" %}
+        {% if request.user.grupo == "lider_contrato" and request.user == os.lider_contrato or request.user.grupo == "gerente_contrato" or request.user.grupo == "gerente_lider" %}
         <a href="{% url 'registrar_entrega_os' os.id %}" class="btn btn-success">
           {% if os.realizado or os.avaliacao %}
             Editar Entrega
@@ -215,3 +215,4 @@
   </div>
 </div>
 {% endblock %}
+
