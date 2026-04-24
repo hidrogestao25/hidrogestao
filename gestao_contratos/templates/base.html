@@ -258,7 +258,7 @@
                               {% if request.user.grupo == 'coordenador' %}
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Minhas Solicitações</a></li>
 
-                              {% elif request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' %}
+                              {% elif request.user.grupo == 'gerente' %}
                                 <li><a class="dropdown-item" href="{% url 'lista_solicitacoes' %}"><i class="bi bi-card-list"></i> Solicitações</a></li>
                               {% endif %}
 
@@ -329,6 +329,23 @@
                             {% endif %}
                             <!-- <li><a class="dropdown-item" href="#"><i class="bi bi-star-fill"></i> Avaliações</a></li> -->
                         </ul>
+                    </li>
+
+                    {% if request.user.grupo == 'suprimento' %}
+                    <li class="nav-item">
+                      <form method="post" action="{% url 'enviar_report_suprimento' %}" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="nav-link btn btn-link" style="border: none; background: none;">
+                          <i class="bi bi-envelope-paper"></i> Report
+                        </button>
+                      </form>
+                    </li>
+                    {% endif %}
+
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'guia_permissoes' %}">
+                            <i class="bi bi-journal-text"></i> Guia de Permissões
+                        </a>
                     </li>
 
                     <li class="nav-item">

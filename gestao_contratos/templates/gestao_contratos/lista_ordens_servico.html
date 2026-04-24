@@ -4,7 +4,10 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Ordens de Serviço Cadastradas</h2>
 
-    
+    {% if user.grupo == "lider_contrato" or user.grupo == "gerente_lider" or user.grupo == "gerente_contrato" %}
+      <a href="{% url 'solicitar_os_com_contrato' %}" class="btn btn-custom">+ Solicitar Nova OS</a>
+    {% endif %}
+
     {% if user.grupo == "suprimento" %}
       <a href="{% url 'nova_os' %}" class="btn btn-custom">+ Adicionar Ordem de Serviço</a>
     {% endif %}
@@ -50,7 +53,7 @@
                 <td>{{ os.titulo|truncatechars:40 }}</td>
                 {% if request.user.grupo != "coordenador" %}
                   <td>
-                      {{ os.solicitante.get_full_name|default:os.solicitante.username }}
+                      {{ os.coordenador.get_full_name|default:os.coordenador.username }}
                   </td>
                 {% endif %}
                 {% if request.user.grupo != "lider_contrato" %}
@@ -58,7 +61,7 @@
                       {% if os.lider_contrato %}
                           {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
                       {% else %}
-                          —
+                          âââ€šÂ¬ââ‚¬Â
                       {% endif %}
                   </td>
                 {% endif %}
@@ -86,7 +89,7 @@
     </tbody>
 </table>
 
-<!-- 📄 Paginação -->
+    <!-- Paginação -->
 <nav aria-label="Navegação de páginas">
     <ul class="pagination">
 
@@ -115,7 +118,7 @@
             </li>
             <li class="page-item">
                 <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">
-                    Última &raquo;
+                        Última &raquo;
                 </a>
             </li>
         {% endif %}

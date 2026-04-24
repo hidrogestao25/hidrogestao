@@ -3,6 +3,7 @@ from . import views
 from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, ContratoFornecedorCreateView, OSCreateView
 
 urlpatterns = [
+    path('guia-permissoes/', views.guia_permissoes, name='guia_permissoes'),
     path('contratos/', views.lista_contratos, name='lista_contratos'),
     path('contratos/novo/', ContratoCreateView.as_view(), name='novo_contrato'),
     path('contratos/criar-contrato/', views.add_contrato, name='add_contrato'),
@@ -25,6 +26,7 @@ urlpatterns = [
     path('fornecedores/<int:pk>/', views.fornecedor_detalhe, name='fornecedor_detalhe'),
     path('fornecedores/solicitar/', views.nova_solicitacao_prospeccao, name='nova_solicitacao_prospeccao'),
     path('fornecedores/solicitacoes/', views.lista_solicitacoes, name='lista_solicitacoes'),
+    path('report/suprimento/', views.enviar_report_suprimento, name='enviar_report_suprimento'),
     path('fornecedores/solicitacoes/<int:pk>/<str:acao>/', views.aprovar_solicitacao, name='aprovar_solicitacao'),
     path('fornecedores/solicitacoes/triagem/<int:pk>/', views.triagem_fornecedores, name='triagem_fornecedores'),
     path('solicitacoes/<int:pk>/aprovar_fornecedor_gerente/', views.aprovar_fornecedor_gerente, name='aprovar_fornecedor_gerente'),
@@ -90,6 +92,7 @@ urlpatterns = [
 
     #path('nova/', views.solicitar_os, name='solicitar_os'),
     path('fornecedores/solicitar_guarda_chuva/', views.nova_solicitacao_guarda_chuva, name='nova_solicitacao_guarda_chuva'),
+    path('solicitar-os/', views.solicitar_os_com_contrato, name='solicitar_os_com_contrato'),
     path("solicitar-os/<int:contrato_id>/", views.solicitar_os, name="solicitar_os"),
     path('ordem-servico/<int:pk>/', views.detalhe_os, name='detalhe_ordem_servico'),
     path('ordem-servico/<int:pk>/editar/', views.editar_ordem_servico, name='editar_ordem_servico'),

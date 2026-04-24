@@ -554,9 +554,16 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
         label="Valor Previsto",
         required=True
     )
+    contrato = forms.ModelChoiceField(
+        queryset=ContratoTerceiros.objects.none(),
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+
     class Meta:
         model = SolicitacaoOrdemServico
         fields = [
+            'contrato',
             'cod_projeto',
             'titulo',
             'descricao',
@@ -571,22 +578,78 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)
+        include_contrato = kwargs.pop('include_contrato', False)
+        contrato_fixo = kwargs.pop('contrato_fixo', None)
         super().__init__(*args, **kwargs)
 
         self.fields['cod_projeto'].queryset = Contrato.objects.none()
+        self.fields['contrato'].queryset = ContratoTerceiros.objects.none()
 
-        if user and user.grupo == 'coordenador':
-            self.fields['cod_projeto'].queryset = Contrato.objects.filter(coordenador=user)
-        elif user and user.grupo == 'gerente':
+        if user and user.grupo in ['lider_contrato', 'gerente_contrato']:
+            contratos_terceiros = ContratoTerceiros.objects.filter(
+                guarda_chuva=True,
+                lider_contrato=user,
+            )
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(
-                coordenador__centros__in=user.centros.all()
+                contratoterceiros__in=contratos_terceiros
             ).distinct()
+            self.fields['coordenador'].queryset = User.objects.filter(
+                grupo='coordenador',
+                is_active=True,
+            )
+        elif user and user.grupo == 'gerente_lider':
+            contratos_terceiros = ContratoTerceiros.objects.filter(
+                guarda_chuva=True,
+                coordenador__centros__in=user.centros.all(),
+            ).distinct()
+            self.fields['cod_projeto'].queryset = Contrato.objects.filter(
+                contratoterceiros__in=contratos_terceiros
+            ).distinct()
+            self.fields['coordenador'].queryset = User.objects.filter(
+                grupo='coordenador',
+                centros__in=user.centros.all(),
+                is_active=True,
+            ).distinct()
+        else:
+            contratos_terceiros = ContratoTerceiros.objects.none()
+            self.fields['coordenador'].queryset = User.objects.filter(
+                grupo='coordenador',
+                is_active=True
+            )
 
         self.fields['cod_projeto'].widget.attrs.update({'style': 'width:250px;'})
-        self.fields['coordenador'].queryset = User.objects.filter(
-            grupo__in=['coordenador', 'gerente', 'gerente_lider'],
-            is_active=True
+        self.fields['contrato'].queryset = contratos_terceiros
+
+        if include_contrato:
+            self.fields['contrato'].required = True
+        else:
+            self.fields.pop('contrato')
+
+        if contrato_fixo:
+            self.initial['contrato'] = contrato_fixo
+            self.fields['cod_projeto'].queryset = Contrato.objects.filter(
+                pk=contrato_fixo.cod_projeto_id
+            )
+            self.fields['coordenador'].queryset = User.objects.filter(
+                pk=contrato_fixo.coordenador_id
+            )
+            self.initial['coordenador'] = contrato_fixo.coordenador
+
+    def clean_valor_previsto(self):
+        valor = self.cleaned_data.get('valor_previsto')
+        if not valor:
+            return None
+
+        valor = (
+            valor.replace('R$', '')
+                 .replace('.', '')
+                 .replace(',', '.')
+                 .strip()
         )
+        try:
+            return Decimal(valor)
+        except InvalidOperation:
+            raise forms.ValidationError("Informe um valor monetário válido.")
 
 
 class UploadContratoOSForm(forms.ModelForm):

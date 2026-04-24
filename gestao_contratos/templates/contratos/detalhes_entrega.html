@@ -6,7 +6,7 @@
     <div class="card-header card-header-custom text-white">
       <h5>
         <a href="{% url 'contrato_fornecedor_detalhe' evento.contrato_terceiro.id %}" class="text-decoration-none">
-          📦 Detalhes da Entrega - {{ fornecedor.nome }}
+  Detalhes da Entrega - {{ fornecedor.nome }}
         </a>
       </h5>
     </div>
@@ -30,9 +30,9 @@
 
       <p><strong>Status:</strong>
         {% if evento.realizado %}
-          ✅ Realizado
+          Realizado
         {% else %}
-          ⏳ Pendente
+          âÂÂ³ Pendente
         {% endif %}
       </p>
 
@@ -138,7 +138,7 @@
                     {% endif %}
                   </td>
                   <td>
-                    {% if user.grupo == "coordenador" %}
+                    {% if can_approve_bm_as_lider %}
                         <div class="d-flex gap-1">
                             <button type="button" class="btn btn-sm btn-success btn-aprovar"
                                     data-bm-id="{{ bm.id }}"
@@ -148,7 +148,7 @@
                                     {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>Reprovar</button>
                         </div>
 
-                    {% elif user.grupo == "gerente" or request.user.grupo == 'gerente_lider' %}
+                    {% elif can_approve_bm_as_gerente %}
                         <div class="d-flex gap-1">
                             <button type="button" class="btn btn-sm btn-success btn-aprovar"
                                     data-bm-id="{{ bm.id }}"

@@ -6,7 +6,7 @@
     {% if request.user.grupo == 'suprimento' %}
         <h2>Solicitações de Prospecção - Suprimento</h2>
     {% elif request.user.grupo in 'gerente,gerente_lider' %}
-        <h2>Solicitações de Prospecção - Gerência</h2>
+        <h2>Solicitações de Prospecçãoo - Gerência</h2>
     {% else %}
         <h2>Solicitações de Prospecção</h2>
     {% endif %}
@@ -77,7 +77,7 @@
                             {% endif %}
                         </td>
 
-                        <!-- AÇÕES -->
+                        <!-- Ações -->
                         <td>
                             {% if request.user.grupo == 'suprimento' %}
                                 {% if solicitacao.aprovado == None %}
@@ -130,7 +130,7 @@
                                 {% endif %}
                             {% endif %}
 
-                            {% if request.user.grupo == 'gerente_contrato' %}
+                            {% if request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' and request.user == solicitacao.lider_contrato or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
                                 {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                                     <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Avaliar Fornecedor</a>
                                 {% endif %}
@@ -165,8 +165,8 @@
                                 {% endif %}
                             {% endif %}
 
-                            {% if request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
-                              {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user or solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and request.user.grupo == 'gerente_lider' %}
+                            {% if request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
+                              {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user or solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and request.user.grupo == 'gerente_contrato' or solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and request.user.grupo == 'gerente_lider' %}
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                               {% endif %}
                               {% if solicitacao.minuta_boletins_medicao %}
@@ -197,7 +197,7 @@
                 <li class="page-item disabled"><a class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</a></li>
                 {% if page_obj.has_next %}
                     <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Próximo</a></li>
-                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Último »</a></li>
+                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Último</a></li>
                 {% endif %}
             </ul>
         </nav>
@@ -255,7 +255,7 @@
                     {% if solicitacao.valor_previsto %}
                         R$ {{ solicitacao.valor_previsto|floatformat:2 }}
                     {% else %}
-                        —
+                        -
                     {% endif %}
                   </td>
 
@@ -263,7 +263,7 @@
                       {{ solicitacao.status }}
                   </td>
 
-                  <!-- AÇÕES -->
+                    <!-- AÇÕES -->
                   {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria,gerente_lider' %}
                   <td onclick="event.stopPropagation();">
 
@@ -320,7 +320,7 @@
                           {% endif %}
                       {% endif %}
 
-                      {% if request.user.grupo == 'gerente_contrato' %}
+                      {% if request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' and request.user == solicitacao.lider_contrato or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
                           {% if solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                           <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
                           class="btn btn-success btn-sm">
@@ -370,7 +370,7 @@
           </tbody>
       </table>
 
-      <!-- PAGINAÇÃO CONTRATO -->
+    <!-- PAGINAÇÃO CONTRATO -->
       <nav>
           <ul class="pagination">
               {% if page_obj_contrato.has_previous %}
@@ -403,7 +403,7 @@
                   <li class="page-item">
                       <a class="page-link"
                          href="?page_c={{ page_obj_contrato.paginator.num_pages }}{% if page_obj.number %}&page={{ page_obj.number }}{% endif %}">
-                          Último »
+                            Último »
                       </a>
                   </li>
               {% endif %}
@@ -418,7 +418,7 @@
 
     <hr class="my-5">
 
-    <h3 class="mb-3">Solicitação de Ordens de Serviço</h3>
+    <h3 class="mb-3">Solicitações de Ordens de Serviço</h3>
 
     {% if ordens_servico_page %}
     <table class="table table-striped text-center">
@@ -450,21 +450,21 @@
                     {% if os.lider_contrato %}
                         {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
                     {% else %}
-                        —
+                        -
                     {% endif %}
                 </td>
                 <td>
                     {% if os.valor_previsto %}
                         R$ {{ os.valor_previsto|floatformat:2 }}
                     {% else %}
-                        —
+                        -
                     {% endif %}
                 </td>
                 <td>
                     {% if os.prazo_execucao %}
                         {{ os.prazo_execucao|date:"d/m/Y" }}
                     {% else %}
-                        —
+                        -
                     {% endif %}
                 </td>
                 <td>

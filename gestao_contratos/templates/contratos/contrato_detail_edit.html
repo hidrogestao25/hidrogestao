@@ -104,7 +104,7 @@
 
         <hr>
         <div class="mt-4">
-          <h5 class="mt-4">📄 Notas Fiscais Cadastradas</h5>
+    <h5 class="mt-4">Notas Fiscais Cadastradas</h5>
           {% if nf_list %}
             <table class="table table-striped mt-3">
                 <thead>
@@ -144,14 +144,14 @@
 
                         {% if request.user.grupo in "suprimento financeiro" %}
                         <td>
-                            <!-- BOTÃO EDITAR -->
+    <!-- BOTÃO EDITAR -->
                             <button class="btn btn-warning btn-sm"
                                     data-bs-toggle="modal"
                                     data-bs-target="#editarNFModal{{ nf.id }}">
                                 Editar
                             </button>
 
-                            <!-- BOTÃO EXCLUIR -->
+    <!-- BOTÃO EXCLUIR -->
                             <button class="btn btn-danger btn-sm"
                                     data-bs-toggle="modal"
                                     data-bs-target="#excluirNFModal{{ nf.id }}">

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm mb-4">
+    <div class="card-header card-header-custom">
+      <h4 class="mb-0">Guia de Permissões</h4>
+    </div>
+    <div class="card-body">
+      <p class="mb-2">
+        {% if can_view_all_groups %}
+          Esta página resume o que cada grupo do sistema pode fazer, o que normalmente deve acompanhar
+          no fluxo e quais são as restrições principais.
+        {% else %}
+          Esta página resume o que o seu grupo pode fazer, o que normalmente deve acompanhar
+          no fluxo e quais são as restrições principais.
+        {% endif %}
+      </p>
+      {% if current_group_guide %}
+        <div class="alert alert-info mb-0">
+          Seu grupo atual é <strong>{{ request.user.get_grupo_display }}</strong>.
+          {% if current_group_guide.summary %}
+            {{ current_group_guide.summary }}
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="alert alert-warning mb-0">
+          O seu usuário ainda não possui um grupo com guia configurado.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if can_view_all_groups %}
+    {% for item in group_guides %}
+      <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>{{ item.guide.label }}</strong>
+          {% if item.is_current %}
+            <span class="badge bg-primary">Seu grupo</span>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <p>{{ item.guide.summary }}</p>
+
+          <h6>O que deve fazer</h6>
+          <ul>
+            {% for action in item.guide.must_do %}
+              <li>{{ action }}</li>
+            {% endfor %}
+          </ul>
+
+          <h6>O que pode fazer</h6>
+          <ul>
+            {% for action in item.guide.can_do %}
+              <li>{{ action }}</li>
+            {% endfor %}
+          </ul>
+
+          <h6>Permissões e limites</h6>
+          <ul class="mb-0">
+            {% for action in item.guide.permissions %}
+              <li>{{ action }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% endfor %}
+  {% elif current_group_item %}
+    <div class="card shadow-sm mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>{{ current_group_item.guide.label }}</strong>
+        <span class="badge bg-primary">Seu grupo</span>
+      </div>
+      <div class="card-body">
+        <p>{{ current_group_item.guide.summary }}</p>
+
+        <h6>O que deve fazer</h6>
+        <ul>
+          {% for action in current_group_item.guide.must_do %}
+            <li>{{ action }}</li>
+          {% endfor %}
+        </ul>
+
+        <h6>O que pode fazer</h6>
+        <ul>
+          {% for action in current_group_item.guide.can_do %}
+            <li>{{ action }}</li>
+          {% endfor %}
+        </ul>
+
+        <h6>Permissões e limites</h6>
+        <ul class="mb-0">
+          {% for action in current_group_item.guide.permissions %}
+            <li>{{ action }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
