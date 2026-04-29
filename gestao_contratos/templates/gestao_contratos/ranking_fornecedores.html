@@ -13,6 +13,7 @@
                     <tr>
                         <th>#</th>
                         <th>Fornecedor</th>
+                        <th>Projetos Ativos</th>
                         <th>Valor Total dos Contratos</th>
                         <th>Valor Previsto</th>
                         <th>Valor Pago</th>
@@ -24,6 +25,7 @@
                     <tr onclick="window.location.href='{% url 'fornecedor_detalhe' item.id %}'" style="cursor: pointer;">
                         <td>{{ forloop.counter }}</td>
                         <td>{{ item.fornecedor }}</td>
+                        <td>{{ item.projetos_ativos|join:", " }}</td>
                         <td>R$ {{ item.valor_total_contratos|floatformat:2|intcomma }}</td>
                         <td>R$ {{ item.valor_previsto|floatformat:2|intcomma }}</td>
                         <td>R$ {{ item.valor_pago|floatformat:2|intcomma }}</td>
@@ -42,7 +44,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center text-muted">Nenhum fornecedor encontrado.</td>
+                        <td colspan="7" class="text-center text-muted">Nenhum fornecedor encontrado.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

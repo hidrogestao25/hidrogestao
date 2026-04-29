@@ -13,7 +13,8 @@
             {{ contrato.cod_projeto.cliente }}
           </a></p>
       {% endif %}
-      <p><strong>Líder Técnico:</strong> {{ contrato.coordenador.get_full_name|default:contrato.coordenador }}</p>
+      <p><strong>Líder Técnico Principal:</strong> {{ contrato.coordenador.get_full_name|default:contrato.coordenador }}</p>
+      <p><strong>Demais Líderes Técnicos:</strong> {{ contrato.coordenadores_display|default:"-" }}</p>
       <p><strong>Líder de Contrato:</strong> {{ contrato.lider_contrato.get_full_name|default:contrato.lider_contrato }}</p>
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
       <p><strong>Contrato com Fornecedor:</strong> {{ contrato.num_contrato }}</p>
@@ -57,11 +58,79 @@
           </a>
         </p>
       {% endif %}
+      {% if can_request_addendum %}
+        <p>
+          <a href="{% url 'solicitar_aditivo_contrato' contrato.id %}" class="btn btn-sm btn-outline-secondary">
+            Pedir aditivo
+          </a>
+        </p>
+      {% endif %}
       <p><strong>Status:</strong> {{ contrato.get_status_display }}</p>
       <p><strong>Objeto:</strong> {{ contrato.objeto }}</p>
       {% if contrato.observacao %}
         <p><strong>Observações:</strong> {{ contrato.observacao }}</p>
       {% endif %}
+
+  <hr>
+
+  <h5>Aditivos do Contrato</h5>
+  {% if aditivos %}
+    {% for aditivo in aditivos %}
+      <div class="card mb-3">
+        <div class="card-body">
+          <p><strong>Solicitado por:</strong> {{ aditivo.solicitado_por.get_full_name|default:aditivo.solicitado_por }}</p>
+          <p><strong>Solicitado em:</strong> {{ aditivo.criado_em|date:"d/m/Y H:i" }}</p>
+          <p><strong>Motivo:</strong> {{ aditivo.motivo }}</p>
+          <p><strong>Valor total anterior:</strong> {% if aditivo.valor_total_anterior %}R$ {{ aditivo.valor_total_anterior|floatformat:2 }}{% else %}-{% endif %}</p>
+          <p><strong>Novo valor total:</strong> {% if aditivo.novo_valor_total %}R$ {{ aditivo.novo_valor_total|floatformat:2 }}{% else %}-{% endif %}</p>
+          <p><strong>Data fim anterior:</strong> {{ aditivo.data_fim_anterior|date:"d/m/Y"|default:"-" }}</p>
+          <p><strong>Nova data fim:</strong> {{ aditivo.nova_data_fim|date:"d/m/Y"|default:"-" }}</p>
+          <p><strong>Status lideranca:</strong> {{ aditivo.get_status_lider_display }}</p>
+          <p><strong>Status gerencia:</strong> {{ aditivo.get_status_gerente_display }}</p>
+          <p><strong>Status diretoria:</strong> {{ aditivo.get_status_diretoria_display }}</p>
+          {% if aditivo.justificativa_reprovacao_lider and aditivo.status_lider == "reprovado" %}
+            <p><strong>Justificativa da lideranca:</strong> {{ aditivo.justificativa_reprovacao_lider }}</p>
+          {% endif %}
+          {% if aditivo.justificativa_reprovacao_gerente and aditivo.status_gerente == "reprovado" %}
+            <p><strong>Justificativa da gerencia:</strong> {{ aditivo.justificativa_reprovacao_gerente }}</p>
+          {% endif %}
+          {% if aditivo.justificativa_reprovacao_diretoria and aditivo.status_diretoria == "reprovado" %}
+            <p><strong>Justificativa da diretoria:</strong> {{ aditivo.justificativa_reprovacao_diretoria }}</p>
+          {% endif %}
+          {% if aditivo.arquivo_aditivo %}
+            <p>
+              <strong>Documento do aditivo:</strong>
+              <a href="{{ aditivo.arquivo_aditivo.url }}" class="btn btn-sm btn-outline-primary">Baixar</a>
+            </p>
+            <p><strong>Documento enviado em:</strong> {{ aditivo.documento_enviado_em|date:"d/m/Y H:i"|default:"-" }}</p>
+          {% else %}
+            <p><strong>Documento do aditivo:</strong> Pendente de envio pelo Suprimento</p>
+          {% endif %}
+
+          <div class="d-flex gap-2 flex-wrap">
+            {% if request.user.grupo == "suprimento" and not aditivo.aprovado_totalmente %}
+              <a href="{% url 'enviar_documento_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-success">
+                {% if aditivo.arquivo_aditivo and aditivo.reprovado_por_alguem %}
+                  Enviar nova versao
+                {% elif not aditivo.arquivo_aditivo %}
+                  Inserir documento
+                {% else %}
+                  Atualizar documento
+                {% endif %}
+              </a>
+            {% endif %}
+            {% if request.user.grupo == "lider_contrato" or request.user.grupo == "gerente_lider" or request.user.grupo == "gerente_contrato" or request.user.grupo == "diretoria" %}
+              <a href="{% url 'avaliar_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-dark">
+                Avaliar aditivo
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p><em>Nenhum aditivo solicitado para este contrato.</em></p>
+  {% endif %}
 
   <hr>
 
@@ -164,7 +233,7 @@
                   Finalizado
                 {% endif %}
               {% else %}
-                âÂÂ³ Pendente
+                Pendente
               {% endif %}
             </td>
             <td>
@@ -199,7 +268,7 @@
                             <!-- Evento realizado, mas sem avaliação -->
                             <a href="{% url 'avaliar_evento_fornecedor' evento.id %}"
                                class="btn btn-sm btn-outline-primary">
-                               Avaliar Evento âÂ­Â
+                               Avaliar Evento
                             </a>
                         {% endif %}
                     {% endwith %}
@@ -209,6 +278,9 @@
                   </a>
 
               {% elif request.user.grupo == "suprimento" %}
+                  <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
+                    Registrar Entrega
+                  </a>
                   <a href="{% url 'duplicar_evento_contrato' evento.id %}" class="btn btn-sm btn-outline-secondary"
                      onclick="return confirm('Deseja duplicar este evento?');">
                      Duplicar Evento
@@ -367,9 +439,9 @@
 
                 <hr>
 
-                <!-- IS técnica -->
+                <!-- IS tÃ©cnica -->
                 <div class="d-flex align-items-center mb-2">
-                    <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Técnica:</strong>
+                    <strong class="me-2" style="min-width: 220px;">Índice de Satisfação TÃ©cnica:</strong>
                     <span class="me-2" style="width:70px;">{{ indicadores_contrato.IS_tecnica|floatformat:2 }}%</span>
 
                     <div class="progress flex-grow-1" style="height: 14px;">
@@ -476,9 +548,9 @@
 
             <hr>
 
-            <!-- IS técnica -->
+            <!-- IS tÃ©cnica -->
             <div class="d-flex align-items-center mb-2">
-                <strong class="me-2" style="min-width: 220px;">Índice de Satisfação Técnica:</strong>
+                <strong class="me-2" style="min-width: 220px;">Índice de Satisfação TÃ©cnica:</strong>
                 <span class="me-2" style="width:70px;">{{ indicadores_geral.IS_tecnica|floatformat:2 }}%</span>
 
                 <div class="progress flex-grow-1" style="height: 14px;">
@@ -537,7 +609,7 @@
     {% if plot_div %}
         {{ plot_div|safe }}
     {% else %}
-      Não há nenhuma previsão ou pagamento cadastrado.
+      Não hÃ¡ nenhuma previsão ou pagamento cadastrado.
     {% endif %}
   </div>
 

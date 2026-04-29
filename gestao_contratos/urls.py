@@ -10,14 +10,18 @@ urlpatterns = [
     path('contratos/<int:pk>/', views.contrato_cliente_detalhe, name='contrato_cliente_detalhe'),
 
     path('contratos_fornecedores/', views.lista_contratos_fornecedor, name='lista_contratos_fornecedores'),
-    path('contratos_fornecedores/novo', ContratoFornecedorCreateView.as_view(), name='novo_contrato_fornecedor'),
-    path('contratos_fornecedores/<int:pk>/', views.contrato_fornecedor_detalhe, name='contrato_fornecedor_detalhe'),
-    path('contratos_fornecedores/<int:pk>/editar/', views.contrato_fornecedor_editar, name='contrato_fornecedor_editar'),
+path('contratos_fornecedores/novo', ContratoFornecedorCreateView.as_view(), name='novo_contrato_fornecedor'),
+path('contratos_fornecedores/<int:pk>/', views.contrato_fornecedor_detalhe, name='contrato_fornecedor_detalhe'),
+path('contratos_fornecedores/<int:pk>/editar/', views.contrato_fornecedor_editar, name='contrato_fornecedor_editar'),
+path('contratos_fornecedores/<int:pk>/solicitar-aditivo/', views.solicitar_aditivo_contrato, name='solicitar_aditivo_contrato'),
+path('aditivos_fornecedor/<int:pk>/enviar-documento/', views.enviar_documento_aditivo_contrato, name='enviar_documento_aditivo_contrato'),
+path('aditivos_fornecedor/<int:pk>/avaliar/', views.avaliar_aditivo_contrato, name='avaliar_aditivo_contrato'),
 
     path('contratos_guarda_chuva/', views.lista_contratos_guarda_chuva, name='lista_contratos_guarda_chuva'),
 
     path('clientes/', views.lista_clientes, name='lista_clientes'),
     path('clientes/novo/', ClienteCreateView.as_view(), name='novo_cliente'),
+    path('clientes/criar-cliente/', views.cadastrar_cliente_ajax, name='add_cliente'),
     path('clientes/<int:pk>/', views.cliente_detalhe, name='cliente_detalhe'),
 
     path('fornecedores/', views.lista_fornecedores, name='lista_fornecedores'),

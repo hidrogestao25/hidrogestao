@@ -1,10 +1,40 @@
 from django import forms
 from django.db.models import Q
-from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato
+from .models import Contrato, Cliente, User, Proposta, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, BM, NF, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato, AditivoContratoTerceiro
 from django.contrib import messages
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime
 import re
+
+def format_decimal_for_br_input(value):
+    if value in [None, ""]:
+        return ""
+    if not isinstance(value, Decimal):
+        try:
+            value = Decimal(value)
+        except (InvalidOperation, TypeError, ValueError):
+            return str(value)
+    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def parse_decimal_from_form_value(value, empty_value=None):
+    if value in [None, ""]:
+        return empty_value
+    if isinstance(value, Decimal):
+        return value
+
+    valor = str(value).strip().replace(" ", "")
+    if not valor:
+        return empty_value
+
+    if "," in valor:
+        valor = valor.replace(".", "").replace(",", ".")
+
+    try:
+        return Decimal(valor)
+    except InvalidOperation:
+        raise forms.ValidationError("Informe um valor válido no formato 1.234,56")
+
 
 class ISODateInput(forms.DateInput):
     input_type = 'date'  # garante que seja um <input type="date">
@@ -63,12 +93,13 @@ class ContratoForm(forms.ModelForm):
 
     class Meta:
         model = Contrato
-        fields = ['observacao', 'cod_projeto', 'cliente', 'coordenador', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta', 'lider_contrato']
+        fields = ['observacao', 'cod_projeto', 'cliente', 'coordenador', 'coordenadores', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta', 'lider_contrato']
         widgets = {
             'cod_projeto': forms.TextInput(attrs={'class': 'form-control'}),
             'proposta': forms.Select(attrs={'class': 'form-select'}),
             'cliente': forms.Select(attrs={'class': 'form-select'}),
             'coordenador': forms.Select(attrs={'class': 'form-select'}),
+            'coordenadores': forms.SelectMultiple(attrs={'class': 'form-select'}),
             'lider_contrato': forms.Select(attrs={'class': 'form-select'}),
             #'valor_total': forms.TextInput(attrs={'class': 'form-control money', 'placeholder': '0,00'}),
             'objeto':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
@@ -82,6 +113,10 @@ class ContratoForm(forms.ModelForm):
         self.fields['coordenador'].queryset = (
             User.objects.filter(grupo='coordenador', is_active=True)
         )
+        self.fields['coordenadores'].queryset = (
+            User.objects.filter(grupo='coordenador', is_active=True)
+        )
+        self.fields['coordenadores'].required = False
         self.fields['lider_contrato'].queryset = (
             User.objects.filter(grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider'], is_active=True)
         )
@@ -187,6 +222,7 @@ class ContratoFornecedorForm(forms.ModelForm):
             'prospeccao',
             'empresa_terceira',
             'coordenador',
+            'coordenadores',
             'data_inicio',
             'data_fim',
             'valor_total',
@@ -201,6 +237,7 @@ class ContratoFornecedorForm(forms.ModelForm):
             'prospeccao': forms.Select(attrs={'class': 'form-select'}),
             'empresa_terceira': forms.Select(attrs={'class': 'form-select'}),
             'coordenador': forms.Select(attrs={'class': 'form-select'}),
+            'coordenadores': forms.SelectMultiple(attrs={'class': 'form-select'}),
             'lider_contrato': forms.Select(attrs={'class': 'form-select'}),
             'valor_total': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_valor_total'}),
             'objeto':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
@@ -216,6 +253,10 @@ class ContratoFornecedorForm(forms.ModelForm):
         self.fields['coordenador'].queryset = (
             User.objects.filter(grupo__in=['coordenador', 'gerente', 'gerente_lider'], is_active=True)
         )
+        self.fields['coordenadores'].queryset = (
+            User.objects.filter(grupo='coordenador', is_active=True)
+        )
+        self.fields['coordenadores'].required = False
         self.fields['lider_contrato'].queryset = (
             User.objects.filter(grupo__in=['lider_contrato','gerente_contrato', 'gerente_lider'], is_active=True)
         )
@@ -755,6 +796,11 @@ class EventoPrevisaoForm(forms.ModelForm):
 
 
 class EventoEntregaForm(forms.ModelForm):
+    valor_pago = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"}),
+    )
+
     class Meta:
         model = Evento
         fields = [
@@ -767,7 +813,6 @@ class EventoEntregaForm(forms.ModelForm):
             "justificativa": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "avaliacao": forms.Select(attrs={"class": "form-select"}),
             "data_entrega": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
-            "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
             "data_pagamento": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
@@ -776,6 +821,11 @@ class EventoEntregaForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.data_pagamento:
             self.initial['data_pagamento'] = self.instance.data_pagamento.strftime('%Y-%m-%d')
+        if self.instance and self.instance.valor_pago is not None:
+            self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+
+    def clean_valor_pago(self):
+        return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
 
@@ -814,13 +864,16 @@ class FiltroPrevisaoForm(forms.Form):
 
 
 class BMForm(forms.ModelForm):
+    valor_pago = forms.CharField(
+        widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"})
+    )
+
     class Meta:
         model = BM
         fields = ["numero_bm", "parcela_paga", "valor_pago", "data_pagamento", "data_inicial_medicao", "data_final_medicao", "observacao", "arquivo_bm"]
         widgets = {
             "numero_bm": forms.NumberInput(attrs={"class": "form-control"}),
             "parcela_paga": forms.TextInput(attrs={"class": "form-control"}),
-            "valor_pago": forms.NumberInput(attrs={"class": "form-control"}),
             "data_inicial_medicao": forms.DateInput(
                 format="%Y-%m-%d",
                 attrs={"type": "date", "class": "form-control"}
@@ -842,9 +895,18 @@ class BMForm(forms.ModelForm):
         # garante que o valor inicial seja respeitado se já existir
         if "initial" in kwargs and "data_pagamento" in kwargs["initial"]:
             self.fields["data_pagamento"].initial = kwargs["initial"]["data_pagamento"]
+        if self.instance and self.instance.valor_pago is not None:
+            self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+
+    def clean_valor_pago(self):
+        return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
 class NFForm(forms.ModelForm):
+    valor_pago = forms.CharField(
+        widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"})
+    )
+
     class Meta:
         model = NF
         fields = [
@@ -860,7 +922,6 @@ class NFForm(forms.ModelForm):
 
         widgets = {
             "bm": forms.Select(attrs={"class": "form-control"}),
-            "valor_pago": forms.NumberInput(attrs={"class": "form-control", "step": "0.01"}),
             "parcela_paga": forms.NumberInput(attrs={"class": "form-control"}),
             "data_pagamento": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "arquivo_nf": forms.ClearableFileInput(attrs={"class": "form-control"}),
@@ -877,9 +938,18 @@ class NFForm(forms.ModelForm):
             self.fields["bm"].queryset = BM.objects.filter(evento=evento)
         else:
             self.fields["bm"].queryset = BM.objects.none()
+        if self.instance and self.instance.valor_pago is not None:
+            self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+
+    def clean_valor_pago(self):
+        return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
 class NFClienteForm(forms.ModelForm):
+    valor_pago = forms.CharField(
+        widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"})
+    )
+
     class Meta:
         model = NFCliente
         fields = [
@@ -891,14 +961,28 @@ class NFClienteForm(forms.ModelForm):
             "observacao",
         ]
         widgets = {
+            "parcela_paga": forms.NumberInput(attrs={"class": "form-control"}),
             "data_emissao": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "data_pagamento": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "arquivo_nf": forms.ClearableFileInput(attrs={"class": "form-control"}),
-            "observacao": forms.Textarea(attrs={"rows": 3}),
+            "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.valor_pago is not None:
+            self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+
+    def clean_valor_pago(self):
+        return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
 class RegistroEntregaOSForm(forms.ModelForm):
+    valor_pago = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"}),
+    )
+
     class Meta:
         model = OS
         fields = [
@@ -912,13 +996,28 @@ class RegistroEntregaOSForm(forms.ModelForm):
             "observacao",
         ]
         widgets = {
-            "data_entrega": forms.DateInput(attrs={"type": "date"}),
-            "data_pagamento": forms.DateInput(attrs={"type": "date"}),
-            "observacao": forms.Textarea(attrs={"rows": 3}),
+            "caminho_evidencia": forms.Textarea(attrs={"class": "form-control", "rows": 1}),
+            "avaliacao": forms.Select(attrs={"class": "form-select"}),
+            "data_entrega": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "data_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.valor_pago is not None:
+            self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+
+    def clean_valor_pago(self):
+        return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
 class OrdemServicoForm(forms.ModelForm):
+    valor = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"}),
+    )
+
     class Meta:
         model = OS
         fields = [
@@ -938,7 +1037,6 @@ class OrdemServicoForm(forms.ModelForm):
             "prazo_execucao": ISODateInput(attrs={ "class": "form-control"}),
             'descricao': forms.Textarea(attrs={"class": "form-control", 'rows': 4}),
             'titulo': forms.Textarea(attrs={"class": "form-control", "rows": 1}),
-            'valor': forms.NumberInput(attrs={"class": "form-control", "step": "0.01"}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'arquivo_os':forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }
@@ -952,3 +1050,63 @@ class OrdemServicoForm(forms.ModelForm):
         self.fields['solicitacao'].queryset = SolicitacaoOrdemServico.objects.filter(status__in=['solicitacao_os', 'pendente_lider', 'pendente_gerente', 'pendente_suprimento', 'aprovada'])
         self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato', 'gerente_lider'], is_active=True)
         self.fields['cod_projeto'].queryset = Contrato.objects.filter(status='ativo')
+        if self.instance and self.instance.valor is not None:
+            self.initial["valor"] = format_decimal_for_br_input(self.instance.valor)
+
+    def clean_valor(self):
+        return parse_decimal_from_form_value(self.cleaned_data.get("valor"))
+
+
+class SolicitacaoAditivoContratoTerceiroForm(forms.ModelForm):
+    novo_valor_total = forms.CharField(
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control money",
+                "placeholder": "0,00",
+            }
+        ),
+    )
+
+    class Meta:
+        model = AditivoContratoTerceiro
+        fields = ["motivo", "novo_valor_total", "nova_data_fim"]
+        widgets = {
+            "motivo": forms.Textarea(attrs={"class": "form-control", "rows": 4}),
+            "nova_data_fim": ISODateInput(attrs={"class": "form-control"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.novo_valor_total is not None:
+            valor = self.instance.novo_valor_total
+            self.initial["novo_valor_total"] = (
+                f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            )
+        elif self.initial.get("novo_valor_total") is not None:
+            valor = self.initial["novo_valor_total"]
+            if isinstance(valor, Decimal):
+                self.initial["novo_valor_total"] = (
+                    f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                )
+
+    def clean_novo_valor_total(self):
+        valor = self.cleaned_data.get("novo_valor_total")
+        if valor in [None, ""]:
+            return None
+
+        valor = str(valor).replace(".", "").replace(",", ".")
+
+        try:
+            return Decimal(valor)
+        except InvalidOperation:
+            raise forms.ValidationError("Informe um valor válido no formato 0,00.")
+
+
+class DocumentoAditivoContratoTerceiroForm(forms.ModelForm):
+    class Meta:
+        model = AditivoContratoTerceiro
+        fields = ["arquivo_aditivo"]
+        widgets = {
+            "arquivo_aditivo": forms.ClearableFileInput(attrs={"class": "form-control"}),
+        }

@@ -5,7 +5,7 @@
     <div class="card shadow-sm">
         <div class="card-header bg-success text-white">
             <h5 class="mb-0">
-                Registrar Entrega âââ€šÂ¬ââ‚¬Å“ OS #{{ os.id }}
+                Registrar Entrega - OS #{{ os.id }}
             </h5>
         </div>
 
@@ -80,4 +80,25 @@
     </div>
 
 </div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    if (typeof jQuery === "undefined" || typeof jQuery.fn.inputmask === "undefined") {
+        return;
+    }
+
+    jQuery(".money").inputmask("currency", {
+        groupSeparator: ".",
+        radixPoint: ",",
+        digits: 2,
+        digitsOptional: false,
+        autoGroup: true,
+        rightAlign: false,
+        removeMaskOnSubmit: false,
+        placeholder: "0",
+    });
+});
+</script>
 {% endblock %}

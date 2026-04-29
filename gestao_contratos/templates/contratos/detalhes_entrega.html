@@ -32,7 +32,7 @@
         {% if evento.realizado %}
           Realizado
         {% else %}
-          âÂÂ³ Pendente
+          Pendente
         {% endif %}
       </p>
 
@@ -51,9 +51,9 @@
                 <th>Número</th>
                 <th>Data do Pagamento</th>
                 <th>Valor do BM</th>
-                <th>Status Coordenador</th>
+                <th>Status Líder / Gerente-Líder</th>
                 {% if tem_reprovacao_coordenador %}
-                  <th>Justificativa Coordenador</th>
+                  <th>Justificativa Líder / Gerente-Líder</th>
                 {% endif %}
                 <th>Status Gerente</th>
                 {% if tem_reprovacao_gerente %}
@@ -71,7 +71,7 @@
             <tbody>
               {% for bm in bms %}
                 <tr id="bm-row-{{ bm.id }}"
-                    class="{% if bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado' %}table-danger{% elif bm.status_coordenador == 'aprovado' and bm.status_gerente == 'aprovado' %}table-success{% else %}table-warning{% endif %}">
+                    class="{% if bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado' %}table-danger{% elif bm.status_coordenador == 'aprovado' or bm.status_gerente == 'aprovado' %}table-success{% else %}table-warning{% endif %}">
                   <td>{{ bm.numero_bm }}</td>
                   <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
                   <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
@@ -142,24 +142,24 @@
                         <div class="d-flex gap-1">
                             <button type="button" class="btn btn-sm btn-success btn-aprovar"
                                     data-bm-id="{{ bm.id }}"
-                                    {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>Aprovar</button>
+                                    {% if not bm.operational_pending %}disabled{% endif %}>Aprovar</button>
                             <button type="button" class="btn btn-sm btn-danger btn-reprovar"
                                     data-bm-id="{{ bm.id }}"
-                                    {% if bm.status_coordenador != "pendente" %}disabled{% endif %}>Reprovar</button>
+                                    {% if not bm.operational_pending %}disabled{% endif %}>Reprovar</button>
                         </div>
 
                     {% elif can_approve_bm_as_gerente %}
                         <div class="d-flex gap-1">
                             <button type="button" class="btn btn-sm btn-success btn-aprovar"
                                     data-bm-id="{{ bm.id }}"
-                                    {% if bm.status_gerente != "pendente" %}disabled{% endif %}>Aprovar</button>
+                                    {% if not bm.operational_pending %}disabled{% endif %}>Aprovar</button>
                             <button type="button" class="btn btn-sm btn-danger btn-reprovar"
                                     data-bm-id="{{ bm.id }}"
-                                    {% if bm.status_gerente != "pendente" %}disabled{% endif %}>Reprovar</button>
+                                    {% if not bm.operational_pending %}disabled{% endif %}>Reprovar</button>
                         </div>
 
                     {% elif user.grupo == "diretoria" %}
-                        {% if bm.status_gerente == "aprovado" %}
+                        {% if bm.can_approve_pagamento %}
                             <div class="d-flex gap-1">
                                 <button type="button" class="btn btn-sm btn-success btn-aprovar-pagamento"
                                         data-bm-id="{{ bm.id }}"
@@ -297,7 +297,7 @@
 
 
       <div class="d-flex justify-content-end gap-2">
-        <a href="javascript:history.back()" class="btn btn-custom">← Voltar</a>
+        <a href="javascript:history.back()" class="btn btn-custom">Voltar</a>
       </div>
     </div>
   </div>
@@ -363,7 +363,7 @@ document.addEventListener("DOMContentLoaded", function() {
     if (!row) return;
     if (statusCoordenador === 'reprovado' || statusGerente === 'reprovado') {
       row.className = 'table-danger';
-    } else if (statusCoordenador === 'aprovado' && statusGerente === 'aprovado') {
+    } else if (statusCoordenador === 'aprovado' || statusGerente === 'aprovado') {
       row.className = 'table-success';
     } else {
       row.className = 'table-warning';
@@ -486,7 +486,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
   function enviarAvaliacao(bmId, acao, justificativa) {
 
-    mostrarLoading(); // ← MOSTRA SPINNER
+    mostrarLoading(); // mostra spinner
 
     fetch("{% url 'avaliar_bm' bm_id=0 %}".replace('0', bmId), {
       method: 'POST',
@@ -499,7 +499,7 @@ document.addEventListener("DOMContentLoaded", function() {
     .then(response => response.json())
     .then(data => {
       if (data.success) {
-        location.reload(); // ← agora atualiza a página inteira
+        location.reload(); // agora atualiza a página inteira
       } else {
         esconderLoading();
         alert('Erro: ' + data.error);
@@ -558,3 +558,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
 
 {% endblock %}
+
+
+

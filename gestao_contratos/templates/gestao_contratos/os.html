@@ -11,7 +11,7 @@
     <!-- BODY -->
     <div class="card-body">
 
-      <p><strong>OS Nº:</strong> {{ os.id }}</p>
+      <p><strong>OS N&ordm;:</strong> {{ os.id }}</p>
 
       <p><strong>Contrato:</strong>
         <a href="{% url 'contrato_fornecedor_detalhe' os.contrato.id %}" class="text-decoration-none">
@@ -86,7 +86,7 @@
 
               <!-- IQ -->
               <div class="d-flex align-items-center mb-2">
-                <strong class="me-2" style="min-width: 220px;">Índice de Qualidade:</strong>
+                <strong class="me-2" style="min-width: 220px;">Ãndice de Qualidade:</strong>
                 <span class="me-2" style="width:70px;">{{ indicadores.IQ|floatformat:2 }}%</span>
                 <div class="progress flex-grow-1" style="height:14px;">
                   <div class="progress-bar
@@ -100,7 +100,7 @@
 
               <!-- IP -->
               <div class="d-flex align-items-center mb-2">
-                <strong class="me-2" style="min-width: 220px;">Índice de Pontualidade:</strong>
+                <strong class="me-2" style="min-width: 220px;">Ãndice de Pontualidade:</strong>
                 <span class="me-2" style="width:70px;">{{ indicadores.IP|floatformat:2 }}%</span>
                 <div class="progress flex-grow-1" style="height:14px;">
                   <div class="progress-bar
@@ -143,11 +143,11 @@
                 <div class="row mb-2">
                     <div class="col-md-4">
                         <strong>Data da Entrega:</strong><br>
-                        {{ os.data_entrega|default:"âââ€šÂ¬ââ‚¬Â" }}
+                        {{ os.data_entrega|default:"-" }}
                     </div>
                     <div class="col-md-4">
                         <strong>Avaliação:</strong><br>
-                        {{ os.avaliacao|default:"âââ€šÂ¬ââ‚¬Â" }}
+                        {{ os.avaliacao|default:"-" }}
                     </div>
                     <div class="col-md-4">
                         <strong>Status:</strong><br>
@@ -167,16 +167,16 @@
                         {% if os.valor_pago %}
                             R$ {{ os.valor_pago|floatformat:2 }}
                         {% else %}
-                            âââ€šÂ¬ââ‚¬Â
+                            -
                         {% endif %}
                     </div>
                     <div class="col-md-4">
                         <strong>Data do Pagamento:</strong><br>
-                        {{ os.data_pagamento|default:"âââ€šÂ¬ââ‚¬Â" }}
+                        {{ os.data_pagamento|default:"-" }}
                     </div>
                     <div class="col-md-4">
                         <strong>Evidência:</strong><br>
-                        {{ os.caminho_evidencia|default:"âââ€šÂ¬ââ‚¬Â" }}
+                        {{ os.caminho_evidencia|default:"-" }}
                     </div>
                 </div>
 
@@ -215,4 +215,7 @@
   </div>
 </div>
 {% endblock %}
+
+
+
 

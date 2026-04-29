@@ -10,6 +10,13 @@ from django.conf import settings
 from datetime import date
 
 
+def _uppercase_model_fields(instance, field_names):
+    for field_name in field_names:
+        value = getattr(instance, field_name, None)
+        if isinstance(value, str):
+            setattr(instance, field_name, value.upper())
+
+
 # --------------------
 # Usuários com grupos
 # --------------------
@@ -72,6 +79,19 @@ class Cliente(models.Model):
 
     observacao = models.TextField(null=True, blank=True)
 
+    def save(self, *args, **kwargs):
+        _uppercase_model_fields(
+            self,
+            [
+                "nome",
+                "razao_social",
+                "endereco",
+                "ponto_focal",
+                "observacao",
+            ],
+        )
+        super().save(*args, **kwargs)
+
     def __str__(self):
         if self.razao_social == None:
             return self.nome
@@ -106,6 +126,26 @@ class EmpresaTerceira(models.Model):
     telefone_focal2 =models.CharField(max_length=20, blank=True, null=True)
 
     observacao = models.TextField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        _uppercase_model_fields(
+            self,
+            [
+                "nome",
+                "setor_de_atuacao",
+                "endereco",
+                "numero",
+                "bairro",
+                "municipio",
+                "estado",
+                "cep",
+                "informacoes_bancarias",
+                "ponto_focal",
+                "ponto_focal2",
+                "observacao",
+            ],
+        )
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.nome
@@ -170,6 +210,12 @@ class Contrato(models.Model):
         #limit_choices_to={'grupo': 'Coordenador de Contrato'},
         related_name="contratos_cliente_coordenados"  # evita conflito com contratos_coordenados
     )
+    coordenadores = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="contratos_cliente_como_coordenador",
+        limit_choices_to={"grupo": "coordenador"},
+    )
     lider_contrato = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -184,6 +230,27 @@ class Contrato(models.Model):
     objeto = models.TextField()
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao', null=True, blank=True)
     observacao = models.TextField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        _uppercase_model_fields(self, ["cod_projeto"])
+        super().save(*args, **kwargs)
+        if self.coordenador_id:
+            self.coordenadores.add(self.coordenador_id)
+
+    @property
+    def todos_coordenadores(self):
+        coordenadores = list(self.coordenadores.all())
+        if self.coordenador and self.coordenador not in coordenadores:
+            coordenadores.insert(0, self.coordenador)
+        return coordenadores
+
+    @property
+    def coordenadores_display(self):
+        nomes = [
+            coordenador.get_full_name() or coordenador.username
+            for coordenador in self.todos_coordenadores
+        ]
+        return ", ".join(nomes)
 
     def __str__(self):
         return f"{self.cod_projeto} - {self.cliente}"
@@ -428,6 +495,12 @@ class ContratoTerceiros(models.Model):
         on_delete=models.SET_NULL, null=True,
         related_name="contratos_coordenados",
     )
+    coordenadores = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="contratos_fornecedor_como_coordenador",
+        limit_choices_to={"grupo": "coordenador"},
+    )
     lider_contrato = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -456,6 +529,26 @@ class ContratoTerceiros(models.Model):
         if self.data_fim:
             return (self.data_fim - date.today()).days
         return None
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.coordenador_id:
+            self.coordenadores.add(self.coordenador_id)
+
+    @property
+    def todos_coordenadores(self):
+        coordenadores = list(self.coordenadores.all())
+        if self.coordenador and self.coordenador not in coordenadores:
+            coordenadores.insert(0, self.coordenador)
+        return coordenadores
+
+    @property
+    def coordenadores_display(self):
+        nomes = [
+            coordenador.get_full_name() or coordenador.username
+            for coordenador in self.todos_coordenadores
+        ]
+        return ", ".join(nomes)
 
     def __str__(self):
         return f"{self.cod_projeto} - {self.empresa_terceira}"
@@ -1105,3 +1198,75 @@ class RegistroAuditoria(models.Model):
 
     def __str__(self):
         return f"{self.get_acao_display()} - {self.modelo} #{self.object_id}"
+
+
+class AditivoContratoTerceiro(models.Model):
+    STATUS_CHOICES = [
+        ("pendente", "Pendente"),
+        ("aprovado", "Aprovado"),
+        ("reprovado", "Reprovado"),
+    ]
+
+    contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="aditivos")
+    solicitado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="aditivos_solicitados_terceiros",
+    )
+    motivo = models.TextField()
+    valor_total_anterior = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    novo_valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    data_fim_anterior = models.DateField(null=True, blank=True)
+    nova_data_fim = models.DateField(null=True, blank=True)
+    arquivo_aditivo = models.FileField(upload_to="aditivos_fornecedor/", null=True, blank=True)
+    documento_enviado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="aditivos_enviados_terceiros",
+    )
+    documento_enviado_em = models.DateTimeField(null=True, blank=True)
+    status_lider = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
+    data_aprovacao_lider = models.DateTimeField(null=True, blank=True)
+    justificativa_reprovacao_lider = models.TextField(null=True, blank=True)
+    status_gerente = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
+    data_aprovacao_gerente = models.DateTimeField(null=True, blank=True)
+    justificativa_reprovacao_gerente = models.TextField(null=True, blank=True)
+    status_diretoria = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
+    data_aprovacao_diretoria = models.DateTimeField(null=True, blank=True)
+    justificativa_reprovacao_diretoria = models.TextField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+
+    def __str__(self):
+        return f"Aditivo {self.id} - {self.contrato.num_contrato or self.contrato.id}"
+
+    @property
+    def tem_documento(self):
+        return bool(self.arquivo_aditivo)
+
+    @property
+    def operacional_pendente(self):
+        return self.status_lider == "pendente" and self.status_gerente == "pendente"
+
+    @property
+    def aprovado_operacionalmente(self):
+        return self.status_lider == "aprovado" or self.status_gerente == "aprovado"
+
+    @property
+    def reprovado_operacionalmente(self):
+        return self.status_lider == "reprovado" or self.status_gerente == "reprovado"
+
+    @property
+    def reprovado_por_alguem(self):
+        return self.reprovado_operacionalmente or self.status_diretoria == "reprovado"
+
+    @property
+    def aprovado_totalmente(self):
+        return self.status_diretoria == "aprovado"

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom text-white">
+      <h5>Avaliar aditivo do contrato</h5>
+    </div>
+    <div class="card-body">
+      <p><strong>Contrato:</strong> {{ contrato.num_contrato }} - {{ contrato.empresa_terceira }}</p>
+      <p><strong>Motivo:</strong> {{ aditivo.motivo }}</p>
+      <p><strong>Novo valor total:</strong> {% if aditivo.novo_valor_total %}R$ {{ aditivo.novo_valor_total|floatformat:2 }}{% else %}-{% endif %}</p>
+      <p><strong>Nova data fim:</strong> {{ aditivo.nova_data_fim|date:"d/m/Y"|default:"-" }}</p>
+      {% if aditivo.arquivo_aditivo %}
+        <p>
+          <strong>Documento:</strong>
+          <a href="{{ aditivo.arquivo_aditivo.url }}" class="btn btn-sm btn-outline-primary">Baixar</a>
+        </p>
+      {% endif %}
+
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label" for="id_justificativa">Justificativa</label>
+          <textarea class="form-control" id="id_justificativa" name="justificativa" rows="4"></textarea>
+          <small class="text-muted">Obrigatoria apenas em caso de reprovacao.</small>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+          {% if can_approve_as_lider %}
+            <button type="submit" name="acao" value="aprovar_lider" class="btn btn-success">Aprovar como lideranca</button>
+            <button type="submit" name="acao" value="reprovar_lider" class="btn btn-danger">Reprovar como lideranca</button>
+          {% endif %}
+          {% if can_approve_as_gerente %}
+            <button type="submit" name="acao" value="aprovar_gerente" class="btn btn-success">Aprovar como gerencia</button>
+            <button type="submit" name="acao" value="reprovar_gerente" class="btn btn-danger">Reprovar como gerencia</button>
+          {% endif %}
+          {% if can_approve_as_diretoria %}
+            <button type="submit" name="acao" value="aprovar_diretoria" class="btn btn-success">Aprovar como diretoria</button>
+            <button type="submit" name="acao" value="reprovar_diretoria" class="btn btn-danger">Reprovar como diretoria</button>
+          {% endif %}
+          <a href="{% url 'contrato_fornecedor_detalhe' contrato.id %}" class="btn btn-outline-secondary">Voltar</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

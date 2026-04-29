@@ -33,7 +33,7 @@
             <td>{{ fornecedor.cod_projeto.cliente.nome }}</td>
             <td>{{ fornecedor.num_contrato }}</td>
             <td>{{ fornecedor.empresa_terceira }}</td>
-            <td>{{ fornecedor.coordenador }}</td>
+            <td>{{ fornecedor.coordenadores_display|default:fornecedor.coordenador }}</td>
             <td>{{ fornecedor.lider_contrato }}</td>
             <td>{% if fornecedor.status == 'em_elaboracao' %}
                   Em elaboração

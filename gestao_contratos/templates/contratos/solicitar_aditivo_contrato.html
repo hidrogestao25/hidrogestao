@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom text-white">
+      <h5>Solicitar aditivo do contrato</h5>
+    </div>
+    <div class="card-body">
+      <p><strong>Contrato:</strong> {{ contrato.num_contrato }} - {{ contrato.empresa_terceira }}</p>
+      <p><strong>Projeto:</strong> {{ contrato.cod_projeto }}</p>
+
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.motivo.id_for_label }}">Motivo</label>
+          {{ form.motivo }}
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.novo_valor_total.id_for_label }}">Novo valor total</label>
+          {{ form.novo_valor_total }}
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.nova_data_fim.id_for_label }}">Nova data fim</label>
+          {{ form.nova_data_fim }}
+        </div>
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Enviar solicitacao</button>
+          <a href="{% url 'contrato_fornecedor_detalhe' contrato.id %}" class="btn btn-outline-secondary">Cancelar</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
+<script>
+  $(document).ready(function () {
+    $('#id_novo_valor_total').inputmask('currency', {
+      prefix: '',
+      groupSeparator: '.',
+      radixPoint: ',',
+      autoGroup: true,
+      digits: 2,
+      digitsOptional: false,
+      rightAlign: false,
+      removeMaskOnSubmit: false
+    });
+  });
+</script>
+{% endblock %}

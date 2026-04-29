@@ -157,9 +157,22 @@
                             </li>
                             {% endfor %}
 
+                            {% for aditivo in aditivos_pendentes %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>Aditivo #{{ aditivo.id }}</strong><br>
+                                    <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
+                                    <span class="badge bg-dark">Aditivo</span>
+                                </div>
+                                <a href="{% url 'contrato_fornecedor_detalhe' aditivo.contrato.id %}" class="btn btn-sm btn-outline-primary">
+                                    Ver
+                                </a>
+                            </li>
+                            {% endfor %}
+
                         </ul>
 
-                        {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os %}
+                        {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os and not aditivos_pendentes %}
                             <p class="text-muted">Nenhuma solicitação pendente.</p>
                         {% endif %}
                     </div>
@@ -183,17 +196,14 @@
 
                                             <!-- STATUS VISUAL -->
                                             <div class="mt-1">
-                                                {% if bm.status_coordenador == "pendente" %}
-                                                    <span class="badge bg-secondary">Coord.</span>
-                                                {% endif %}
-                                                {% if bm.status_lider == "pendente" %}
-                                                    <span class="badge bg-warning text-dark">Líder</span>
-                                                {% endif %}
-                                                {% if bm.status_gerente == "pendente" %}
-                                                    <span class="badge bg-info text-dark">Gerente</span>
+                                                {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
+                                                    <span class="badge bg-secondary">Liderança</span>
+                                                    <span class="badge bg-info text-dark">Gerência de Contrato</span>
                                                 {% endif %}
                                                 {% if bm.aprovacao_pagamento == "pendente" %}
-                                                    <span class="badge bg-danger">Diretoria</span>
+                                                    {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
+                                                        <span class="badge bg-danger">Diretoria</span>
+                                                    {% endif %}
                                                 {% endif %}
                                             </div>
                                         </div>
@@ -536,6 +546,7 @@
                                           </a>
                                       </li>
                                   {% endfor %}
+
                               </ul>
                           {% else %}
                               <p class="text-muted mb-0">Nenhuma entrega atrasada.</p>
@@ -557,18 +568,18 @@
                                       <li class="list-group-item d-flex justify-content-between align-items-center">
                                           <div>
                                               <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
-                                              <small>Parcela {{ bm.parcela_paga }} -Â Valor: R$ {{ bm.valor_pago }}</small><br>
+                                              <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
 
                                               <!-- STATUS VISUAL -->
                                               <div class="mt-1">
-                                                  {% if bm.status_coordenador == "pendente" %}
-                                                      <span class="badge bg-secondary">Coord.</span>
-                                                  {% endif %}
-                                                  {% if bm.status_gerente == "pendente" %}
-                                                      <span class="badge bg-info text-dark">Gerente</span>
+                                                  {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
+                                                      <span class="badge bg-secondary">Liderança</span>
+                                                      <span class="badge bg-info text-dark">Gerência de Contrato</span>
                                                   {% endif %}
                                                   {% if bm.aprovacao_pagamento == "pendente" %}
-                                                      <span class="badge bg-danger">Diretoria</span>
+                                                      {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
+                                                          <span class="badge bg-danger">Diretoria</span>
+                                                      {% endif %}
                                                   {% endif %}
                                               </div>
                                           </div>
@@ -830,7 +841,7 @@
 
                               </ul>
 
-                              {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os %}
+                              {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os and not aditivos_pendentes %}
                                   <p class="text-muted">Nenhuma solicitação pendente.</p>
                               {% endif %}
                           </div>
@@ -1080,7 +1091,7 @@
 
                               </ul>
 
-                              {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os %}
+                              {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os and not aditivos_pendentes %}
                                   <p class="text-muted">Nenhuma solicitação pendente.</p>
                               {% endif %}
                           </div>
@@ -1104,17 +1115,14 @@
 
                                                   <!-- STATUS VISUAL -->
                                                   <div class="mt-1">
-                                                      {% if bm.status_coordenador == "pendente" %}
-                                                          <span class="badge bg-secondary">Coord.</span>
-                                                      {% endif %}
-                                                      {% if bm.status_lider == "pendente" %}
-                                                          <span class="badge bg-warning text-dark">Líder</span>
-                                                      {% endif %}
-                                                      {% if bm.status_gerente == "pendente" %}
-                                                          <span class="badge bg-info text-dark">Gerente</span>
+                                                      {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
+                                                          <span class="badge bg-secondary">Liderança</span>
+                                                          <span class="badge bg-info text-dark">Gerência de Contrato</span>
                                                       {% endif %}
                                                       {% if bm.aprovacao_pagamento == "pendente" %}
-                                                          <span class="badge bg-danger">Diretoria</span>
+                                                          {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
+                                                              <span class="badge bg-danger">Diretoria</span>
+                                                          {% endif %}
                                                       {% endif %}
                                                   </div>
                                               </div>
@@ -1440,17 +1448,14 @@
 
                                               <!-- STATUS VISUAL -->
                                               <div class="mt-1">
-                                                  {% if bm.status_coordenador == "pendente" %}
-                                                      <span class="badge bg-secondary">Coord.</span>
-                                                  {% endif %}
-                                                  {% if bm.status_lider == "pendente" %}
-                                                      <span class="badge bg-warning text-dark">Líder</span>
-                                                  {% endif %}
-                                                  {% if bm.status_gerente == "pendente" %}
-                                                      <span class="badge bg-info text-dark">Gerente</span>
+                                                  {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
+                                                      <span class="badge bg-secondary">Liderança</span>
+                                                      <span class="badge bg-info text-dark">Gerência de Contrato</span>
                                                   {% endif %}
                                                   {% if bm.aprovacao_pagamento == "pendente" %}
-                                                      <span class="badge bg-danger">Diretoria</span>
+                                                      {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
+                                                          <span class="badge bg-danger">Diretoria</span>
+                                                      {% endif %}
                                                   {% endif %}
                                               </div>
                                           </div>
@@ -1752,7 +1757,7 @@
 
                               </ul>
 
-                              {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os %}
+                              {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os and not aditivos_pendentes %}
                                   <p class="text-muted">Nenhuma solicitação pendente.</p>
                               {% endif %}
                           </div>
@@ -2026,17 +2031,14 @@
 
                                                   <!-- STATUS VISUAL -->
                                                   <div class="mt-1">
-                                                      {% if bm.status_coordenador == "pendente" %}
-                                                          <span class="badge bg-secondary">Coord.</span>
-                                                      {% endif %}
-                                                      {% if bm.status_lider == "pendente" %}
-                                                          <span class="badge bg-warning text-dark">Líder</span>
-                                                      {% endif %}
-                                                      {% if bm.status_gerente == "pendente" %}
-                                                          <span class="badge bg-info text-dark">Gerente</span>
+                                                      {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
+                                                          <span class="badge bg-secondary">Liderança</span>
+                                                          <span class="badge bg-info text-dark">Gerência de Contrato</span>
                                                       {% endif %}
                                                       {% if bm.aprovacao_pagamento == "pendente" %}
-                                                          <span class="badge bg-danger">Diretoria</span>
+                                                          {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
+                                                              <span class="badge bg-danger">Diretoria</span>
+                                                          {% endif %}
                                                       {% endif %}
                                                   </div>
                                               </div>
@@ -2242,6 +2244,32 @@
                       </div>
                   </div>
                   <!-- Fim do is_diretor -->
+                  {% endif %}
+
+                  {% if aditivos_pendentes and is_suprimento or aditivos_pendentes and is_diretoria %}
+                  <div class="col-md-6 mb-4 animated-card">
+                      <div class="card shadow-sm dashboard-card">
+                          <div class="card-header bg-dark text-white">
+                              <h5 class="mb-0">Aditivos Pendentes</h5>
+                          </div>
+                          <div class="card-body">
+                              <ul class="list-group list-group-flush">
+                                  {% for aditivo in aditivos_pendentes %}
+                                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                                      <div>
+                                          <strong>Aditivo #{{ aditivo.id }}</strong><br>
+                                          <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
+                                          <span class="badge bg-dark">{{ aditivo.contrato.num_contrato }}</span>
+                                      </div>
+                                      <a href="{% url 'contrato_fornecedor_detalhe' aditivo.contrato.id %}" class="btn btn-sm btn-outline-primary">
+                                          Ver
+                                      </a>
+                                  </li>
+                                  {% endfor %}
+                              </ul>
+                          </div>
+                      </div>
+                  </div>
                   {% endif %}
 
         </div>

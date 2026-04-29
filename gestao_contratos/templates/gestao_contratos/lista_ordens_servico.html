@@ -61,7 +61,7 @@
                       {% if os.lider_contrato %}
                           {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
                       {% else %}
-                          âââ€šÂ¬ââ‚¬Â
+                          -
                       {% endif %}
                   </td>
                 {% endif %}
@@ -118,7 +118,7 @@
             </li>
             <li class="page-item">
                 <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">
-                        Última &raquo;
+                        Ãšltima &raquo;
                 </a>
             </li>
         {% endif %}
@@ -127,3 +127,4 @@
 </nav>
 
 {% endblock %}
+

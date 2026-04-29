@@ -80,18 +80,18 @@
                 </div>
 
                 <div class="col-md-6">
-                    <p><strong>Líder do Contrato:</strong>
+                    <p><strong>L&iacute;der do Contrato:</strong>
                         {% if os.lider_contrato %}
                             {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
                         {% else %}
-                            âââ€šÂ¬ââ‚¬Â
+                            -
                         {% endif %}
                     </p>
-                    <p><strong>Prazo de Execução:</strong>
+                    <p><strong>Prazo de Execu&ccedil;&atilde;o:</strong>
                         {% if os.prazo_execucao %}
                             {{ os.prazo_execucao|date:"d/m/Y" }}
                         {% else %}
-                            âââ€šÂ¬ââ‚¬Â
+                            -
                         {% endif %}
                     </p>
                 </div>
@@ -99,12 +99,12 @@
 
             <hr>
 
-  <!-- DESCRIÇÃO -->
+  <!-- DESCRICAO -->
             <div class="mb-3">
-                <h5>Título</h5>
+                <h5>T&iacute;tulo</h5>
                 <p>{{ os.titulo }}</p>
 
-                <h5>Descrição</h5>
+                <h5>Descri&ccedil;&atilde;o</h5>
                 <p class="text-muted">{{ os.descricao|linebreaks }}</p>
             </div>
 
@@ -117,7 +117,7 @@
                     {% if os.valor_previsto %}
                         R$ {{ os.valor_previsto|floatformat:2 }}
                     {% else %}
-                        âââ€šÂ¬ââ‚¬Â
+                        -
                     {% endif %}
                 </div>
 
@@ -136,7 +136,7 @@
 
             <hr>
 
-  <!-- AÇÕES -->
+  <!-- AÇÃ•ES -->
             <div class="d-flex gap-2 flex-wrap">
 
                 <a href="{% url 'lista_solicitacoes' %}" class="btn btn-outline-secondary">
@@ -194,3 +194,6 @@
 
 </div>
 {% endblock %}
+
+
+

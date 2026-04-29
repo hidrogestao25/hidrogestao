@@ -33,10 +33,5 @@ O sistema trabalha com grupos de acesso para definir responsabilidades e permiss
 
 ## Desenvolvedor
 
-O desenvolvedor identificado no histórico do repositório é:
-
-- `hidromosaic <hidromosaic@gmail.com>`
-
-## Observação
-
-Caso a autoria precise refletir uma pessoa ou empresa com nome diferente do identificado no Git, basta atualizar esta seção do README.
+Desenvolvido por Adelson da Silva Santos, Engenheiro Ambiental e Sanitarista.
+Cargo: Analista Técnico Júnior da HIDROBR Consultoria  Ltda.

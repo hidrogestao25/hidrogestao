@@ -42,6 +42,12 @@
           </div>
 
           <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.coordenadores.id_for_label }}">Líderes Técnicos Vinculados</label>
+            {{ form.coordenadores }}
+            <small class="text-muted d-block">Selecione um ou mais coordenadores para este contrato.</small>
+          </div>
+
+          <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.data_inicio.id_for_label }}">Data Início</label>
             {{ form.data_inicio }}
           </div>
@@ -128,7 +134,7 @@
     });
 
     // Ativa o Select2 nos campos pesquisáveis
-    $('#id_cliente, #id_coordenador, #id_proposta, #id_status').select2({
+    $('#id_cliente, #id_coordenador, #id_coordenadores, #id_proposta, #id_status').select2({
       width: '100%',
       placeholder: 'Selecione ou digite para pesquisar...',
       allowClear: true,

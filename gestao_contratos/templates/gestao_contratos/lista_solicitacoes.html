@@ -170,7 +170,7 @@
                                 <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                               {% endif %}
                               {% if solicitacao.minuta_boletins_medicao %}
-                                  {% if solicitacao.minuta_boletins_medicao.status_coordenador == 'pendente' %}
+                                  {% if solicitacao.minuta_boletins_medicao.status_coordenador == 'pendente' and solicitacao.minuta_boletins_medicao.status_gerente == 'pendente' %}
                                       <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary btn-sm">
                                           Avaliar Minuta BM
                                       </a>

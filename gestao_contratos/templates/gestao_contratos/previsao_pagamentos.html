@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% load custom_tags %}
+
 {% block content %}
 <div class="container mt-4">
   <h2>Previsão de Pagamentos</h2>
-  <p>Selecione uma data para visualizar os pagamentos previstos até ela.</p>
+  <p>Selecione um período para visualizar os pagamentos previstos e pagos.</p>
 
   <form method="get" class="mb-4">
     <div class="row align-items-end">
@@ -17,7 +19,7 @@
       <div class="col-md-3">
         <label for="{{ form.data_limite.id_for_label }}" class="form-label">
           Data Limite
-                  <i class="bi bi-info-circle" title="Última data a considerar nos filtros de previsão e pagamento."></i>
+          <i class="bi bi-info-circle" title="Última data a considerar nos filtros de previsão e pagamento."></i>
         </label>
         {{ form.data_limite }}
       </div>
@@ -36,240 +38,220 @@
     </div>
   </form>
 
-
   {% if bms %}
-  <div class="mt-5">
-    <div class="d-flex justify-content-between align-items-center mt-5">
-      <h4>Boletins de Medição (BMs)</h4>
-      <div class="d-flex justify-content-end mb-3">
-        <a href="{% url 'download_bms_aprovados' %}?data_inicial={{ form.data_inicial.value }}&data_limite={{ form.data_limite.value }}&filtro_bm={{ request.GET.filtro_bm|default:'pagamento' }}"
-           class="btn btn-success">
+    <div class="mt-5">
+      <div class="d-flex justify-content-between align-items-center mt-5">
+        <h4>Boletins de Medição (BMs)</h4>
+        <div class="d-flex justify-content-end mb-3">
+          <a href="{% url 'download_bms_aprovados' %}?data_inicial={{ form.data_inicial.value }}&data_limite={{ form.data_limite.value }}&filtro_bm={{ request.GET.filtro_bm|default:'pagamento' }}&coordenador={{ form.coordenador.value|default:'' }}"
+             class="btn btn-success">
             <i class="bi bi-download"></i> Baixar BMs Aprovados (.zip)
-        </a>
-
-      </div>
-    </div>
-
-    <form method="get" class="mb-3">
-        <div class="d-flex gap-3 align-items-center">
-
-            <label class="form-check-label fw-bold me-3">Filtrar BMs por:</label>
-
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="filtro_bm" value="pagamento"
-                       {% if request.GET.filtro_bm != "medicao" %}checked{% endif %}>
-                <label class="form-check-label">Data de Criação do BM</label>
-            </div>
-
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="filtro_bm" value="medicao"
-                       {% if request.GET.filtro_bm == "medicao" %}checked{% endif %}>
-                <label class="form-check-label">Período de Medição</label>
-            </div>
-
-            <button type="submit" class="btn btn-primary ms-3">
-                Aplicar
-            </button>
+          </a>
         </div>
-
-        <!-- mantém os filtros originais -->
-        <input type="hidden" name="data_inicial" value="{{ form.data_inicial.value }}">
-        <input type="hidden" name="data_limite" value="{{ form.data_limite.value }}">
-        <input type="hidden" name="coordenador" value="{{ form.coordenador.value }}">
-    </form>
-
-
-    <table class="table table-bordered table-striped">
-    <thead class="table-dark">
-      <tr>
-        <th>Projeto</th>
-        <th>Fornecedor</th>
-        <th>Líder Técnico</th>
-        <th>Nº BM</th>
-        <th>Período de Medição</th>
-        <th>Valor Previsto</th>
-        <th>Valor a Ser Pago</th>
-        <th>Data de Pagamento</th>
-        <th>Aprovações</th>
-        <th>Ações</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for bm in bms %}
-        <tr>
-          <td>{{ bm.contrato.cod_projeto.cod_projeto }}</td>
-          <td>{{ bm.contrato.empresa_terceira.nome }}</td>
-          <td>{{ bm.contrato.coordenador.get_full_name }}</td>
-          <td>{{ bm.numero_bm }}</td>
-          <td>
-              {% if bm.data_inicial_medicao and bm.data_final_medicao %}
-                  {{ bm.data_inicial_medicao|date:"d/m/Y" }} até {{ bm.data_final_medicao|date:"d/m/Y" }}
-              {% else %}
-                  <span class="text-muted">Não informado</span>
-              {% endif %}
-          </td>
-
-          <td>
-            {% if bm.evento and bm.evento.valor_previsto %}
-              R$ {{ bm.evento.valor_previsto|floatformat:2 }}
-            {% else %}
-              <span class="text-muted">-</span>
-            {% endif %}
-          </td>
-          <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
-          <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
-
-          <td>
-              {% if bm.data_aprovacao_coordenador %}
-                  <strong>Líder:</strong> {{ bm.data_aprovacao_coordenador|date:"d/m/Y H:i" }}<br>
-              {% else %}
-                  <strong>Líder:</strong> <span class="text-warning">Pendente</span><br>
-              {% endif %}
-
-              {% if bm.data_aprovacao_gerente %}
-                  <strong>Gerente:</strong> {{ bm.data_aprovacao_gerente|date:"d/m/Y H:i" }}
-              {% else %}
-                  <strong>Gerente:</strong> <span class="text-warning">Pendente</span>
-              {% endif %}
-          </td>
-
-
-          <!-- Ações (sem alteração) -->
-          <td>
-            {% if bm.evento %}
-              {% if request.user.grupo == 'suprimento' %}
-                <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
-                   class="btn btn-sm btn-outline-success">
-                  <i class="bi bi-eye"></i> Verificar
-                </a>
-              {% elif request.user.grupo == 'gerente' %}
-                {% if bm.status_gerente == 'pendente' %}
-                  <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
-                     class="btn btn-sm btn-primary">
-                    <i class="bi bi-box-arrow-up-right"></i> Aprovar
-                  </a>
-                {% elif bm.status_gerente == 'aprovado' %}
-                  <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
-                     class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-eye"></i> Verificar
-                  </a>
-                {% endif %}
-              {% else %}
-                <span class="text-muted">-</span>
-              {% endif %}
-            {% else %}
-              <span class="text-muted">Sem evento</span>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-
-      <!-- Linha de totais gerais -->
-      <tr class="fw-bold table-secondary">
-        <td colspan="5" class="text-end">Totais Gerais:</td>
-        <td>R$ {{ total_bm_previsto|floatformat:2 }}</td>
-        <td>R$ {{ total_bm_pago|floatformat:2 }}</td>
-        <td colspan="5"></td>
-      </tr>
-    </tbody>
-  </table>
-
-
-  </div>
-  {% else %}
-  <div class="mt-5">
-    <div class="justify-content-between align-items-center mt-5">
-      <h4>Boletins de Medição (BMs)</h4>
-
-          <h5>Não há Boletins Aprovados para o filtro solicitado</h5>
-
-          <hr>
-
       </div>
 
       <form method="get" class="mb-3">
-          <div class="d-flex gap-3 align-items-center">
+        <div class="d-flex gap-3 align-items-center">
+          <label class="form-check-label fw-bold me-3">Filtrar BMs por:</label>
 
-              <label class="form-check-label fw-bold me-3">Filtrar BMs por:</label>
-
-              <div class="form-check form-check-inline">
-                  <input class="form-check-input" type="radio" name="filtro_bm" value="pagamento"
-                         {% if request.GET.filtro_bm != "medicao" %}checked{% endif %}>
-                  <label class="form-check-label">Data Prevista do BM</label>
-              </div>
-
-              <div class="form-check form-check-inline">
-                  <input class="form-check-input" type="radio" name="filtro_bm" value="medicao"
-                         {% if request.GET.filtro_bm == "medicao" %}checked{% endif %}>
-                  <label class="form-check-label">Período de Medição</label>
-              </div>
-
-              <button type="submit" class="btn btn-primary ms-3">
-                  Aplicar
-              </button>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="filtro_bm" value="pagamento"
+                   {% if request.GET.filtro_bm != "medicao" %}checked{% endif %}>
+            <label class="form-check-label">Data de Aprovação Operacional</label>
           </div>
 
-          <!-- mantém os filtros originais -->
-          <input type="hidden" name="data_inicial" value="{{ form.data_inicial.value }}">
-          <input type="hidden" name="data_limite" value="{{ form.data_limite.value }}">
-          <input type="hidden" name="coordenador" value="{{ form.coordenador.value }}">
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="filtro_bm" value="medicao"
+                   {% if request.GET.filtro_bm == "medicao" %}checked{% endif %}>
+            <label class="form-check-label">Período de Medição</label>
+          </div>
+
+          <button type="submit" class="btn btn-primary ms-3">Aplicar</button>
+        </div>
+
+        <input type="hidden" name="data_inicial" value="{{ form.data_inicial.value }}">
+        <input type="hidden" name="data_limite" value="{{ form.data_limite.value }}">
+        <input type="hidden" name="coordenador" value="{{ form.coordenador.value }}">
+      </form>
+
+      <table class="table table-bordered table-striped">
+        <thead class="table-dark">
+          <tr>
+            <th>Projeto</th>
+            <th>Fornecedor</th>
+            <th>Líder Técnico</th>
+            <th>Nº BM</th>
+            <th>Período de Medição</th>
+            <th>Valor Previsto</th>
+            <th>Valor a Ser Pago</th>
+            <th>Data de Pagamento</th>
+            <th>Aprovações</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bm in bms %}
+            <tr>
+              <td>{{ bm.contrato.cod_projeto.cod_projeto }}</td>
+              <td>{{ bm.contrato.empresa_terceira.nome }}</td>
+              <td>{{ bm.contrato.coordenador.get_full_name }}</td>
+              <td>{{ bm.numero_bm }}</td>
+              <td>
+                {% if bm.data_inicial_medicao and bm.data_final_medicao %}
+                  {{ bm.data_inicial_medicao|date:"d/m/Y" }} até {{ bm.data_final_medicao|date:"d/m/Y" }}
+                {% else %}
+                  <span class="text-muted">Não informado</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if bm.evento and bm.evento.valor_previsto %}
+                  R$ {{ bm.evento.valor_previsto|floatformat:2 }}
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+              <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
+              <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
+              <td>
+                {% if bm.data_aprovacao_coordenador %}
+                  <strong>Líder / Gerente-Líder:</strong> {{ bm.data_aprovacao_coordenador|date:"d/m/Y H:i" }}<br>
+                {% else %}
+                  <strong>Líder / Gerente-Líder:</strong> <span class="text-warning">Pendente</span><br>
+                {% endif %}
+
+                {% if bm.data_aprovacao_gerente %}
+                  <strong>Gerente de Contrato:</strong> {{ bm.data_aprovacao_gerente|date:"d/m/Y H:i" }}
+                {% else %}
+                  <strong>Gerente de Contrato:</strong> <span class="text-warning">Pendente</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if bm.evento %}
+                  {% if request.user.grupo == 'suprimento' %}
+                    <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank" class="btn btn-sm btn-outline-success">
+                      <i class="bi bi-eye"></i> Verificar
+                    </a>
+                  {% elif request.user.grupo == 'lider_contrato' and request.user == bm.contrato.lider_contrato %}
+                    <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
+                       class="btn btn-sm {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}btn-primary{% else %}btn-outline-success{% endif %}">
+                      <i class="bi bi-box-arrow-up-right"></i>
+                      {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}Aprovar{% else %}Verificar{% endif %}
+                    </a>
+                  {% elif request.user.grupo == 'gerente_lider' and request.user|shares_center_with:bm.contrato.coordenador %}
+                    <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
+                       class="btn btn-sm {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}btn-primary{% else %}btn-outline-success{% endif %}">
+                      <i class="bi bi-box-arrow-up-right"></i>
+                      {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}Aprovar{% else %}Verificar{% endif %}
+                    </a>
+                  {% elif request.user.grupo == 'gerente_contrato' %}
+                    <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
+                       class="btn btn-sm {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}btn-primary{% else %}btn-outline-success{% endif %}">
+                      <i class="bi bi-box-arrow-up-right"></i>
+                      {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}Aprovar{% else %}Verificar{% endif %}
+                    </a>
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted">Sem evento</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+
+          <tr class="fw-bold table-secondary">
+            <td colspan="5" class="text-end">Totais Gerais:</td>
+            <td>R$ {{ total_bm_previsto|floatformat:2 }}</td>
+            <td>R$ {{ total_bm_pago|floatformat:2 }}</td>
+            <td colspan="3"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="mt-5">
+      <div class="justify-content-between align-items-center mt-5">
+        <h4>Boletins de Medição (BMs)</h4>
+        <h5>Não há Boletins Aprovados para o filtro solicitado</h5>
+        <hr>
+      </div>
+
+      <form method="get" class="mb-3">
+        <div class="d-flex gap-3 align-items-center">
+          <label class="form-check-label fw-bold me-3">Filtrar BMs por:</label>
+
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="filtro_bm" value="pagamento"
+                   {% if request.GET.filtro_bm != "medicao" %}checked{% endif %}>
+            <label class="form-check-label">Data de Aprovação Operacional</label>
+          </div>
+
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="filtro_bm" value="medicao"
+                   {% if request.GET.filtro_bm == "medicao" %}checked{% endif %}>
+            <label class="form-check-label">Período de Medição</label>
+          </div>
+
+          <button type="submit" class="btn btn-primary ms-3">Aplicar</button>
+        </div>
+
+        <input type="hidden" name="data_inicial" value="{{ form.data_inicial.value }}">
+        <input type="hidden" name="data_limite" value="{{ form.data_limite.value }}">
+        <input type="hidden" name="coordenador" value="{{ form.coordenador.value }}">
       </form>
     </div>
   {% endif %}
 
-
   {% if pagamentos %}
-  <div class="d-flex justify-content-between align-items-center mt-5">
-    <h4>Previsão de Pagamentos</h4>
-    <div class="d-flex justify-content-end mb-3">
-      <a href="{% url 'exportar_previsao_pagamentos_excel' %}?{{ request.GET.urlencode }}"
-         class="btn btn-success">
-        <i class="bi bi-file-earmark-excel"></i> Baixar Excel
-      </a>
+    <div class="d-flex justify-content-between align-items-center mt-5">
+      <h4>Previsão de Pagamentos</h4>
+      <div class="d-flex justify-content-end mb-3">
+        <a href="{% url 'exportar_previsao_pagamentos_excel' %}?{{ request.GET.urlencode }}"
+           class="btn btn-success">
+          <i class="bi bi-file-earmark-excel"></i> Baixar Excel
+        </a>
+      </div>
     </div>
-  </div>
 
+    <table class="table table-bordered table-striped">
+      <thead class="table-dark">
+        <tr>
+          <th>Tipo</th>
+          <th>Projeto</th>
+          <th>Coordenador</th>
+          <th>Fornecedor</th>
+          <th>Data Prevista</th>
+          <th>Valor Previsto</th>
+          <th>Data Pagamento</th>
+          <th>Valor Pago</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in pagamentos %}
+          <tr>
+            <td>{{ item.tipo }}</td>
+            <td>{{ item.projeto }}</td>
+            <td>{{ item.coordenador }}</td>
+            <td>{{ item.fornecedor }}</td>
+            <td>{% if item.data_prevista %}{{ item.data_prevista|date:"d/m/Y" }}{% endif %}</td>
+            <td>R$ {{ item.valor_previsto|floatformat:2 }}</td>
+            <td>{% if item.data_pagamento %}{{ item.data_pagamento|date:"d/m/Y" }}{% endif %}</td>
+            <td>R$ {{ item.valor_pago|floatformat:2 }}</td>
+          </tr>
+        {% endfor %}
+        <tr class="fw-bold table-secondary">
+          <td colspan="5">Total Geral</td>
+          <td>R$ {{ total_previsto|floatformat:2 }}</td>
+          <td></td>
+          <td>R$ {{ total_pago|floatformat:2 }}</td>
+        </tr>
+      </tbody>
+    </table>
 
-  <table class="table table-bordered table-striped">
-    <thead class="table-dark">
-      <tr>
-        <th>Projeto</th>
-        <th>Coordenador</th>
-        <th>Fornecedor</th>
-        <th>Data Prevista</th>
-        <th>Valor Previsto</th>
-        <th>Data Pagamento</th>
-        <th>Valor Pago</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in pagamentos %}
-      <tr>
-        <td>{{ item.contrato_terceiro__cod_projeto__cod_projeto }}</td>
-        <td>{{ item.contrato_terceiro__coordenador__username }}</td>
-        <td>{{ item.empresa_terceira__nome }}</td>
-        <td>{{ item.data_prevista_pagamento|date:"d/m/Y" }}</td>
-        <td>R$ {{ item.valor_previsto|floatformat:2 }}</td>
-        <td>{% if item.data_pagamento %}{{ item.data_pagamento|date:"d/m/Y" }}{% endif %}</td>
-        <td>R$ {{ item.valor_pago|floatformat:2 }}</td>
-      </tr>
-      {% endfor %}
-      <tr class="fw-bold table-secondary">
-        <td colspan="4">Total Geral</td>
-        <td>R$ {{ total_previsto|floatformat:2 }}</td>
-        <td></td>
-        <td>R$ {{ total_pago|floatformat:2 }}</td>
-      </tr>
-    </tbody>
-  </table>
-
-
-
-  {% if grafico_html %}
-    <h4 class="mt-5">Gráfico de Pagamentos Acumulados</h4>
-    {{ grafico_html|safe }}
-  {% endif %}
-
+    {% if grafico_html %}
+      <h4 class="mt-5">Gráfico de Pagamentos Acumulados</h4>
+      {{ grafico_html|safe }}
+    {% endif %}
   {% elif form.is_bound %}
     <div class="alert alert-warning">Nenhum pagamento previsto até esta data.</div>
   {% endif %}
@@ -277,21 +259,21 @@
 
 {% if grafico_barras %}
   <div class="mt-5">
-    <h4>Pagamentos Previsto por Coordenadores</h4>
+    <h4>Pagamentos Previstos por Coordenadores</h4>
     {{ grafico_barras|safe }}
   </div>
 {% endif %}
 
 {% if grafico_barras_projeto %}
   <div class="mt-5">
-    <h4>Pagamentos Previsto por Projetos</h4>
+    <h4>Pagamentos Previstos por Projetos</h4>
     {{ grafico_barras_projeto|safe }}
   </div>
 {% endif %}
 
 {% if grafico_barra %}
   <div class="mt-5">
-        <h4>Pagamentos Previsto x Pago (Últimos 12 meses e Próximos 12 meses)</h4>
+    <h4>Pagamentos Previstos x Pagos (Últimos 12 meses e Próximos 12 meses)</h4>
     {{ grafico_barra|safe }}
   </div>
 {% endif %}

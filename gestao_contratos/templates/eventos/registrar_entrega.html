@@ -124,9 +124,9 @@
               <th>Parcela</th>
               <th>Valor Pago</th>
               <th>Data Pagamento</th>
-              <th>Status Coordenador</th>
+              <th>Status Líder / Gerente-Líder</th>
               {% if has_reprovacao_coordenador %}
-                <th>Justificativa Coordenador</th>
+                <th>Justificativa Líder / Gerente-Líder</th>
               {% endif %}
               <th>Status Gerente</th>
               {% if has_reprovacao_gerente %}
@@ -202,7 +202,7 @@
                     <button type="button"
                       class="btn btn-sm btn-success btn-aprovar"
                       data-bm-id="{{ item.bm.id }}"
-                      {% if item.bm.status_coordenador != "pendente" %}
+                      {% if not item.operational_pending %}
                         disabled
                       {% endif %}
                     >Aprovar</button>
@@ -210,7 +210,7 @@
                     <button type="button"
                       class="btn btn-sm btn-danger btn-reprovar"
                       data-bm-id="{{ item.bm.id }}"
-                      {% if item.bm.status_coordenador != "pendente" %}
+                      {% if not item.operational_pending %}
                         disabled
                       {% endif %}
                     >Reprovar</button>
@@ -225,7 +225,7 @@
                     <button type="button"
                       class="btn btn-sm btn-success btn-aprovar"
                       data-bm-id="{{ item.bm.id }}"
-                      {% if item.bm.status_gerente != "pendente" %}
+                      {% if not item.operational_pending %}
                         disabled
                       {% endif %}
                     >Aprovar</button>
@@ -233,7 +233,7 @@
                     <button type="button"
                       class="btn btn-sm btn-danger btn-reprovar"
                       data-bm-id="{{ item.bm.id }}"
-                      {% if item.bm.status_gerente != "pendente" %}
+                      {% if not item.operational_pending %}
                         disabled
                       {% endif %}
                     >Reprovar</button>
@@ -453,9 +453,55 @@
 </div>
 
 
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
+
 <!-- SCRIPTS -->
 <script>
 document.addEventListener("DOMContentLoaded", function() {
+  function formatarMoedaBR(valor) {
+    if (valor === null || valor === undefined || valor === "") {
+      return "";
+    }
+
+    let texto = String(valor).trim().replace(/\s/g, "");
+    if (!texto) {
+      return "";
+    }
+
+    if (texto.includes(",")) {
+      texto = texto.replace(/\./g, "").replace(",", ".");
+    }
+
+    const numero = Number(texto);
+    if (Number.isNaN(numero)) {
+      return String(valor);
+    }
+
+    return numero.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function aplicarMascaraMoeda(root = document) {
+    if (typeof jQuery === "undefined" || typeof jQuery.fn.inputmask === "undefined") {
+      return;
+    }
+
+    jQuery(root).find(".money").inputmask("currency", {
+      groupSeparator: ".",
+      radixPoint: ",",
+      digits: 2,
+      digitsOptional: false,
+      autoGroup: true,
+      rightAlign: false,
+      removeMaskOnSubmit: false,
+      placeholder: "0",
+    });
+  }
+
+  aplicarMascaraMoeda(document);
 
   /* ------------------------
       VALOR PAGO / PREVISTO
@@ -472,7 +518,12 @@ document.addEventListener("DOMContentLoaded", function() {
       camposDiv.style.display = "none";
 
       if (inputValorPago) {
-        inputValorPago.value = "{{ evento.valor_previsto|default:0 }}";
+        const valorPrevisto = formatarMoedaBR("{{ evento.valor_previsto|default:'' }}");
+        if (inputValorPago.inputmask) {
+          inputValorPago.inputmask.setValue(valorPrevisto);
+        } else {
+          inputValorPago.value = valorPrevisto;
+        }
       }
 
       if (inputJustificativa) {
@@ -513,6 +564,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(html => {
 
           document.getElementById("bmModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("bmModalBody"));
 
           const bmForm = document.getElementById("bmForm");
 
@@ -559,6 +611,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(html => {
 
           document.getElementById("editarBMModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("editarBMModalBody"));
 
           const form = document.getElementById("formEditarBM");
 
@@ -611,6 +664,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(html => {
 
           document.getElementById("nfModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("nfModalBody"));
 
           const nfForm = document.getElementById("nfForm");
 
@@ -653,6 +707,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(r => r.text())
         .then(html => {
           document.getElementById("editarNFModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("editarNFModalBody"));
 
           const form = document.getElementById("formEditarNF");
 
@@ -689,7 +744,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     if (statusCoordenador === "reprovado" || statusGerente === "reprovado") {
       row.className = "table-danger";
-    } else if (statusCoordenador === "aprovado" && statusGerente === "aprovado") {
+    } else if (statusCoordenador === "aprovado" || statusGerente === "aprovado") {
       row.className = "table-success";
     } else {
       row.className = "table-warning";
