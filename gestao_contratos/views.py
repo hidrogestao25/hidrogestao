@@ -4970,7 +4970,7 @@ def cadastrar_contrato(request, solicitacao_id):
             if DocumentoBM.objects.filter(solicitacao=solicitacao).exists():
                 solicitacao.status = "Aprovação Final"
             else:
-                solicitacao.status = "Planejamento do contratos"
+                solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
             contrato.prazo_inicio = solicitacao.data_inicio
             contrato.prazo_fim = solicitacao.data_fim
@@ -5043,7 +5043,7 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
             if hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
                 solicitacao.status = "Aprovação Final"
             else:
-                solicitacao.status = "Planejamento do contrato"
+                solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
             # mantém arquivo antigo se não foi enviado novo
             if not request.FILES.get("arquivo_contrato") and contrato_existente:
@@ -5659,7 +5659,7 @@ def inserir_minuta_bm(request, pk):
             if hasattr(solicitacao, "contrato_relacionado"):
                 solicitacao.status = "Aprovação Final"
             else:
-                solicitacao.status = "Planejamento do contrato"
+                solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
             return redirect('lista_solicitacoes')
