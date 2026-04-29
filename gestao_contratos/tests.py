@@ -28,6 +28,8 @@ from .models import (
     DocumentoContratoTerceiro,
     EmpresaTerceira,
     Evento,
+    NF,
+    NFCliente,
     OS,
     PropostaFornecedor,
     RegistroAuditoria,
@@ -45,6 +47,7 @@ from .forms import (
     NFForm,
     OrdemServicoForm,
     RegistroEntregaOSForm,
+    SolicitacaoProspeccaoForm,
 )
 from .views import (
     build_weekly_supply_report,
@@ -1334,6 +1337,19 @@ class ApproveFornecedorGerenteTests(BaseUserTestCase):
         self.solicitacao.refresh_from_db()
         self.assertEqual(self.solicitacao.aprovacao_fornecedor_gerente, "pendente")
 
+    def test_aprovar_fornecedor_gerente_bloqueia_lider_contrato(self):
+        self.client.force_login(self.lider)
+
+        response = self.client.post(
+            reverse("aprovar_fornecedor_gerente", args=[self.solicitacao.pk]),
+            {"acao": "aprovar"},
+            follow=True,
+        )
+
+        self.assertRedirects(response, reverse("home"))
+        self.solicitacao.refresh_from_db()
+        self.assertEqual(self.solicitacao.aprovacao_fornecedor_gerente, "pendente")
+
     def test_reprovar_fornecedor_gerente_limpa_escolha_e_solicita_nova_triagem(self):
         self.client.force_login(self.gerente_contrato)
 
@@ -1426,6 +1442,129 @@ class ApproveFornecedorDiretoriaTests(BaseUserTestCase):
         self.assertIsNone(self.solicitacao.fornecedor_escolhido)
         self.assertEqual(self.solicitacao.justificativa_diretoria, "Fornecedor fora da estratégia.")
         self.assertGreaterEqual(len(mail.outbox), 1)
+
+
+class ProspeccaoFlowAdjustmentsTests(BaseUserTestCase):
+    def setUp(self):
+        self.centro = self.create_center()
+        self.lider = self.create_user("lider_prosp", "lider_contrato")
+        self.gerente_lider = self.create_user("gl_prosp", "gerente_lider")
+        self.gerente_contrato = self.create_user("gc_prosp", "gerente_contrato")
+        self.diretoria = self.create_user("dir_prosp", "diretoria")
+        self.coordenador = self.create_user("coord_prosp", "coordenador")
+        self.coordenador.centros.add(self.centro)
+        self.gerente_lider.centros.add(self.centro)
+        self.contrato = self.create_contract(
+            codigo="PRJ-PROSP",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+        self.fornecedor = self.create_supplier("Fornecedor Prosp", "33.333.333/0001-33")
+
+    def test_nova_solicitacao_prospeccao_salva_zero_quando_valor_disponivel_vazio(self):
+        form = SolicitacaoProspeccaoForm(
+            data={
+                "contrato": self.contrato.pk,
+                "coordenador": self.coordenador.pk,
+                "descricao": "Nova prospecção sem valor",
+                "requisitos": "Requisitos mínimos",
+                "previsto_no_orcamento": "",
+                "valor_disponivel": "",
+                "data_inicio": "01-05-2026",
+                "data_fim": "31-05-2026",
+                "cronograma": "Cronograma base",
+                "forma_pagamento": "30",
+                "justificativa_orcamento": "Sem orçamento definido",
+                "justificativa_fornecedor_escolhido": "",
+            },
+            user=self.gerente_lider,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["valor_disponivel"], Decimal("0.00"))
+
+    def test_selecao_de_fornecedor_notifica_gerente_contrato_e_diretoria(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Solicitação em triagem",
+            aprovado=True,
+            triagem_realizada=True,
+            status="Triagem realizada",
+        )
+        solicitacao.fornecedores_selecionados.add(self.fornecedor)
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.post(
+            reverse("detalhes_triagem_fornecedores", args=[solicitacao.pk]),
+            {
+                "fornecedor_escolhido": self.fornecedor.pk,
+                "justificativa_fornecedor_escolhido": "Melhor aderência técnica",
+            },
+            follow=False,
+        )
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
+        solicitacao.refresh_from_db()
+        self.assertEqual(solicitacao.fornecedor_escolhido, self.fornecedor)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
+        self.assertIn(self.diretoria.email, mail.outbox[0].to)
+
+    def test_lista_solicitacoes_exibe_apenas_um_botao_selecionar_fornecedor_para_gerente_lider(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Solicitação com triagem pronta",
+            aprovado=True,
+            triagem_realizada=True,
+            status="Triagem realizada",
+        )
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertEqual(response.status_code, 200)
+        url = reverse("detalhes_triagem_fornecedores", args=[solicitacao.pk])
+        self.assertEqual(response.content.decode("utf-8").count(url), 1)
+
+    def test_lista_solicitacoes_nao_exibe_avaliar_fornecedor_para_gerente_lider(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Fornecedor já escolhido",
+            aprovado=True,
+            triagem_realizada=True,
+            fornecedor_escolhido=self.fornecedor,
+            status="Fornecedor selecionado",
+        )
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(reverse("aprovar_fornecedor_gerente", args=[solicitacao.pk]), response.content.decode("utf-8"))
+
+    def test_lista_solicitacoes_exibe_avaliar_fornecedor_para_gerente_contrato(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Fornecedor aguardando avaliação",
+            aprovado=True,
+            triagem_realizada=True,
+            fornecedor_escolhido=self.fornecedor,
+            status="Fornecedor selecionado",
+        )
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(reverse("aprovar_fornecedor_gerente", args=[solicitacao.pk]), response.content.decode("utf-8"))
 
 
 class DocumentoBMApprovalTests(BaseUserTestCase):
@@ -2282,6 +2421,379 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertIn("PRJ-PREV", exported_values)
         self.assertNotIn("PRJ-OUT", exported_values)
         self.assertEqual(worksheet.max_row, 3)
+
+
+class FinanceiroCoverageTests(BaseUserTestCase):
+    def setUp(self):
+        self.centro = self.create_center()
+        self.financeiro = self.create_user("financeiro_full", "financeiro")
+        self.suprimento = self.create_user("suprimento_full", "suprimento")
+        self.gerente_contrato = self.create_user("gerente_contrato_full", "gerente_contrato")
+        self.coordenador = self.create_user("coordenador_full", "coordenador")
+        self.coordenador.centros.add(self.centro)
+
+        self.cliente = self.create_client("Cliente Financeiro", "00.000.000/0001-10")
+        self.outro_cliente = self.create_client("Cliente Financeiro 2", "00.000.000/0001-11")
+        self.fornecedor = self.create_supplier("Fornecedor Financeiro", "11.111.111/0001-10")
+        self.fornecedor_outro = self.create_supplier("Fornecedor Financeiro 2", "11.111.111/0001-11")
+
+        self.contrato_cliente = self.create_contract(
+            codigo="PRJ-FIN-001",
+            cliente=self.cliente,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            valor_total=Decimal("5000.00"),
+        )
+        self.contrato_cliente_outro = self.create_contract(
+            codigo="PRJ-FIN-002",
+            cliente=self.outro_cliente,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            valor_total=Decimal("3000.00"),
+        )
+
+        self.contrato_fornecedor = self.create_supplier_contract(
+            cod_projeto=self.contrato_cliente,
+            empresa_terceira=self.fornecedor,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            guarda_chuva=True,
+            num_contrato="CT-FIN-001",
+        )
+        self.contrato_fornecedor.valor_total = Decimal("4000.00")
+        self.contrato_fornecedor.data_inicio = date(2026, 4, 1)
+        self.contrato_fornecedor.data_fim = date(2026, 12, 31)
+        self.contrato_fornecedor.save()
+
+        self.contrato_fornecedor_outro = self.create_supplier_contract(
+            cod_projeto=self.contrato_cliente_outro,
+            empresa_terceira=self.fornecedor_outro,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            guarda_chuva=True,
+            num_contrato="CT-FIN-002",
+        )
+        self.contrato_fornecedor_outro.valor_total = Decimal("2500.00")
+        self.contrato_fornecedor_outro.data_inicio = date(2026, 4, 1)
+        self.contrato_fornecedor_outro.data_fim = date(2026, 10, 31)
+        self.contrato_fornecedor_outro.save()
+
+        self.evento = self.create_event(
+            contrato=self.contrato_fornecedor,
+            empresa_terceira=self.fornecedor,
+            data_prevista=timezone.localdate(),
+            realizado=True,
+        )
+        self.evento.data_prevista_pagamento = timezone.localdate()
+        self.evento.data_pagamento = timezone.localdate()
+        self.evento.valor_previsto = Decimal("1500.00")
+        self.evento.valor_pago = Decimal("1200.00")
+        self.evento.realizado = True
+        self.evento.save(
+            update_fields=[
+                "data_prevista_pagamento",
+                "data_pagamento",
+                "valor_previsto",
+                "valor_pago",
+                "realizado",
+            ]
+        )
+
+        self.evento_outro = self.create_event(
+            contrato=self.contrato_fornecedor_outro,
+            empresa_terceira=self.fornecedor_outro,
+            data_prevista=timezone.localdate(),
+            realizado=True,
+        )
+        self.evento_outro.data_prevista_pagamento = timezone.localdate()
+        self.evento_outro.data_pagamento = timezone.localdate()
+        self.evento_outro.valor_previsto = Decimal("800.00")
+        self.evento_outro.valor_pago = Decimal("700.00")
+        self.evento_outro.realizado = True
+        self.evento_outro.save(
+            update_fields=[
+                "data_prevista_pagamento",
+                "data_pagamento",
+                "valor_previsto",
+                "valor_pago",
+                "realizado",
+            ]
+        )
+
+        self.os = self.create_os(
+            contrato=self.contrato_fornecedor,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            titulo="OS Financeiro 1",
+        )
+        self.os.data_pagamento = timezone.localdate()
+        self.os.valor = Decimal("600.00")
+        self.os.valor_pago = Decimal("550.00")
+        self.os.save(update_fields=["data_pagamento", "valor", "valor_pago"])
+
+        self.os_outro = self.create_os(
+            contrato=self.contrato_fornecedor_outro,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            titulo="OS Financeiro 2",
+        )
+        self.os_outro.data_pagamento = timezone.localdate()
+        self.os_outro.valor = Decimal("300.00")
+        self.os_outro.valor_pago = Decimal("280.00")
+        self.os_outro.save(update_fields=["data_pagamento", "valor", "valor_pago"])
+
+        self.bm_aprovado = BM.objects.create(
+            contrato=self.contrato_fornecedor,
+            evento=self.evento,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("1200.00"),
+            data_pagamento=timezone.localdate(),
+            status_coordenador="aprovado",
+            status_gerente="aprovado",
+            data_aprovacao_coordenador=timezone.now(),
+            data_aprovacao_gerente=timezone.now(),
+            aprovacao_pagamento="aprovado",
+            data_aprovacao_diretor=timezone.now(),
+        )
+
+    def test_home_exibe_painel_do_financeiro(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["is_financeiro"])
+        self.assertEqual(response.context["painel_titulo"], "Painel do Financeiro")
+        self.assertContains(response, "Painel do Financeiro")
+        self.assertIn(self.bm_aprovado, response.context["eventos_sem_nf"])
+
+    def test_lista_contratos_financeiro_ve_todos_os_contratos(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("lista_contratos"))
+
+        self.assertEqual(response.status_code, 200)
+        contratos = list(response.context["page_obj"].object_list)
+        self.assertCountEqual(
+            [contrato.id for contrato in contratos],
+            [self.contrato_cliente.id, self.contrato_cliente_outro.id],
+        )
+
+    def test_contrato_cliente_detalhe_financeiro_exibe_resumo_e_form_nf(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("contrato_cliente_detalhe", args=[self.contrato_cliente.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("form_nf", response.context)
+        self.assertContains(response, "Resumo Financeiro")
+        self.assertContains(response, self.contrato_cliente.cod_projeto)
+
+    def test_financeiro_cadastra_nf_cliente(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.post(
+            reverse("cadastrar_nf_cliente", args=[self.contrato_cliente.id]),
+            {
+                "valor_pago": "1.234,56",
+                "parcela_paga": 1,
+                "data_emissao": "2026-04-10",
+                "data_pagamento": "2026-04-20",
+                "observacao": "NF cliente financeiro",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        nf = NFCliente.objects.get()
+        self.assertEqual(nf.contrato, self.contrato_cliente)
+        self.assertEqual(nf.inserido_por, self.financeiro)
+        self.assertEqual(nf.valor_pago, Decimal("1234.56"))
+
+    def test_financeiro_edita_nf_cliente(self):
+        nf = NFCliente.objects.create(
+            contrato=self.contrato_cliente,
+            valor_pago=Decimal("1000.00"),
+            parcela_paga=1,
+            data_emissao=date(2026, 4, 10),
+            data_pagamento=date(2026, 4, 20),
+            inserido_por=self.financeiro,
+        )
+        self.client.force_login(self.financeiro)
+
+        response = self.client.post(
+            reverse("editar_nf_cliente", args=[nf.id]),
+            {
+                f"edit_{nf.id}-valor_pago": "2.000,00",
+                f"edit_{nf.id}-parcela_paga": 2,
+                f"edit_{nf.id}-data_emissao": "2026-04-11",
+                f"edit_{nf.id}-data_pagamento": "2026-04-21",
+                f"edit_{nf.id}-observacao": "NF cliente editada",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        nf.refresh_from_db()
+        self.assertEqual(nf.valor_pago, Decimal("2000.00"))
+        self.assertEqual(nf.parcela_paga, 2)
+
+    def test_financeiro_exclui_nf_cliente(self):
+        nf = NFCliente.objects.create(
+            contrato=self.contrato_cliente,
+            valor_pago=Decimal("900.00"),
+            parcela_paga=1,
+            data_emissao=date(2026, 4, 10),
+            data_pagamento=date(2026, 4, 20),
+            inserido_por=self.financeiro,
+        )
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("excluir_nf_cliente", args=[nf.id]), follow=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(NFCliente.objects.filter(id=nf.id).exists())
+
+    def test_contrato_fornecedor_detalhe_financeiro_exibe_grafico(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", args=[self.contrato_fornecedor.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Gráfico de Pagamentos")
+        self.assertIn("plot_div", response.context)
+
+    def test_financeiro_pode_acessar_detalhes_entrega(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("detalhes_entrega", args=[self.evento.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["evento"], self.evento)
+
+    def test_financeiro_cadastra_nf_evento_e_notifica_suprimento_e_coordenador(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.post(
+            reverse("cadastrar_nf", args=[self.evento.id]),
+            {
+                "bm": "",
+                "valor_pago": "1.200,00",
+                "parcela_paga": 1,
+                "data_pagamento": "2026-04-20",
+                "observacao": "NF do evento",
+                "financeiro_autorizou": "on",
+                "nf_dentro_prazo": "on",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(response.content, {"success": True})
+        nf = NF.objects.get()
+        self.assertEqual(nf.contrato, self.contrato_fornecedor)
+        self.assertEqual(nf.evento, self.evento)
+        self.assertEqual(nf.valor_pago, Decimal("1200.00"))
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[0].to, [self.suprimento.email])
+        self.assertEqual(mail.outbox[1].to, [self.coordenador.email])
+
+    def test_financeiro_edita_nf_evento(self):
+        nf = NF.objects.create(
+            contrato=self.contrato_fornecedor,
+            evento=self.evento,
+            valor_pago=Decimal("1100.00"),
+            parcela_paga=1,
+            data_pagamento=date(2026, 4, 20),
+        )
+        self.client.force_login(self.financeiro)
+
+        response = self.client.post(
+            reverse("editar_nf", args=[nf.id]),
+            {
+                "bm": "",
+                "valor_pago": "1.350,00",
+                "parcela_paga": 2,
+                "data_pagamento": "2026-04-25",
+                "observacao": "NF ajustada",
+                "financeiro_autorizou": "on",
+                "nf_dentro_prazo": "on",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(response.content, {"success": True})
+        nf.refresh_from_db()
+        self.assertEqual(nf.valor_pago, Decimal("1350.00"))
+        self.assertEqual(nf.parcela_paga, 2)
+
+    def test_financeiro_deleta_nf_evento_e_retorna_para_detalhes_entrega(self):
+        nf = NF.objects.create(
+            contrato=self.contrato_fornecedor,
+            evento=self.evento,
+            valor_pago=Decimal("1100.00"),
+            parcela_paga=1,
+            data_pagamento=date(2026, 4, 20),
+        )
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("deletar_nf", args=[nf.id]), follow=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("detalhes_entrega", args=[self.evento.id]))
+        self.assertFalse(NF.objects.filter(id=nf.id).exists())
+
+    def test_previsao_pagamentos_financeiro_ve_escopo_global(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(
+            reverse("previsao_pagamentos"),
+            {
+                "data_inicial": timezone.localdate().strftime("%Y-%m-%d"),
+                "data_limite": timezone.localdate().strftime("%Y-%m-%d"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_previsto"], Decimal("3200.00"))
+        self.assertEqual(response.context["total_pago"], Decimal("2730.00"))
+        pagamentos = list(response.context["pagamentos"])
+        self.assertEqual(len(pagamentos), 4)
+        self.assertCountEqual(
+            [item["projeto"] for item in pagamentos],
+            ["PRJ-FIN-001", "PRJ-FIN-001", "PRJ-FIN-002", "PRJ-FIN-002"],
+        )
+
+    def test_exportar_previsao_pagamentos_financeiro_inclui_todos_os_projetos(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(
+            reverse("exportar_previsao_pagamentos_excel"),
+            {
+                "data_inicial": timezone.localdate().strftime("%Y-%m-%d"),
+                "data_limite": timezone.localdate().strftime("%Y-%m-%d"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.content))
+        worksheet = workbook.active
+        exported_values = " ".join(str(cell) for row in worksheet.iter_rows(values_only=True) for cell in row if cell)
+        self.assertIn("PRJ-FIN-001", exported_values)
+        self.assertIn("PRJ-FIN-002", exported_values)
+
+    def test_ranking_fornecedores_financeiro_ve_todos_os_fornecedores_ativos(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("ranking_fornecedores"))
+
+        self.assertEqual(response.status_code, 200)
+        fornecedores = list(response.context["dados"])
+        self.assertEqual(len(fornecedores), 2)
+        self.assertContains(response, self.fornecedor.nome)
+        self.assertContains(response, self.fornecedor_outro.nome)
 
 
 class SolicitarOSViewTests(BaseUserTestCase):

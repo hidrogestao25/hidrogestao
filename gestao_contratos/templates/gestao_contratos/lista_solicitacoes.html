@@ -130,12 +130,9 @@
                                 {% endif %}
                             {% endif %}
 
-                            {% if request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' and request.user == solicitacao.lider_contrato or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
+                            {% if request.user.grupo == 'gerente_contrato' %}
                                 {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                                     <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Avaliar Fornecedor</a>
-                                {% endif %}
-                                {% if solicitacao.triagem_realizada and solicitacao.status == "Triagem realizada" and solicitacao.lider_contrato == request.user %}
-                                  <a href="{% url 'detalhes_triagem_fornecedores' solicitacao.id %}" class="btn btn-info btn-sm">Selecionar Fornecedor</a>
                                 {% endif %}
                                 {% with contrato=solicitacao.contrato_relacionado %}
                                     {% if contrato %}

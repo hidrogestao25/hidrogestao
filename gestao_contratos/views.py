@@ -1613,7 +1613,7 @@ def home(request):
             "today": hoje,
         })
 
-    # ==================== GERENTE TÃ‰CNICO E LIDER DE CONTRATO ====================
+    # ==================== GERENTE TÉCNICO E LIDER DE CONTRATO ====================
     elif is_gerente_lider:
         centros_gerente = getattr(user, "centros", None)
         centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []
@@ -3430,7 +3430,7 @@ def nova_solicitacao_prospeccao(request):
                         f"solicitou uma prospecção.\n\n"
                         f"Detalhes da solicitação:\n"
                         f"- ID: {solicitacao.id}\n"
-                        f"- Valor DisponÃ­vel: {solicitacao.valor_disponivel}\n"
+                        f"- Valor Disponível: {solicitacao.valor_disponivel}\n"
                         f"- Descrição: {solicitacao.descricao}\n\n"
                         "Acesse o sistema HIDROGestão para mais informações.\n"
                         "https://hidrogestao.pythonanywhere.com/"
@@ -4297,31 +4297,20 @@ def detalhes_triagem_fornecedores(request, pk):
             solicitacao.aprovacao_gerente = "pendente"
             solicitacao.save()
 
-            # notifica gerente
-            gerentes = list(User.objects.filter(
-                grupo="gerente_contrato"
-            ).distinct().values_list("email", flat=True))
+            assunto = f"Aprovação necessária - Fornecedor escolhido para {solicitacao.contrato}"
+            mensagem = (
+                f"O usuário {request.user.get_full_name() or request.user.username} selecionou o fornecedor {fornecedor.nome}.\n"
+                f"Justificativa: {justificativa}\n\n"
+                f"É necessário que gerente de contrato e diretoria avaliem essa escolha.\n"
+                f"Acesse o sistema HIDROGestão para mais informações:\n"
+                f"https://hidrogestao.pythonanywhere.com/"
+            )
+            try:
+                send_request_notification_to_management(assunto, mensagem)
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para gerente de contrato e diretoria: {e}")
 
-            if gerentes:
-                assunto = f"Aprovação necessária - Fornecedor escolhido para {solicitacao.contrato}"
-                mensagem = (
-                    f"O coordenador {solicitacao.coordenador.username} selecionou o fornecedor {fornecedor.nome}.\n"
-                    f"Justificativa: {justificativa}\n\n"
-                    f"Ã‰ necessário que você aprove ou reprove essa escolha.\n"
-                    f"Acesse o sistema HIDROGestão para mais informações:\n"
-                    f"https://hidrogestao.pythonanywhere.com/"
-                )
-                try:
-                    send_mail(
-                        assunto, mensagem,
-                        FROM_EMAIL,
-                        gerentes,
-                        fail_silently=False,
-                    )
-                except Exception as e:
-                    messages.warning(request, f"Erro ao enviar e-mail para gerente: {e}")
-
-            messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando aprovação do gerente de contrato.")
+            messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando avaliação do gerente de contrato e da diretoria.")
         return redirect('lista_solicitacoes')
 
     context = {
@@ -4336,16 +4325,8 @@ def detalhes_triagem_fornecedores(request, pk):
 def aprovar_fornecedor_gerente(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
-    # Somente gerente pode aprovar
-    if request.user.grupo not in ["lider_contrato", "gerente_lider", "gerente_contrato"]:
-        messages.error(request, "Você não tem permissão para aprovar.")
-        return redirect('home')
-
-    if request.user.grupo == "gerente_lider" and not user_shares_center_with_coordinator(request.user, solicitacao.coordenador):
-        messages.error(request, "Você não tem permissão para aprovar.")
-        return redirect('home')
-
-    if request.user.grupo == "lider_contrato" and request.user != solicitacao.lider_contrato:
+    # Somente gerente de contrato pode aprovar nesta etapa
+    if request.user.grupo != "gerente_contrato":
         messages.error(request, "Você não tem permissão para aprovar.")
         return redirect('home')
 

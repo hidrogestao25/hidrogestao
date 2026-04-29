@@ -88,7 +88,7 @@
     </div>
     {% endif %}
 
-    {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido or request.user.grupo == "lider_contrato" and request.user == solicitacao.lider_contrato and solicitacao.fornecedor_escolhido or request.user.grupo == "gerente_lider" and request.user|shares_center_with:solicitacao.coordenador and solicitacao.fornecedor_escolhido %}
+    {% if request.user.grupo == "gerente_contrato" and solicitacao.fornecedor_escolhido %}
     <form method="post" action="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}">
       {% csrf_token %}
       <button type="submit" name="acao" value="aprovar" class="btn btn-success">

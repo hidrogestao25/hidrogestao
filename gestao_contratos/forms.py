@@ -383,7 +383,7 @@ class SolicitacaoContratoForm(forms.ModelForm):
             except:
                 raise forms.ValidationError("Informe um valor monetário válido.")
 
-        return valor
+        return Decimal("0.00")
 
     """def clean_valor_vendido(self):
         valor = self.cleaned_data.get('valor_vendido')
@@ -489,7 +489,7 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
                 return Decimal(valor)
             except (InvalidOperation, AttributeError):
                 raise forms.ValidationError("Informe um valor numérico válido (ex: 1.234,56)")
-        return valor
+        return Decimal("0.00")
 
     """def clean_valor_vendido(self):
         valor = self.cleaned_data.get('valor_vendido')
@@ -679,7 +679,7 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
     def clean_valor_previsto(self):
         valor = self.cleaned_data.get('valor_previsto')
         if not valor:
-            return None
+            return Decimal("0.00")
 
         valor = (
             valor.replace('R$', '')
@@ -722,7 +722,7 @@ class DocumentoContratoTerceiroForm(forms.ModelForm):
                 return Decimal(valor)
             except:
                 raise forms.ValidationError("Informe um valor válido no formato 1.234,56")
-        return valor
+        return Decimal("0.00")
 
 
 
