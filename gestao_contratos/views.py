@@ -159,6 +159,34 @@ def get_selected_supplier_proposal(solicitacao=None, solicitacao_contrato=None, 
     return PropostaFornecedor.objects.filter(**filtros).first()
 
 
+def build_contract_document_preview(request_post, existing_document=None):
+    documento = existing_document or DocumentoContratoTerceiro()
+    documento.numero_contrato = (
+        request_post.get("numero_contrato")
+        or getattr(existing_document, "numero_contrato", "")
+        or ""
+    )
+    documento.objeto = (
+        request_post.get("objeto")
+        or getattr(existing_document, "objeto", "")
+        or ""
+    )
+    documento.observacao = request_post.get("observacao", getattr(existing_document, "observacao", "") or "")
+
+    valor_total_raw = request_post.get("valor_total")
+    if valor_total_raw not in [None, ""]:
+        try:
+            documento.valor_total = Decimal(
+                str(valor_total_raw).replace(".", "").replace(",", ".")
+            )
+        except Exception:
+            documento.valor_total = getattr(existing_document, "valor_total", Decimal("0.00")) or Decimal("0.00")
+    else:
+        documento.valor_total = getattr(existing_document, "valor_total", Decimal("0.00")) or Decimal("0.00")
+
+    return documento
+
+
 def replace_placeholders_in_docm(template_path, replacements):
     namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     output_buffer = BytesIO()
@@ -5175,21 +5203,7 @@ def gerar_minuta_contrato_docm(request, solicitacao_id):
         return redirect("cadastrar_contrato", solicitacao_id=solicitacao_id)
 
     form = DocumentoContratoTerceiroForm(request.POST, instance=contrato_existente)
-    if not form.is_valid():
-        messages.error(request, f"Erro ao gerar contrato: {form.errors}")
-        return render(
-            request,
-            "fornecedores/cadastrar_contrato.html",
-            {
-                "form": form,
-                "solicitacao": solicitacao,
-                "fornecedor": solicitacao.fornecedor_escolhido,
-                "contrato": contrato_existente,
-                "generation_url": reverse_lazy("gerar_minuta_contrato_docm", kwargs={"solicitacao_id": solicitacao.id}),
-            },
-        )
-
-    documento_contrato = form.save(commit=False)
+    documento_contrato = build_contract_document_preview(request.POST, contrato_existente)
     documento_contrato.solicitacao = solicitacao
     documento_contrato.prazo_inicio = solicitacao.data_inicio
     documento_contrato.prazo_fim = solicitacao.data_fim
@@ -5232,21 +5246,7 @@ def gerar_minuta_contrato_contratacao_docm(request, solicitacao_id):
         return redirect("cadastrar_minuta_contrato", solicitacao_id=solicitacao_id)
 
     form = DocumentoContratoTerceiroForm(request.POST, instance=contrato_existente)
-    if not form.is_valid():
-        messages.error(request, f"Erro ao gerar contrato: {form.errors}")
-        return render(
-            request,
-            "fornecedores/cadastrar_contrato.html",
-            {
-                "form": form,
-                "solicitacao": solicitacao,
-                "fornecedor": solicitacao.fornecedor_escolhido,
-                "contrato": contrato_existente,
-                "generation_url": reverse_lazy("gerar_minuta_contrato_contratacao_docm", kwargs={"solicitacao_id": solicitacao.id}),
-            },
-        )
-
-    documento_contrato = form.save(commit=False)
+    documento_contrato = build_contract_document_preview(request.POST, contrato_existente)
     documento_contrato.solicitacao_contrato = solicitacao
     documento_contrato.prazo_inicio = solicitacao.data_inicio
     documento_contrato.prazo_fim = solicitacao.data_fim

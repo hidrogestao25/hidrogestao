@@ -4127,6 +4127,30 @@ class DocmGenerationTests(BaseUserTestCase):
         self.assertIn("01/06/2026", document_xml)
         self.assertIn("30/06/2026", document_xml)
 
+    def test_gerar_minuta_contrato_docm_sem_exigir_campos_preenchidos(self):
+        template_path = self.create_docm_template(
+            "__nome_empresa_terceira__ __descricao__ __contrato__",
+            "__cod_contrato__",
+        )
+        self.client.force_login(self.suprimento)
+
+        with patch("gestao_contratos.views.CONTRACT_TEMPLATE_DOCM_PATH", Path(template_path)):
+            response = self.client.post(
+                reverse("gerar_minuta_contrato_docm", args=[self.solicitacao_prospeccao.id]),
+                {
+                    "numero_contrato": "",
+                    "objeto": "",
+                    "valor_total": "",
+                    "observacao": "",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/vnd.ms-word.document.macroEnabled.12")
+        document_xml = self.read_docm_xml(response, "word/document.xml")
+        self.assertIn("FORNECEDOR DOCM", document_xml)
+        self.assertIn("PRJ-DOCM", document_xml)
+
     def test_gerar_aditivo_contrato_docm_substitui_placeholders(self):
         template_path = self.create_docm_template(
             "__ordem_aditivo__ __numero_contrato__ __data_fim__ __data_fim_aditivo__ __descricao__ __novo_valor _total__ __novo_valor _total_extenso__ __contrato__ __informacoes_bancarias__ __dias_totais_novo__ __data_inicio__ __nova_data_fim__ __data_hoje_completo__ __nome_empresa__",
