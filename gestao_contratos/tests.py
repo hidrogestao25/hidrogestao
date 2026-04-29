@@ -1,6 +1,8 @@
 ﻿from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -3391,4 +3393,228 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Documento do aditivo")
         self.assertContains(response, aditivo.arquivo_aditivo.url)
+
+
+class DocmGenerationTests(BaseUserTestCase):
+    def create_docm_template(self, document_text, header_text=""):
+        temp_file = tempfile.NamedTemporaryFile(suffix=".docm", delete=False)
+        temp_file.close()
+        document_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            '<w:body>'
+            f'<w:p><w:r><w:t>{document_text}</w:t></w:r></w:p>'
+            '</w:body>'
+            '</w:document>'
+        )
+        header_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            f'<w:p><w:r><w:t>{header_text}</w:t></w:r></w:p>'
+            '</w:hdr>'
+        )
+        with zipfile.ZipFile(temp_file.name, "w") as docm_file:
+            docm_file.writestr("word/document.xml", document_xml)
+            docm_file.writestr("word/header1.xml", header_xml)
+        return temp_file.name
+
+    def read_docm_xml(self, response, filename):
+        with zipfile.ZipFile(BytesIO(response.content)) as docm_file:
+            return docm_file.read(filename).decode("utf-8")
+
+    def setUp(self):
+        self.suprimento = self.create_user("supr_docm", "suprimento")
+        self.coordenador = self.create_user("coord_docm", "coordenador")
+        self.lider = self.create_user("lider_docm", "lider_contrato")
+        self.cliente = self.create_client("Cliente Docm", "00.000.000/0001-55")
+        self.fornecedor = self.create_supplier("Fornecedor Docm", "11.111.111/0001-55")
+        self.fornecedor.endereco = "Rua das Flores"
+        self.fornecedor.numero = "123"
+        self.fornecedor.bairro = "Centro"
+        self.fornecedor.municipio = "Belo Horizonte"
+        self.fornecedor.estado = "MG"
+        self.fornecedor.cep = "30000-000"
+        self.fornecedor.telefone = "31 99999-9999"
+        self.fornecedor.email = "fornecedor.docm@example.com"
+        self.fornecedor.ponto_focal = "Maria Silva"
+        self.fornecedor.telefone_focal = "31 98888-8888"
+        self.fornecedor.email_focal = "maria.silva@example.com"
+        self.fornecedor.informacoes_bancarias = "Banco XPTO Ag 1234 Conta 56789"
+        self.fornecedor.save()
+
+        self.contrato_base = self.create_contract(
+            codigo="PRJ-DOCM",
+            cliente=self.cliente,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            valor_total=Decimal("1500.00"),
+        )
+        self.solicitacao_prospeccao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Servico especializado",
+            data_inicio=date(2026, 5, 1),
+            data_fim=date(2026, 5, 31),
+            fornecedor_escolhido=self.fornecedor,
+            status="Planejamento do contrato",
+        )
+        PropostaFornecedor.objects.create(
+            solicitacao=self.solicitacao_prospeccao,
+            fornecedor=self.fornecedor,
+            valor_proposta=Decimal("1500.00"),
+            arquivo_proposta=SimpleUploadedFile("proposta_tecnica.pdf", b"pdf"),
+        )
+        self.solicitacao_contrato = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Servico contratado",
+            data_inicio=date(2026, 6, 1),
+            data_fim=date(2026, 6, 30),
+            fornecedor_escolhido=self.fornecedor,
+            valor_provisionado=Decimal("2500.00"),
+            status="Planejamento do contrato",
+        )
+        PropostaFornecedor.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            fornecedor=self.fornecedor,
+            valor_proposta=Decimal("2500.00"),
+            arquivo_proposta=SimpleUploadedFile("proposta_contrato.pdf", b"pdf"),
+        )
+        self.contrato_fornecedor = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            empresa_terceira=self.fornecedor,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            status="ativo",
+            num_contrato="CT-DOCM-01",
+        )
+        self.contrato_fornecedor.data_inicio = date(2026, 5, 1)
+        self.contrato_fornecedor.data_fim = date(2026, 5, 31)
+        self.contrato_fornecedor.objeto = "Servico especializado"
+        self.contrato_fornecedor.valor_total = Decimal("1500.00")
+        self.contrato_fornecedor.save()
+        self.aditivo = AditivoContratoTerceiro.objects.create(
+            contrato=self.contrato_fornecedor,
+            solicitado_por=self.lider,
+            motivo="Prorrogacao contratual",
+            valor_total_anterior=Decimal("1500.00"),
+            novo_valor_total=Decimal("2500.00"),
+            data_fim_anterior=date(2026, 5, 31),
+            nova_data_fim=date(2026, 6, 30),
+        )
+
+    def test_gerar_minuta_contrato_docm_substitui_placeholders(self):
+        template_path = self.create_docm_template(
+            "__nome_empresa_terceira__ __descricao__ __ valor_proposta__ __valor_proposta_extenso__ __contrato__ __dias_totais__ __data_inicio__ __data_fim__ __documento_proposta__ ☒ ESPECÍFICO    ☐ GUARDA-CHUVA",
+            "__numero_revisao__ __data_hoje__ __cod_contrato__",
+        )
+        self.client.force_login(self.suprimento)
+
+        with patch("gestao_contratos.views.CONTRACT_TEMPLATE_DOCM_PATH", Path(template_path)):
+            response = self.client.post(
+                reverse("gerar_minuta_contrato_docm", args=[self.solicitacao_prospeccao.id]),
+                {
+                    "numero_contrato": "CONT-DOCM-001",
+                    "objeto": "Servico especializado",
+                    "valor_total": "1.500,00",
+                    "observacao": "Observacao teste",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/vnd.ms-word.document.macroEnabled.12")
+        self.assertIn("Contrato_CONT-DOCM-001.docm", response["Content-Disposition"])
+        document_xml = self.read_docm_xml(response, "word/document.xml")
+        header_xml = self.read_docm_xml(response, "word/header1.xml")
+        self.assertIn("FORNECEDOR DOCM", document_xml)
+        self.assertIn("Servico especializado", document_xml)
+        self.assertIn("R$ 1.500,00", document_xml)
+        self.assertIn("mil e quinhentos reais", document_xml)
+        self.assertIn("PRJ-DOCM", document_xml)
+        self.assertIn("31 dias", document_xml)
+        self.assertIn("01/05/2026", document_xml)
+        self.assertIn("31/05/2026", document_xml)
+        self.assertIn("proposta_tecnica", document_xml)
+        self.assertIn(".pdf", document_xml)
+        self.assertIn("☒ ESPECÍFICO    ☐ GUARDA-CHUVA", document_xml)
+        self.assertIn("CONT-DOCM-001", header_xml)
+
+    def test_gerar_minuta_contrato_docm_marca_guarda_chuva_quando_for_o_caso(self):
+        self.solicitacao_prospeccao.guarda_chuva = True
+        self.solicitacao_prospeccao.save(update_fields=["guarda_chuva"])
+        template_path = self.create_docm_template(
+            "☒ ESPECÍFICO    ☐ GUARDA-CHUVA",
+            "__cod_contrato__",
+        )
+        self.client.force_login(self.suprimento)
+
+        with patch("gestao_contratos.views.CONTRACT_TEMPLATE_DOCM_PATH", Path(template_path)):
+            response = self.client.post(
+                reverse("gerar_minuta_contrato_docm", args=[self.solicitacao_prospeccao.id]),
+                {
+                    "numero_contrato": "CONT-DOCM-GC",
+                    "objeto": "Servico especializado",
+                    "valor_total": "1.500,00",
+                    "observacao": "Observacao teste",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        document_xml = self.read_docm_xml(response, "word/document.xml")
+        self.assertIn("☐ ESPECÍFICO    ☒ GUARDA-CHUVA", document_xml)
+
+    def test_gerar_minuta_contrato_contratacao_docm_substitui_placeholders(self):
+        template_path = self.create_docm_template(
+            "__nome_empresa_terceira__ __descricao__ __ valor_proposta__ __contrato__ __data_inicio__ __data_fim__",
+            "__cod_contrato__",
+        )
+        self.client.force_login(self.suprimento)
+
+        with patch("gestao_contratos.views.CONTRACT_TEMPLATE_DOCM_PATH", Path(template_path)):
+            response = self.client.post(
+                reverse("gerar_minuta_contrato_contratacao_docm", args=[self.solicitacao_contrato.id]),
+                {
+                    "numero_contrato": "CONT-DOCM-002",
+                    "objeto": "Servico contratado",
+                    "valor_total": "2.500,00",
+                    "observacao": "Observacao teste",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        document_xml = self.read_docm_xml(response, "word/document.xml")
+        self.assertIn("FORNECEDOR DOCM", document_xml)
+        self.assertIn("R$ 2.500,00", document_xml)
+        self.assertIn("PRJ-DOCM", document_xml)
+        self.assertIn("01/06/2026", document_xml)
+        self.assertIn("30/06/2026", document_xml)
+
+    def test_gerar_aditivo_contrato_docm_substitui_placeholders(self):
+        template_path = self.create_docm_template(
+            "__ordem_aditivo__ __numero_contrato__ __data_fim__ __data_fim_aditivo__ __descricao__ __novo_valor _total__ __novo_valor _total_extenso__ __contrato__ __informacoes_bancarias__ __dias_totais_novo__ __data_inicio__ __nova_data_fim__ __data_hoje_completo__ __nome_empresa__",
+            "__ordem_aditivo__ __numero_contrato__ __numero_revisao__ __data_hoje__",
+        )
+        self.client.force_login(self.suprimento)
+
+        with patch("gestao_contratos.views.ADDENDUM_TEMPLATE_DOCM_PATH", Path(template_path)):
+            response = self.client.get(reverse("gerar_aditivo_contrato_docm", args=[self.aditivo.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/vnd.ms-word.document.macroEnabled.12")
+        document_xml = self.read_docm_xml(response, "word/document.xml")
+        header_xml = self.read_docm_xml(response, "word/header1.xml")
+        self.assertIn("1º", document_xml)
+        self.assertIn("CT-DOCM-01", document_xml)
+        self.assertIn("31/05/2026", document_xml)
+        self.assertIn("30/06/2026", document_xml)
+        self.assertIn("Servico especializado", document_xml)
+        self.assertIn("R$ 2.500,00", document_xml)
+        self.assertIn("dois mil e quinhentos reais", document_xml)
+        self.assertIn("PRJ-DOCM", document_xml)
+        self.assertIn("BANCO XPTO AG 1234 CONTA 56789", document_xml)
+        self.assertIn("61 dias", document_xml)
+        self.assertIn("FORNECEDOR DOCM", document_xml)
+        self.assertIn("CT-DOCM-01", header_xml)
 

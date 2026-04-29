@@ -33,9 +33,159 @@ from openpyxl.chart import BarChart, Reference, LineChart
 from openpyxl.styles import Font
 from io import BytesIO
 from datetime import datetime, timedelta
+from pathlib import Path
+import xml.etree.ElementTree as ET
 
 User = get_user_model()
 FROM_EMAIL = settings.DEFAULT_FROM_EMAIL
+CONTRACT_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Contrato.docm"
+ADDENDUM_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Aditivo.docm"
+
+
+def format_date_br(value):
+    if not value:
+        return "-"
+    return value.strftime("%d/%m/%Y")
+
+
+def format_date_long_br(value):
+    if not value:
+        return "-"
+    meses = [
+        "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+    ]
+    return f"{value.day} de {meses[value.month - 1]} de {value.year}"
+
+
+def format_currency_br(value, with_symbol=False):
+    if value in [None, ""]:
+        value = Decimal("0.00")
+    if not isinstance(value, Decimal):
+        value = Decimal(value)
+    formatted = f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {formatted}" if with_symbol else formatted
+
+
+def number_to_words_pt_br(number):
+    units = ["zero", "um", "dois", "tres", "quatro", "cinco", "seis", "sete", "oito", "nove"]
+    teens = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"]
+    tens = ["", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"]
+    hundreds = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"]
+
+    def under_thousand(n):
+        if n == 0:
+            return ""
+        if n == 100:
+            return "cem"
+        parts = []
+        c = n // 100
+        rem = n % 100
+        if c:
+            parts.append(hundreds[c])
+        if rem:
+            if rem < 10:
+                parts.append(units[rem])
+            elif rem < 20:
+                parts.append(teens[rem - 10])
+            else:
+                d = rem // 10
+                u = rem % 10
+                parts.append(tens[d] if u == 0 else f"{tens[d]} e {units[u]}")
+        return " e ".join([part for part in parts if part])
+
+    def as_words(n):
+        if n == 0:
+            return "zero"
+        if n < 1000:
+            return under_thousand(n)
+        scales = [
+            (1_000_000_000, "bilhao", "bilhoes"),
+            (1_000_000, "milhao", "milhoes"),
+            (1000, "mil", "mil"),
+        ]
+        parts = []
+        remainder = n
+        for value, singular, plural in scales:
+            amount = remainder // value
+            remainder %= value
+            if not amount:
+                continue
+            if value == 1000:
+                parts.append("mil" if amount == 1 else f"{under_thousand(amount)} mil")
+            else:
+                label = singular if amount == 1 else plural
+                parts.append(f"{under_thousand(amount) if amount < 1000 else as_words(amount)} {label}")
+        if remainder:
+            parts.append(under_thousand(remainder))
+        if len(parts) == 1:
+            return parts[0]
+        return ", ".join(parts[:-1]) + " e " + parts[-1]
+
+    return as_words(int(number))
+
+
+def decimal_to_money_words_pt_br(value):
+    if value in [None, ""]:
+        value = Decimal("0.00")
+    if not isinstance(value, Decimal):
+        value = Decimal(value)
+    quantized = value.quantize(Decimal("0.01"))
+    inteiro = int(quantized)
+    centavos = int((quantized - Decimal(inteiro)) * 100)
+
+    partes = []
+    if inteiro:
+        partes.append(f"{number_to_words_pt_br(inteiro)} {'real' if inteiro == 1 else 'reais'}")
+    else:
+        partes.append("zero real")
+    if centavos:
+        partes.append(f"{number_to_words_pt_br(centavos)} {'centavo' if centavos == 1 else 'centavos'}")
+    return " e ".join(partes)
+
+
+def calculate_inclusive_days(start_date, end_date):
+    if not start_date or not end_date:
+        return "-"
+    return f"{(end_date - start_date).days + 1} dias"
+
+
+def get_selected_supplier_proposal(solicitacao=None, solicitacao_contrato=None, fornecedor=None):
+    filtros = {"fornecedor": fornecedor}
+    if solicitacao is not None:
+        filtros["solicitacao"] = solicitacao
+    if solicitacao_contrato is not None:
+        filtros["solicitacao_contrato"] = solicitacao_contrato
+    return PropostaFornecedor.objects.filter(**filtros).first()
+
+
+def replace_placeholders_in_docm(template_path, replacements):
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    output_buffer = BytesIO()
+    with zipfile.ZipFile(template_path, "r") as source_docm, zipfile.ZipFile(output_buffer, "w") as target_docm:
+        for file_info in source_docm.infolist():
+            content = source_docm.read(file_info.filename)
+            if file_info.filename.startswith("word/") and file_info.filename.endswith(".xml"):
+                root = ET.fromstring(content)
+                changed = False
+                for paragraph in root.findall(".//w:p", namespace):
+                    text_nodes = paragraph.findall(".//w:t", namespace)
+                    if not text_nodes:
+                        continue
+                    original_text = "".join(node.text or "" for node in text_nodes)
+                    updated_text = original_text
+                    for placeholder, replacement in replacements.items():
+                        updated_text = updated_text.replace(placeholder, replacement)
+                    if updated_text != original_text:
+                        text_nodes[0].text = updated_text
+                        for node in text_nodes[1:]:
+                            node.text = ""
+                        changed = True
+                if changed:
+                    content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            target_docm.writestr(file_info, content)
+    output_buffer.seek(0)
+    return output_buffer.getvalue()
 
 GROUP_GUIDE = {
     "coordenador": {
@@ -4873,6 +5023,7 @@ def cadastrar_contrato(request, solicitacao_id):
         "solicitacao": solicitacao,
         "fornecedor": solicitacao.fornecedor_escolhido,
         "contrato": contrato_existente,
+        "generation_url": reverse_lazy("gerar_minuta_contrato_docm", kwargs={"solicitacao_id": solicitacao.id}),
     }
     return render(request, "fornecedores/cadastrar_contrato.html", context)
 
@@ -4942,8 +5093,213 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
         "solicitacao": solicitacao,
         "fornecedor": solicitacao.fornecedor_escolhido,
         "contrato": contrato_existente,
+        "generation_url": reverse_lazy("gerar_minuta_contrato_contratacao_docm", kwargs={"solicitacao_id": solicitacao.id}),
     }
     return render(request, "fornecedores/cadastrar_contrato.html", context)
+
+
+def build_contract_docm_replacements(documento_contrato, fornecedor, contrato_projeto, proposta=None, guarda_chuva=False):
+    contrato_codigo = contrato_projeto.cod_projeto if contrato_projeto else "-"
+    data_inicio = documento_contrato.prazo_inicio
+    data_fim = documento_contrato.prazo_fim
+    valor_total = documento_contrato.valor_total or (proposta.valor_proposta if proposta else Decimal("0.00"))
+    proposal_document = "-"
+    if proposta and proposta.arquivo_proposta:
+        proposal_document = os.path.basename(proposta.arquivo_proposta.name)
+    contract_type_line = "☐ ESPECÍFICO    ☒ GUARDA-CHUVA" if guarda_chuva else "☒ ESPECÍFICO    ☐ GUARDA-CHUVA"
+
+    return {
+        "__nome_empresa_terceira__": fornecedor.nome or "-",
+        "__nome_empresa__": fornecedor.nome or "-",
+        "__endereco__": fornecedor.endereco or "-",
+        "__numero__": fornecedor.numero or "-",
+        "__bairro__": fornecedor.bairro or "-",
+        "__municipio__": fornecedor.municipio or "-",
+        "__estado__": fornecedor.estado or "-",
+        "__cep__": fornecedor.cep or "-",
+        "__telefone__": fornecedor.telefone or "-",
+        "__email__": fornecedor.email or "-",
+        "__ponto_focal__": fornecedor.ponto_focal or "-",
+        "__telefone_focal__": fornecedor.telefone_focal or "-",
+        "__email_focal__": fornecedor.email_focal or "-",
+        "__descricao__": documento_contrato.objeto or "-",
+        "__ valor_proposta__": format_currency_br(valor_total, with_symbol=True),
+        "__valor_proposta_extenso__": decimal_to_money_words_pt_br(valor_total),
+        "__contrato__": contrato_codigo or "-",
+        "__dias_totais__": calculate_inclusive_days(data_inicio, data_fim),
+        "__data_inicio__": format_date_br(data_inicio),
+        "__data_fim__": format_date_br(data_fim),
+        "__documento_proposta__": proposal_document,
+        "__numero_revisao__": "00",
+        "__data_hoje__": format_date_br(timezone.localdate()),
+        "__cod_contrato__": documento_contrato.numero_contrato or "-",
+        "☒ ESPECÍFICO    ☐ GUARDA-CHUVA": contract_type_line,
+    }
+
+
+def build_addendum_docm_replacements(aditivo):
+    contrato = aditivo.contrato
+    fornecedor = contrato.empresa_terceira
+    contrato_codigo = contrato.cod_projeto.cod_projeto if contrato.cod_projeto else "-"
+    ordem_aditivo = contrato.aditivos.filter(pk__lte=aditivo.pk).count() or 1
+    ordem_label = f"{ordem_aditivo}º"
+    descricao = contrato.objeto or aditivo.motivo or "-"
+
+    return {
+        "__ordem_aditivo__": ordem_label,
+        "__ordem_adtivo__": ordem_label,
+        "__numero_contrato__": contrato.num_contrato or "-",
+        "__data_fim__": format_date_br(aditivo.data_fim_anterior or contrato.data_fim),
+        "__data_fim_aditivo__": format_date_br(aditivo.nova_data_fim),
+        "__descricao__": descricao,
+        "__novo_valor _total__": format_currency_br(aditivo.novo_valor_total or contrato.valor_total or Decimal("0.00"), with_symbol=True),
+        "__novo_valor _total_extenso__": decimal_to_money_words_pt_br(aditivo.novo_valor_total or contrato.valor_total or Decimal("0.00")),
+        "__contrato__": contrato_codigo or "-",
+        "__informacoes_bancarias__": fornecedor.informacoes_bancarias or "-",
+        "__dias_totais_novo__": calculate_inclusive_days(contrato.data_inicio, aditivo.nova_data_fim or contrato.data_fim),
+        "__data_inicio__": format_date_br(contrato.data_inicio),
+        "__nova_data_fim__": format_date_br(aditivo.nova_data_fim),
+        "__data_hoje_completo__": format_date_long_br(timezone.localdate()),
+        "__nome_empresa__": fornecedor.nome or "-",
+        "__numero_revisao__": "00",
+        "__data_hoje__": format_date_br(timezone.localdate()),
+    }
+
+
+@login_required
+def gerar_minuta_contrato_docm(request, solicitacao_id):
+    if request.user.grupo != "suprimento":
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    solicitacao = get_object_or_404(
+        SolicitacaoProspeccao,
+        id=solicitacao_id,
+        fornecedor_escolhido__isnull=False,
+    )
+    contrato_existente = DocumentoContratoTerceiro.objects.filter(solicitacao=solicitacao).first()
+
+    if request.method != "POST":
+        return redirect("cadastrar_contrato", solicitacao_id=solicitacao_id)
+    if not CONTRACT_TEMPLATE_DOCM_PATH.exists():
+        messages.error(request, f"Modelo de contrato não encontrado em {CONTRACT_TEMPLATE_DOCM_PATH}.")
+        return redirect("cadastrar_contrato", solicitacao_id=solicitacao_id)
+
+    form = DocumentoContratoTerceiroForm(request.POST, instance=contrato_existente)
+    if not form.is_valid():
+        messages.error(request, f"Erro ao gerar contrato: {form.errors}")
+        return render(
+            request,
+            "fornecedores/cadastrar_contrato.html",
+            {
+                "form": form,
+                "solicitacao": solicitacao,
+                "fornecedor": solicitacao.fornecedor_escolhido,
+                "contrato": contrato_existente,
+                "generation_url": reverse_lazy("gerar_minuta_contrato_docm", kwargs={"solicitacao_id": solicitacao.id}),
+            },
+        )
+
+    documento_contrato = form.save(commit=False)
+    documento_contrato.solicitacao = solicitacao
+    documento_contrato.prazo_inicio = solicitacao.data_inicio
+    documento_contrato.prazo_fim = solicitacao.data_fim
+    proposta = get_selected_supplier_proposal(
+        solicitacao=solicitacao,
+        fornecedor=solicitacao.fornecedor_escolhido,
+    )
+    generated_file = replace_placeholders_in_docm(
+        CONTRACT_TEMPLATE_DOCM_PATH,
+        build_contract_docm_replacements(
+            documento_contrato,
+            solicitacao.fornecedor_escolhido,
+            solicitacao.contrato,
+            proposta=proposta,
+            guarda_chuva=solicitacao.guarda_chuva,
+        ),
+    )
+    response = HttpResponse(generated_file, content_type="application/vnd.ms-word.document.macroEnabled.12")
+    response["Content-Disposition"] = f'attachment; filename="Contrato_{documento_contrato.numero_contrato or solicitacao.id}.docm"'
+    return response
+
+
+@login_required
+def gerar_minuta_contrato_contratacao_docm(request, solicitacao_id):
+    if request.user.grupo != "suprimento":
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    solicitacao = get_object_or_404(
+        SolicitacaoContrato,
+        id=solicitacao_id,
+        fornecedor_escolhido__isnull=False,
+    )
+    contrato_existente = DocumentoContratoTerceiro.objects.filter(solicitacao_contrato=solicitacao).first()
+
+    if request.method != "POST":
+        return redirect("cadastrar_minuta_contrato", solicitacao_id=solicitacao_id)
+    if not CONTRACT_TEMPLATE_DOCM_PATH.exists():
+        messages.error(request, f"Modelo de contrato não encontrado em {CONTRACT_TEMPLATE_DOCM_PATH}.")
+        return redirect("cadastrar_minuta_contrato", solicitacao_id=solicitacao_id)
+
+    form = DocumentoContratoTerceiroForm(request.POST, instance=contrato_existente)
+    if not form.is_valid():
+        messages.error(request, f"Erro ao gerar contrato: {form.errors}")
+        return render(
+            request,
+            "fornecedores/cadastrar_contrato.html",
+            {
+                "form": form,
+                "solicitacao": solicitacao,
+                "fornecedor": solicitacao.fornecedor_escolhido,
+                "contrato": contrato_existente,
+                "generation_url": reverse_lazy("gerar_minuta_contrato_contratacao_docm", kwargs={"solicitacao_id": solicitacao.id}),
+            },
+        )
+
+    documento_contrato = form.save(commit=False)
+    documento_contrato.solicitacao_contrato = solicitacao
+    documento_contrato.prazo_inicio = solicitacao.data_inicio
+    documento_contrato.prazo_fim = solicitacao.data_fim
+    if solicitacao.valor_provisionado:
+        documento_contrato.valor_total = solicitacao.valor_provisionado
+    proposta = get_selected_supplier_proposal(
+        solicitacao_contrato=solicitacao,
+        fornecedor=solicitacao.fornecedor_escolhido,
+    )
+    generated_file = replace_placeholders_in_docm(
+        CONTRACT_TEMPLATE_DOCM_PATH,
+        build_contract_docm_replacements(
+            documento_contrato,
+            solicitacao.fornecedor_escolhido,
+            solicitacao.contrato,
+            proposta=proposta,
+            guarda_chuva=solicitacao.guarda_chuva,
+        ),
+    )
+    response = HttpResponse(generated_file, content_type="application/vnd.ms-word.document.macroEnabled.12")
+    response["Content-Disposition"] = f'attachment; filename="Contrato_{documento_contrato.numero_contrato or solicitacao.id}.docm"'
+    return response
+
+
+@login_required
+def gerar_aditivo_contrato_docm(request, pk):
+    aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
+
+    if request.user.grupo != "suprimento":
+        messages.error(request, "Somente o Suprimento pode gerar o documento do aditivo.")
+        return redirect("contrato_fornecedor_detalhe", pk=aditivo.contrato_id)
+    if not ADDENDUM_TEMPLATE_DOCM_PATH.exists():
+        messages.error(request, f"Modelo de aditivo não encontrado em {ADDENDUM_TEMPLATE_DOCM_PATH}.")
+        return redirect("enviar_documento_aditivo_contrato", pk=aditivo.pk)
+
+    generated_file = replace_placeholders_in_docm(
+        ADDENDUM_TEMPLATE_DOCM_PATH,
+        build_addendum_docm_replacements(aditivo),
+    )
+    response = HttpResponse(generated_file, content_type="application/vnd.ms-word.document.macroEnabled.12")
+    response["Content-Disposition"] = f'attachment; filename="Aditivo_{aditivo.contrato.num_contrato or aditivo.pk}.docm"'
+    return response
 
 
 def criar_contrato_se_aprovado(solicitacao):

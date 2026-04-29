@@ -16,6 +16,7 @@ path('contratos_fornecedores/<int:pk>/editar/', views.contrato_fornecedor_editar
 path('contratos_fornecedores/<int:pk>/solicitar-aditivo/', views.solicitar_aditivo_contrato, name='solicitar_aditivo_contrato'),
 path('aditivos_fornecedor/<int:pk>/enviar-documento/', views.enviar_documento_aditivo_contrato, name='enviar_documento_aditivo_contrato'),
 path('aditivos_fornecedor/<int:pk>/avaliar/', views.avaliar_aditivo_contrato, name='avaliar_aditivo_contrato'),
+path('aditivos_fornecedor/<int:pk>/gerar-documento/', views.gerar_aditivo_contrato_docm, name='gerar_aditivo_contrato_docm'),
 
     path('contratos_guarda_chuva/', views.lista_contratos_guarda_chuva, name='lista_contratos_guarda_chuva'),
 
@@ -51,7 +52,9 @@ path('aditivos_fornecedor/<int:pk>/avaliar/', views.avaliar_aditivo_contrato, na
 
     path('elaboracao_contrato/', views.elaboracao_contrato, name='elaboracao_contrato'),
     path('elaboracao_contrato/<int:solicitacao_id>/cadastrar/', views.cadastrar_contrato, name='cadastrar_contrato'),
+    path('elaboracao_contrato/<int:solicitacao_id>/gerar-docm/', views.gerar_minuta_contrato_docm, name='gerar_minuta_contrato_docm'),
     path('elaboracao_minuta_contrato/<int:solicitacao_id>/cadastrar/', views.cadastrar_minuta_contrato, name='cadastrar_minuta_contrato'),
+    path('elaboracao_minuta_contrato/<int:solicitacao_id>/gerar-docm/', views.gerar_minuta_contrato_contratacao_docm, name='gerar_minuta_contrato_contratacao_docm'),
     path('detalhes_contrato/<int:pk>/', views.detalhes_contrato, name='detalhes_contrato'),
     path('detalhes_minuta_contrato/<int:pk>/', views.detalhes_minuta_contrato, name='detalhes_minuta_contrato'),
 
