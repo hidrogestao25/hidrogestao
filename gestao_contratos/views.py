@@ -2550,6 +2550,12 @@ def contrato_fornecedor_detalhe(request, pk):
         # Preencher valores nulos com 0
         df["valor_previsto"] = df["valor_previsto"].fillna(0)
         df["valor_pago"] = df["valor_pago"].fillna(0)
+        df["data_prevista_pagamento"] = pd.to_datetime(
+            df["data_prevista_pagamento"], errors="coerce"
+        ).dt.normalize()
+        df["data_pagamento"] = pd.to_datetime(
+            df["data_pagamento"], errors="coerce"
+        ).dt.normalize()
 
         # Ordenar pelas datas
         df = df.sort_values("data_prevista_pagamento")
@@ -2564,7 +2570,8 @@ def contrato_fornecedor_detalhe(request, pk):
             y=df["valor_previsto_acum"],
             mode="lines+markers",
             name="Previsto (Acumulado)",
-            line=dict(color="orange")
+            line=dict(color="orange"),
+            hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
         )
 
         trace_pago = go.Scatter(
@@ -2572,12 +2579,13 @@ def contrato_fornecedor_detalhe(request, pk):
             y=df["valor_pago_acum"],
             mode="lines+markers",
             name="Pago (Acumulado)",
-            line=dict(color="green")
+            line=dict(color="green"),
+            hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
         )
 
         layout = go.Layout(
             title="Evolução Acumulada de Pagamentos",
-            xaxis=dict(title="Data"),
+            xaxis=dict(title="Data", tickformat="%d/%m/%Y", hoverformat="%d/%m/%Y"),
             yaxis=dict(title="Valor (R$)"),
             template="plotly_white"
         )

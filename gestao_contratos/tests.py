@@ -3394,6 +3394,30 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertContains(response, "Documento do aditivo")
         self.assertContains(response, aditivo.arquivo_aditivo.url)
 
+    def test_detalhe_contrato_formata_datas_do_grafico_sem_hora(self):
+        evento = self.create_event(contrato=self.contrato_terceiro, realizado=True)
+        evento.data_prevista_pagamento = datetime(2026, 5, 12, 15, 30, 45, 123000)
+        evento.data_pagamento = datetime(2026, 5, 13, 16, 40, 55, 456000)
+        evento.valor_previsto = Decimal("500.00")
+        evento.valor_pago = Decimal("450.00")
+        evento.save(
+            update_fields=[
+                "data_prevista_pagamento",
+                "data_pagamento",
+                "valor_previsto",
+                "valor_pago",
+                "realizado",
+            ]
+        )
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": self.contrato_terceiro.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("%d/%m/%Y", response.context["plot_div"])
+        self.assertNotIn("15:30:45", response.context["plot_div"])
+        self.assertNotIn("16:40:55", response.context["plot_div"])
+
 
 class DocmGenerationTests(BaseUserTestCase):
     def create_docm_template(self, document_text, header_text=""):
