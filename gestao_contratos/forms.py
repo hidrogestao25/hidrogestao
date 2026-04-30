@@ -165,16 +165,27 @@ class ClienteForm(forms.ModelForm):
 
 
 class FornecedorForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["informacoes_bancarias"].help_text = (
+            "A conta bancária do fornecedor deve estar atrelada ao CNPJ."
+        )
+
     class Meta:
         model = EmpresaTerceira
         fields = '__all__'
         widgets = {
             'nome': forms.TextInput(attrs={'class': 'form-control'}),
             'cpf_cnpj': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_cpf_cnpj'}),
-            'endereco': forms.Textarea(attrs={'class': 'form-control', 'row': 3}),
+            'endereco': forms.TextInput(attrs={'class': 'form-control'}),
+            'numero': forms.TextInput(attrs={'class': 'form-control'}),
+            'bairro': forms.TextInput(attrs={'class': 'form-control'}),
+            'municipio': forms.TextInput(attrs={'class': 'form-control'}),
+            'estado': forms.TextInput(attrs={'class': 'form-control'}),
+            'cep': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_cep'}),
             'telefone': forms.TextInput(attrs={'class': 'form-control'}),
             'email':  forms.TextInput(attrs={'class': 'form-control'}),
-            'informacoes_bancarias':  forms.TextInput(attrs={'class': 'form-control'}),
+            'informacoes_bancarias':  forms.Textarea(attrs={'class': 'form-control', 'row': 3}),
             'setor_de_atuacao': forms.TextInput(attrs={'class': 'form-control'}),
             'ponto_focal': forms.TextInput(attrs={'class': 'form-control'}),
             'email_focal':  forms.TextInput(attrs={'class': 'form-control'}),

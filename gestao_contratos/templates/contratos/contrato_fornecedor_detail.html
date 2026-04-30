@@ -51,6 +51,13 @@
         {% endif %}
 
       </p>
+      {% if exibir_warning_valor_eventos %}
+        <div class="alert alert-warning" role="alert">
+          Atenção: a soma dos valores previstos dos eventos deste contrato
+          (R$ {{ total_eventos_previstos|floatformat:2 }}) difere do valor total vigente do contrato
+          (R$ {{ valor_total_contrato_vigente|floatformat:2 }}).
+        </div>
+      {% endif %}
       {% if contrato.num_contrato_arquivo %}
         <p>
           <a href="{{ contrato.num_contrato_arquivo.url }}" class="btn btn-sm btn-outline-primary">

@@ -2570,14 +2570,22 @@ def contrato_fornecedor_detalhe(request, pk):
     eventos = Evento.objects.filter(contrato_terceiro=contrato).order_by("data_prevista")
     aditivos = contrato.aditivos.select_related("solicitado_por", "documento_enviado_por").all()
     aditivo_ativo = aditivos.filter(status_diretoria="pendente").first()
+    ultimo_aditivo_aprovado = aditivos.filter(status_diretoria="aprovado").order_by("-data_aprovacao_diretoria", "-criado_em").first()
+    valor_total_contrato_vigente = (
+        ultimo_aditivo_aprovado.novo_valor_total
+        if ultimo_aditivo_aprovado and ultimo_aditivo_aprovado.novo_valor_total is not None
+        else (contrato.valor_total or Decimal("0.00"))
+    )
+    total_eventos_previstos = eventos.aggregate(total=Sum("valor_previsto"))["total"] or Decimal("0.00")
+    exibir_warning_valor_eventos = total_eventos_previstos != valor_total_contrato_vigente
 
     df = pd.DataFrame(list(eventos.values("data_prevista_pagamento", "valor_previsto", "valor_pago", "data_pagamento")))
 
     plot_div = None
     if not df.empty:
-        # Preencher valores nulos com 0
-        df["valor_previsto"] = df["valor_previsto"].fillna(0)
-        df["valor_pago"] = df["valor_pago"].fillna(0)
+        # Converte explicitamente para numérico antes de preencher nulos
+        df["valor_previsto"] = pd.to_numeric(df["valor_previsto"], errors="coerce").fillna(0.0)
+        df["valor_pago"] = pd.to_numeric(df["valor_pago"], errors="coerce").fillna(0.0)
         df["data_prevista_pagamento"] = pd.to_datetime(
             df["data_prevista_pagamento"], errors="coerce"
         ).dt.normalize()
@@ -2708,6 +2716,9 @@ def contrato_fornecedor_detalhe(request, pk):
             "aditivos": aditivos,
             "aditivo_ativo": aditivo_ativo,
             "can_request_addendum": can_user_request_contract_addendum(request.user, contrato),
+            "valor_total_contrato_vigente": valor_total_contrato_vigente,
+            "total_eventos_previstos": total_eventos_previstos,
+            "exibir_warning_valor_eventos": exibir_warning_valor_eventos,
         },
     )
 
@@ -4318,6 +4329,17 @@ def detalhes_triagem_fornecedores(request, pk):
                 return redirect('detalhes_triagem_fornecedores', pk=pk)
 
             fornecedor = get_object_or_404(EmpresaTerceira, pk=escolhido_id)
+            proposta_escolhida = PropostaFornecedor.objects.filter(
+                solicitacao=solicitacao,
+                fornecedor=fornecedor,
+            ).first()
+            total_previsto = solicitacao.evento_set.aggregate(total=Sum("valor_previsto"))["total"] or Decimal("0.00")
+            valor_proposta = (
+                proposta_escolhida.valor_proposta
+                if proposta_escolhida and proposta_escolhida.valor_proposta is not None
+                else Decimal("0.00")
+            )
+
             solicitacao.fornecedor_escolhido = fornecedor
             solicitacao.justificativa_fornecedor_escolhido = justificativa
             solicitacao.nenhum_fornecedor_ideal = False
@@ -4339,6 +4361,15 @@ def detalhes_triagem_fornecedores(request, pk):
                 messages.warning(request, f"Erro ao enviar e-mail para gerente de contrato e diretoria: {e}")
 
             messages.success(request, f"Fornecedor {fornecedor.nome} selecionado. Aguardando avaliação do gerente de contrato e da diretoria.")
+            if total_previsto != valor_proposta:
+                total_previsto_formatado = f"{total_previsto:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                valor_proposta_formatado = f"{valor_proposta:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                messages.warning(
+                    request,
+                    "Atenção: a soma dos valores previstos "
+                    f"(R$ {total_previsto_formatado}) difere do valor total da proposta "
+                    f"(R$ {valor_proposta_formatado})."
+                )
         return redirect('lista_solicitacoes')
 
     context = {
@@ -5139,6 +5170,7 @@ def build_contract_docm_replacements(documento_contrato, fornecedor, contrato_pr
         "__ponto_focal__": fornecedor.ponto_focal or "-",
         "__telefone_focal__": fornecedor.telefone_focal or "-",
         "__email_focal__": fornecedor.email_focal or "-",
+        "__informacoes_bancarias__": fornecedor.informacoes_bancarias or "-",
         "__descricao__": documento_contrato.objeto or "-",
         "__ valor_proposta__": format_currency_br(valor_total, with_symbol=True),
         "__valor_proposta_extenso__": decimal_to_money_words_pt_br(valor_total),

@@ -3,7 +3,14 @@
 {% block content %}
 
 <div class="container mt-4">
-    <h3 class="mb-3">Triagem de Fornecedores e Propostas</h3>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h3 class="mb-0">Triagem de Fornecedores e Propostas</h3>
+        {% if request.user.grupo == 'suprimento' %}
+            <a href="{% url 'novo_fornecedor' %}" target="_blank" rel="noopener noreferrer" class="btn btn-success">
+                + Cadastrar Novo Fornecedor
+            </a>
+        {% endif %}
+    </div>
 
     <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
@@ -94,15 +101,23 @@
 
                             <!-- Arquivo -->
                             <td>
-                                {% if prop and prop.arquivo_proposta %}
-                                    <a href="{{ prop.arquivo_proposta.url }}" target="_blank"
-                                       class="btn btn-sm btn-outline-secondary mb-1">
-                                       Ver PDF
-                                    </a>
-                                {% endif %}
-                                <input type="file" name="arquivo_{{ f.id }}"
-                                       class="form-control form-control-sm"
-                                       accept="application/pdf">
+                                <div class="border rounded p-3 bg-light" style="min-width: 320px;">
+                                    {% if prop and prop.arquivo_proposta %}
+                                        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                            <span class="badge bg-success">Documento enviado</span>
+                                            <a href="{{ prop.arquivo_proposta.url }}" target="_blank"
+                                               class="btn btn-sm btn-outline-secondary">
+                                               Ver PDF
+                                            </a>
+                                        </div>
+                                        <div class="small text-muted mb-2">
+                                            Você pode enviar um novo PDF para substituir o atual.
+                                        </div>
+                                    {% endif %}
+                                    <input type="file" name="arquivo_{{ f.id }}"
+                                           class="form-control"
+                                           accept="application/pdf">
+                                </div>
                             </td>
 
                         </tr>

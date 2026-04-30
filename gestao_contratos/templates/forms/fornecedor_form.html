@@ -43,8 +43,34 @@
           </div>
 
           <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.numero.id_for_label }}">Número</label>
+            {{ form.numero }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.bairro.id_for_label }}">Bairro</label>
+            {{ form.bairro }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.municipio.id_for_label }}">Município</label>
+            {{ form.municipio }}
+          </div>
+
+          <div class="col-md-3 mb-3">
+            <label class="form-label" for="{{ form.estado.id_for_label }}">Estado</label>
+            {{ form.estado }}
+          </div>
+
+          <div class="col-md-3 mb-3">
+            <label class="form-label" for="{{ form.cep.id_for_label }}">CEP</label>
+            {{ form.cep }}
+          </div>
+
+          <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.informacoes_bancarias.id_for_label }}">Informações Bancárias</label>
             {{ form.informacoes_bancarias }}
+            <div class="form-text">A conta bancária do fornecedor deve estar atrelada ao CNPJ.</div>
           </div>
         </div>
 
@@ -77,6 +103,7 @@
         <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.telefone_focal2.id_for_label }}">Telefone do Ponto Focal 2</label>
             {{ form.telefone_focal2 }}
+        </div>
 
         <div class="text-end">
           <button type="submit" class="btn btn-custom">Salvar Fornecedor</button>

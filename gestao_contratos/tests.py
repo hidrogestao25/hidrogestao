@@ -1512,6 +1512,53 @@ class ProspeccaoFlowAdjustmentsTests(BaseUserTestCase):
         self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
         self.assertIn(self.diretoria.email, mail.outbox[0].to)
 
+    def test_selecao_de_fornecedor_exibe_warning_quando_proposta_difere_do_total_previsto(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Solicitação com diferença de valores",
+            aprovado=True,
+            triagem_realizada=True,
+            status="Triagem realizada",
+        )
+        solicitacao.fornecedores_selecionados.add(self.fornecedor)
+        PropostaFornecedor.objects.create(
+            solicitacao=solicitacao,
+            fornecedor=self.fornecedor,
+            valor_proposta=Decimal("900.00"),
+        )
+        self.create_event(
+            contrato=self.create_supplier_contract(
+                cod_projeto=self.contrato,
+                empresa_terceira=self.fornecedor,
+                coordenador=self.coordenador,
+                lider_contrato=self.lider,
+                num_contrato="CT-PROSP-VALORES",
+            ),
+            prospeccao=solicitacao,
+            empresa_terceira=self.fornecedor,
+        )
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.post(
+            reverse("detalhes_triagem_fornecedores", args=[solicitacao.pk]),
+            {
+                "fornecedor_escolhido": self.fornecedor.pk,
+                "justificativa_fornecedor_escolhido": "Melhor aderência técnica",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mensagens = [message.message for message in get_messages(response.wsgi_request)]
+        self.assertTrue(
+            any(
+                "Atenção: a soma dos valores previstos (R$ 500,00) difere do valor total da proposta (R$ 900,00)." in mensagem
+                for mensagem in mensagens
+            )
+        )
+
     def test_lista_solicitacoes_exibe_apenas_um_botao_selecionar_fornecedor_para_gerente_lider(self):
         solicitacao = SolicitacaoProspeccao.objects.create(
             contrato=self.contrato,
@@ -3929,6 +3976,40 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertIn("%d/%m/%Y", response.context["plot_div"])
         self.assertNotIn("15:30:45", response.context["plot_div"])
         self.assertNotIn("16:40:55", response.context["plot_div"])
+
+    def test_detalhe_contrato_exibe_warning_quando_eventos_diferem_do_valor_total(self):
+        evento = self.create_event(contrato=self.contrato_terceiro, empresa_terceira=self.contrato_terceiro.empresa_terceira)
+        evento.valor_previsto = Decimal("500.00")
+        evento.save(update_fields=["valor_previsto"])
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": self.contrato_terceiro.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["exibir_warning_valor_eventos"])
+        self.assertEqual(response.context["valor_total_contrato_vigente"], Decimal("1000.00"))
+        self.assertEqual(response.context["total_eventos_previstos"], Decimal("500.00"))
+        self.assertContains(response, "Atenção: a soma dos valores previstos dos eventos deste contrato")
+
+    def test_detalhe_contrato_considera_valor_do_aditivo_aprovado_no_warning(self):
+        aditivo = self.create_aditivo()
+        aditivo.status_lider = "aprovado"
+        aditivo.status_diretoria = "aprovado"
+        aditivo.data_aprovacao_diretoria = timezone.now()
+        aditivo.save(update_fields=["status_lider", "status_diretoria", "data_aprovacao_diretoria"])
+
+        evento = self.create_event(contrato=self.contrato_terceiro, empresa_terceira=self.contrato_terceiro.empresa_terceira)
+        evento.valor_previsto = Decimal("1000.00")
+        evento.save(update_fields=["valor_previsto"])
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": self.contrato_terceiro.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["exibir_warning_valor_eventos"])
+        self.assertEqual(response.context["valor_total_contrato_vigente"], Decimal("1500.00"))
+        self.assertEqual(response.context["total_eventos_previstos"], Decimal("1000.00"))
+        self.assertContains(response, "Atenção: a soma dos valores previstos dos eventos deste contrato")
 
 
 class DocmGenerationTests(BaseUserTestCase):
