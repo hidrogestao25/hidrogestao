@@ -59,18 +59,11 @@
         </div>
 
         <div class="mb-3">
-          <label class="form-label fw-bold" for="id_data_pagamento">Data de Pagamento</label>
-          {{ form.data_pagamento }}
-          {% if form.data_pagamento.errors %}
-            <div class="text-danger small">{{ form.data_pagamento.errors }}</div>
-          {% endif %}
-        </div>
-
-        <div class="mb-3">
           <label class="form-label fw-bold">Valor Previsto</label>
           <input type="text" class="form-control" value="{{ evento.valor_previsto }}" readonly>
         </div>
 
+        {% comment %}
         <div class="form-check mb-3">
         <!--  <input class="form-check-input" type="checkbox" id="check_valor_igual" name="valor_igual" checked> -->
           <input class="form-check-input" type="checkbox" id="check_valor_igual" name="valor_igual" >
@@ -96,6 +89,7 @@
             {% endif %}
           </div>
         </div>
+        {% endcomment %}
 
         <div class="mb-3">
           <label class="form-label fw-bold" for="id_observacao">Observação</label>
@@ -124,15 +118,18 @@
               <th>Parcela</th>
               <th>Valor Pago</th>
               <th>Data Pagamento</th>
-              <th>Status Líder / Gerente-Líder</th>
+              <th>Status Líder de Contrato</th>
               {% if has_reprovacao_coordenador %}
-                <th>Justificativa Líder / Gerente-Líder</th>
+                <th>Justificativa Líder de Contrato</th>
               {% endif %}
               <th>Status Gerente</th>
               {% if has_reprovacao_gerente %}
                 <th>Justificativa Gerente</th>
               {% endif %}
-
+              <th>Autorização Pagamento</th>
+              {% if tem_reprovacao_diretor %}
+                  <th>Justificativa Diretor</th>
+              {% endif %}
               <th>Observação</th>
               <th>Arquivo</th>
 
@@ -183,6 +180,23 @@
                   </td>
                 {% endif %}
 
+                {% if item.bm.aprovacao_pagamento == "aprovado" %}
+                  <td><span class="badge bg-success">Aprovado</span></td>
+                {% elif item.bm.aprovacao_pagamento == "reprovado" %}
+                  <td><span class="badge bg-danger">Reprovado</span></td>
+                {% else %}
+                  <td><span class="badge bg-secondary">Pendente</span></td>
+                {% endif %}
+                {% if tem_reprovacao_diretor %}
+                    <td>
+                        {% if item.bm.aprovacao_pagamento == "reprovado" %}
+                            {{ item.bm.justificativa_reprovacao_diretor|default:"-" }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                {% endif %}
+
                 <td>{{ item.bm.observacao|default:"-" }}</td>
 
                 <td>
@@ -197,6 +211,9 @@
 
                 {% if can_approve_bm_as_lider %}
                 <td>
+                  <small class="text-muted d-block mb-2">
+                    Basta uma aprovacao do lider ou do gerente.
+                  </small>
                   <div class="d-flex gap-1">
 
                     <button type="button"
@@ -220,6 +237,9 @@
                 {% endif %}
                 {% if can_approve_bm_as_gerente %}
                 <td>
+                  <small class="text-muted d-block mb-2">
+                    Basta uma aprovacao do lider ou do gerente.
+                  </small>
                   <div class="d-flex gap-1">
 
                     <button type="button"
@@ -504,55 +524,6 @@ document.addEventListener("DOMContentLoaded", function() {
   aplicarMascaraMoeda(document);
 
   /* ------------------------
-      VALOR PAGO / PREVISTO
-  ------------------------ */
-  const checkIgual = document.getElementById("check_valor_igual");
-  const camposDiv = document.getElementById("campos_valor_pago_justificativa");
-  const inputJustificativa = document.getElementById("id_justificativa");
-  const inputValorPago = document.getElementById("id_valor_pago");
-
-  function atualizarCampos() {
-
-    const valor = inputValorPago ? inputValorPago.value.trim() : "";
-    if (checkIgual.checked) {
-      camposDiv.style.display = "none";
-
-      if (inputValorPago) {
-        const valorPrevisto = formatarMoedaBR("{{ evento.valor_previsto|default:'' }}");
-        if (inputValorPago.inputmask) {
-          inputValorPago.inputmask.setValue(valorPrevisto);
-        } else {
-          inputValorPago.value = valorPrevisto;
-        }
-      }
-
-      if (inputJustificativa) {
-        inputJustificativa.required = false;
-      }
-
-    } else {
-      camposDiv.style.display = "block";
-
-      if (inputJustificativa) {
-        if (valor === "") {
-          inputJustificativa.required = false;
-        } else {
-          inputJustificativa.required = true;
-        }
-      }
-    }
-  }
-
-    if (inputValorPago) {
-    inputValorPago.addEventListener("input", atualizarCampos);
-  }
-
-  checkIgual.addEventListener("change", atualizarCampos);
-  atualizarCampos();
-
-
-
-  /* ------------------------
       MODAL CADASTRO BM
   ------------------------ */
   const bmModal = document.getElementById("bmModal");
@@ -738,6 +709,20 @@ document.addEventListener("DOMContentLoaded", function() {
   const csrfToken = "{{ csrf_token }}";
   let bmReprovandoId = null;
 
+  function mostrarLoading() {
+    const overlay = document.getElementById("loadingOverlay");
+    if (overlay) {
+      overlay.style.display = "flex";
+    }
+  }
+
+  function esconderLoading() {
+    const overlay = document.getElementById("loadingOverlay");
+    if (overlay) {
+      overlay.style.display = "none";
+    }
+  }
+
   function atualizarLinha(bmId, statusCoordenador, statusGerente) {
     const row = document.getElementById("bm-row-" + bmId);
     if (!row) return;
@@ -775,6 +760,8 @@ document.addEventListener("DOMContentLoaded", function() {
 
 
   function enviarAvaliacao(bmId, acao, justificativa) {
+    mostrarLoading();
+
     fetch("{% url 'avaliar_bm' bm_id=0 %}".replace("0", bmId), {
       method: "POST",
       headers: {
@@ -786,10 +773,15 @@ document.addEventListener("DOMContentLoaded", function() {
     .then(r => r.json())
     .then(data => {
       if (data.success) {
-        atualizarLinha(bmId, data.status_coordenador, data.status_gerente);
+        location.reload();
       } else {
+        esconderLoading();
         alert("Erro: " + data.error);
       }
+    })
+    .catch(() => {
+      esconderLoading();
+      alert("Erro ao processar a acao.");
     });
   }
 
@@ -811,5 +803,22 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 </script>
 
-{% endblock %}
+<div id="loadingOverlay" style="
+  display:none;
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  background:rgba(0,0,0,0.5);
+  z-index:9999;
+  justify-content:center;
+  align-items:center;
+">
+  <div class="text-center text-white">
+    <div class="spinner-border" role="status"></div>
+    <div class="mt-2">Processando...</div>
+  </div>
+</div>
 
+{% endblock %}

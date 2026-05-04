@@ -36,18 +36,18 @@
                     <div class="card-body">
                         {% if eventos_sem_nf %}
                             <ul class="list-group list-group-flush">
-                                {% for bm in eventos_sem_nf %}
+                                {% for evento in eventos_sem_nf %}
                                     <li class="list-group-item d-flex justify-content-between align-items-center">
                                         <div>
-                                            <strong>BM {{ bm.numero }}</strong><br>
-                                            <small>{{ bm.contrato.empresa_terceira }}</small><br>
+                                            <strong>Evento #{{ evento.id }}</strong><br>
+                                            <small>{{ evento.contrato_terceiro.empresa_terceira }}</small><br>
 
                                             <span class="badge bg-secondary">
-                                                Pagamento: {{ bm.data_pagamento|date:"d/m/Y" }}
+                                                Pagamento aprovado: {{ evento.ultima_data_pagamento_bm|date:"d/m/Y" }}
                                             </span>
                                         </div>
 
-                                        <a href="{% url 'detalhes_entrega' bm.evento.id %}"
+                                        <a href="{% url 'detalhes_entrega' evento.id %}"
                                            class="btn btn-sm btn-outline-dark">
                                             Ver
                                         </a>

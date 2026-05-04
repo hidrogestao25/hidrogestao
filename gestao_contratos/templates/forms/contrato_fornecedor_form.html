@@ -7,12 +7,14 @@
       <a href="{% url 'lista_contratos' %}" class="btn btn-custom">← Voltar</a>
     </div>
     <div class="card-body">
-      <form method="post" enctype="multipart/form-data">
+      <form method="post" enctype="multipart/form-data" novalidate>
         {% csrf_token %}
 
         <!-- Exibir erros de validação -->
         {% if form.errors %}
         <div class="alert alert-danger">
+          <strong>Existem campos obrigatórios não preenchidos ou inválidos.</strong>
+          <div class="mt-1">Revise os campos abaixo antes de salvar o contrato.</div>
           <ul>
             {% for field in form %}
               {% for error in field.errors %}
@@ -30,77 +32,92 @@
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.cod_projeto.id_for_label }}">Código do Projeto</label>
             {{ form.cod_projeto }}
+            {% if form.cod_projeto.errors %}<div class="text-danger small mt-1">{{ form.cod_projeto.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.empresa_terceira.id_for_label }}">Fornecedor</label>
             {{ form.empresa_terceira }}
+            {% if form.empresa_terceira.errors %}<div class="text-danger small mt-1">{{ form.empresa_terceira.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.num_contrato.id_for_label }}">Numero do Contrato do Fornecedor</label>
             {{ form.num_contrato }}
+            {% if form.num_contrato.errors %}<div class="text-danger small mt-1">{{ form.num_contrato.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.coordenador.id_for_label }}">Coordenador Técnico</label>
             {{ form.coordenador }}
+            {% if form.coordenador.errors %}<div class="text-danger small mt-1">{{ form.coordenador.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.coordenadores.id_for_label }}">Líderes Técnicos Vinculados</label>
             {{ form.coordenadores }}
+            {% if form.coordenadores.errors %}<div class="text-danger small mt-1">{{ form.coordenadores.errors|striptags }}</div>{% endif %}
             <small class="text-muted d-block">Selecione um ou mais coordenadores para este contrato.</small>
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.lider_contrato.id_for_label }}">Líder de Contrato</label>
             {{ form.lider_contrato }}
+            {% if form.lider_contrato.errors %}<div class="text-danger small mt-1">{{ form.lider_contrato.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.data_inicio.id_for_label }}">Data Início</label>
             {{ form.data_inicio }}
+            {% if form.data_inicio.errors %}<div class="text-danger small mt-1">{{ form.data_inicio.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.data_fim.id_for_label }}">Data Fim</label>
             {{ form.data_fim }}
+            {% if form.data_fim.errors %}<div class="text-danger small mt-1">{{ form.data_fim.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.valor_total.id_for_label }}">Valor Total</label>
             {{ form.valor_total }}
+            {% if form.valor_total.errors %}<div class="text-danger small mt-1">{{ form.valor_total.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.prospeccao.id_for_label }}">Solicitação</label>
             {{ form.prospeccao }}
+            {% if form.prospeccao.errors %}<div class="text-danger small mt-1">{{ form.prospeccao.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.status.id_for_label }}">Status</label>
             {{ form.status }}
+            {% if form.status.errors %}<div class="text-danger small mt-1">{{ form.status.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.guarda_chuva.id_for_label }}">Contrato Guarda-chuva?</label>
             {{ form.guarda_chuva }}
+            {% if form.guarda_chuva.errors %}<div class="text-danger small mt-1">{{ form.guarda_chuva.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-12 mb-3">
             <label class="form-label" for="{{ form.objeto.id_for_label }}">Objeto</label>
             {{ form.objeto }}
+            {% if form.objeto.errors %}<div class="text-danger small mt-1">{{ form.objeto.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-12 mb-3">
             <label class="form-label" for="{{ form.observacao.id_for_label }}">Observações</label>
             {{ form.observacao }}
+            {% if form.observacao.errors %}<div class="text-danger small mt-1">{{ form.observacao.errors|striptags }}</div>{% endif %}
           </div>
 
           <div class="col-12 mb-3">
             <label class="form-label" for="{{ form.num_contrato_arquivo.id_for_label }}">Arquivo do Contrato</label>
             {{ form.num_contrato_arquivo }}
+            {% if form.num_contrato_arquivo.errors %}<div class="text-danger small mt-1">{{ form.num_contrato_arquivo.errors|striptags }}</div>{% endif %}
           </div>
         </div>
 

@@ -117,6 +117,25 @@
                                         {% endif %}
                                     {% endwith %}
                                 {% endif %}
+
+                                {% if solicitacao.status == "Aguardando Arquivos Assinados" %}
+                                  {% if solicitacao.minuta_boletins_medicao %}
+                                    {% if solicitacao.minuta_boletins_medicao.minuta_boletim_assinado %}
+                                      <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-warning btn-sm">Atualizar BM Assinado</a>
+                                    {% else %}
+                                      <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-primary btn-sm">Inserir BM Assinado</a>
+                                    {% endif %}
+                                  {% endif %}
+                                  {% with contrato=solicitacao.contrato_relacionado %}
+                                    {% if contrato %}
+                                      {% if contrato.arquivo_contrato_assinado %}
+                                        <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">Atualizar Contrato Assinado</a>
+                                      {% else %}
+                                        <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-primary btn-sm">Inserir Contrato Assinado</a>
+                                      {% endif %}
+                                    {% endif %}
+                                  {% endwith %}
+                                {% endif %}
                             {% endif %}
 
                             {% if request.user.grupo == 'diretoria' %}
@@ -291,6 +310,33 @@
                                       {% endif %}
                                   {% else %}
                                       <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-primary btn-sm">Cadastrar Minuta de Contrato</a>
+                                  {% endif %}
+                              {% endwith %}
+                            </div>
+                          {% endif %}
+
+                          {% if solicitacao.status == "Aguardando Arquivos Assinados" %}
+                            <div>
+                            {% if solicitacao.minuta_boletins_medicao_contrato %}
+                              {% if solicitacao.minuta_boletins_medicao_contrato.minuta_boletim_assinado %}
+                                <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">
+                                  Atualizar BM Assinado
+                                </a>
+                              {% else %}
+                                <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-primary btn-sm">
+                                  Inserir BM Assinado
+                                </a>
+                              {% endif %}
+                            {% endif %}
+                            </div>
+                            <div>
+                              {% with contrato=solicitacao.minuta_contrato %}
+                                  {% if contrato %}
+                                      {% if contrato.arquivo_contrato_assinado %}
+                                          <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">Atualizar Contrato Assinado</a>
+                                      {% else %}
+                                          <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-primary btn-sm">Inserir Contrato Assinado</a>
+                                      {% endif %}
                                   {% endif %}
                               {% endwith %}
                             </div>

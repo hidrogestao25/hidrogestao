@@ -103,6 +103,8 @@ document.addEventListener("DOMContentLoaded", function() {
             A equipe de suprimentos está desenvolvendo as minutas do boletim de medição e do contrato.
           {% elif solicitacao.status == "Aprovação Final" %}
             A gerência de contrato está avaliando as minutas desenvolvidas pela equipe de suprimento.
+          {% elif solicitacao.status == "Aguardando Arquivos Assinados" %}
+            As minutas foram aprovadas pela gerÃªncia de contrato e a equipe de suprimento precisa anexar os arquivos assinados do contrato e do BM.
           {% elif solicitacao.status == "Onboarding" %}
             As minutas foram ambas aprovadas e a equipe de suprimento está marcando uma reunião onboarding com todos os envolvidos.
           {% else %}
@@ -511,6 +513,28 @@ document.addEventListener("DOMContentLoaded", function() {
                 <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Cadastrar Contrato</a>
             {% endif %}
         {% endwith %}
+    {% endif %}
+
+    {% if solicitacao.status == "Aguardando Arquivos Assinados" %}
+      {% with bm=solicitacao.minuta_boletins_medicao %}
+        {% if bm %}
+          {% if bm.minuta_boletim_assinado %}
+            <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-warning mt-3">Atualizar BM Assinado</a>
+          {% else %}
+            <a href="{% url 'inserir_minuta_bm' solicitacao.id %}" class="btn btn-primary mt-3">Inserir BM Assinado</a>
+          {% endif %}
+        {% endif %}
+      {% endwith %}
+
+      {% with contrato=solicitacao.contrato_relacionado %}
+        {% if contrato %}
+          {% if contrato.arquivo_contrato_assinado %}
+            <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Atualizar Contrato Assinado</a>
+          {% else %}
+            <a href="{% url 'cadastrar_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Inserir Contrato Assinado</a>
+          {% endif %}
+        {% endif %}
+      {% endwith %}
     {% endif %}
 
 {% endif %}

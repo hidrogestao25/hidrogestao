@@ -86,6 +86,8 @@ document.addEventListener("DOMContentLoaded", function() {
             A equipe de suprimentos está desenvolvendo as minutas do boletim de medição e do contrato.
           {% elif solicitacao.status == "Aprovação Final" %}
             A gerência de contrato está avaliando as minutas desenvolvidas pela equipe de suprimento.
+          {% elif solicitacao.status == "Aguardando Arquivos Assinados" %}
+            As minutas foram aprovadas pela gerÃªncia de contrato e a equipe de suprimento precisa anexar os arquivos assinados do contrato e do BM.
           {% elif solicitacao.status == "Onboarding" %}
             As minutas foram ambas aprovadas e a equipe de suprimento está marcando uma reunião onboarding com todos os envolvidos.
           {% else %}
@@ -354,6 +356,42 @@ document.addEventListener("DOMContentLoaded", function() {
 {% endif %}
 
 <!-- Botões de aprovação para gerente -->
+{% if request.user.grupo == 'suprimento' %}
+  {% if solicitacao.status == "Fornecedor aprovado" or solicitacao.status == "Planejamento do Contrato" %}
+    {% if solicitacao.minuta_boletins_medicao_contrato %}
+      <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Revisar Minuta do BM</a>
+    {% else %}
+      <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Inserir Minuta do BM</a>
+    {% endif %}
+    {% with contrato=solicitacao.minuta_contrato %}
+      {% if contrato %}
+        <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Revisar Minuta de Contrato</a>
+      {% else %}
+        <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Cadastrar Minuta de Contrato</a>
+      {% endif %}
+    {% endwith %}
+  {% endif %}
+
+  {% if solicitacao.status == "Aguardando Arquivos Assinados" %}
+    {% if solicitacao.minuta_boletins_medicao_contrato %}
+      {% if solicitacao.minuta_boletins_medicao_contrato.minuta_boletim_assinado %}
+        <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Atualizar BM Assinado</a>
+      {% else %}
+        <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Inserir BM Assinado</a>
+      {% endif %}
+    {% endif %}
+    {% with contrato=solicitacao.minuta_contrato %}
+      {% if contrato %}
+        {% if contrato.arquivo_contrato_assinado %}
+          <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Atualizar Contrato Assinado</a>
+        {% else %}
+          <a href="{% url 'cadastrar_minuta_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Inserir Contrato Assinado</a>
+        {% endif %}
+      {% endif %}
+    {% endwith %}
+  {% endif %}
+{% endif %}
+
 {% if request.user.grupo == 'gerente_contrato' and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
     <form method="post">
         {% csrf_token %}

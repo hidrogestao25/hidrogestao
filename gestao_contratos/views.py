@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.conf import settings
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.core.paginator import Paginator
-from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count
+from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max
 from decimal import Decimal
 from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
@@ -40,6 +40,7 @@ User = get_user_model()
 FROM_EMAIL = settings.DEFAULT_FROM_EMAIL
 CONTRACT_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Contrato.docm"
 ADDENDUM_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Aditivo.docm"
+SIGNED_FILES_PENDING_STATUS = "Aguardando Arquivos Assinados"
 
 
 def format_date_br(value):
@@ -65,6 +66,120 @@ def format_currency_br(value, with_symbol=False):
         value = Decimal(value)
     formatted = f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"R$ {formatted}" if with_symbol else formatted
+
+
+def get_signed_files_pending_status():
+    return SIGNED_FILES_PENDING_STATUS
+
+
+def notify_supply_about_signed_files_request(solicitacao):
+    suprimentos = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email__exact="")
+    lista_emails = [u.email for u in suprimentos]
+    if not lista_emails:
+        return
+
+    contrato_referencia = getattr(solicitacao, "contrato", None)
+    fornecedor = getattr(solicitacao, "fornecedor_escolhido", None)
+    assunto = f"Solicitacao #{solicitacao.id} - Inserir arquivos assinados"
+    mensagem = (
+        "Olá, equipe de Suprimento!\n\n"
+        "A minuta do contrato e a minuta do BM já foram aprovadas pela gerência de contrato.\n"
+        "Agora é necessário inserir os arquivos assinados para concluir a geração do contrato.\n\n"
+        f"Solicitação: {solicitacao.id}\n"
+        f"Projeto: {contrato_referencia or '-'}\n"
+        f"Fornecedor: {fornecedor or '-'}\n\n"
+        "Acesse o sistema HIDROGestão para anexar os arquivos assinados.\n"
+        "https://hidrogestao.pythonanywhere.com/"
+    )
+    try:
+        send_mail(assunto, mensagem, FROM_EMAIL, lista_emails, fail_silently=False)
+    except Exception:
+        pass
+
+
+def get_contract_completion_notification_emails(solicitacao):
+    emails = set()
+
+    def add_email(value):
+        if value:
+            emails.add(value)
+
+    for grupo in ["suprimento", "gerente_contrato", "diretoria"]:
+        for email in User.objects.filter(grupo=grupo).exclude(email__isnull=True).exclude(email__exact="").values_list("email", flat=True):
+            add_email(email)
+
+    coordenador = getattr(solicitacao, "coordenador", None)
+    lider_contrato = getattr(solicitacao, "lider_contrato", None)
+
+    if coordenador and coordenador.email:
+        add_email(coordenador.email)
+        centros_ids = list(coordenador.centros.values_list("id", flat=True))
+        if centros_ids:
+            gerente_tecnico_qs = User.objects.filter(
+                grupo__in=["gerente", "gerente_lider"],
+                centros__in=centros_ids,
+            ).exclude(email__isnull=True).exclude(email__exact="").distinct()
+            for email in gerente_tecnico_qs.values_list("email", flat=True):
+                add_email(email)
+
+    if lider_contrato and lider_contrato.email:
+        add_email(lider_contrato.email)
+
+    return sorted(emails)
+
+
+def notify_contract_process_completed(solicitacao, contrato):
+    lista_emails = get_contract_completion_notification_emails(solicitacao)
+    if not lista_emails:
+        return
+
+    contrato_path = reverse_lazy("contrato_fornecedor_detalhe", kwargs={"pk": contrato.pk})
+    contrato_url = f"https://hidrogestao.pythonanywhere.com{contrato_path}"
+    assunto = f"Processo concluido - Contrato gerado para {contrato.cod_projeto}"
+    mensagem = (
+        "Prezados,\n\n"
+        "Informamos que o processo de solicitacao foi concluido com sucesso, "
+        "e o contrato foi gerado apos a insercao dos arquivos assinados.\n\n"
+        f"Solicitação: {solicitacao.id}\n"
+        f"Código do Projeto: {contrato.cod_projeto}\n"
+        f"Fornecedor: {contrato.empresa_terceira}\n"
+        f"Número do Contrato: {contrato.num_contrato or '-'}\n"
+        f"Valor Total: R$ {contrato.valor_total:,.2f}\n"
+        f"Vigência: {contrato.data_inicio.strftime('%d/%m/%Y') if contrato.data_inicio else 'Não definida'} "
+        f"a {contrato.data_fim.strftime('%d/%m/%Y') if contrato.data_fim else 'Não definida'}\n\n"
+        "O processo esta finalizado no sistema e o contrato encontra-se disponivel para consulta e prosseguimento dos encaminhamentos.\n\n"
+        f"Link direto para o contrato gerado:\n{contrato_url}\n\n"
+        "Atenciosamente,\n"
+        "Sistema de Gestão de Terceiros - HIDROGestão"
+    )
+    try:
+        send_mail(assunto, mensagem, FROM_EMAIL, lista_emails, fail_silently=False)
+    except Exception:
+        pass
+
+
+def update_signed_files_pending_status(solicitacao, bm=None, documento=None):
+    if bm is None:
+        bm = getattr(solicitacao, "minuta_boletins_medicao", None)
+        if bm is None:
+            bm = getattr(solicitacao, "minuta_boletins_medicao_contrato", None)
+    if documento is None:
+        documento = getattr(solicitacao, "contrato_relacionado", None)
+        if documento is None:
+            documento = getattr(solicitacao, "minuta_contrato", None)
+
+    if not bm or not documento:
+        return False
+
+    if bm.status_gerente == "aprovado" and solicitacao.aprovacao_gerencia is True:
+        if documento.arquivo_contrato_assinado and bm.minuta_boletim_assinado:
+            return False
+        if solicitacao.status != SIGNED_FILES_PENDING_STATUS:
+            solicitacao.status = SIGNED_FILES_PENDING_STATUS
+            solicitacao.save(update_fields=["status"])
+            notify_supply_about_signed_files_request(solicitacao)
+        return True
+    return False
 
 
 def number_to_words_pt_br(number):
@@ -1083,6 +1198,8 @@ def can_user_manage_event_delivery(user, contrato):
         return user == contrato.lider_contrato
     if user.grupo == "gerente_contrato":
         return True
+    if user.grupo == "suprimento":
+        return True
     if user.grupo == "gerente_lider":
         return user_shares_center_with_coordinator(user, contrato.coordenador)
     return False
@@ -1318,13 +1435,13 @@ def home(request):
             | (Q(aprovado=True) & Q(triagem_realizada=False))
             | (Q(aprovado=True) & Q(triagem_realizada=True) & Q(fornecedor_escolhido__isnull=True))
             | (Q(aprovacao_fornecedor_gerente="aprovado") & Q(aprovacao_gerencia=False))
-            | Q(status__in=["Fornecedor aprovado", "Planejamento do Contrato"])
+            | Q(status__in=["Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS])
         ).exclude(status__in=["Onboarding"]).distinct()
 
         solicitacoes_contratos = SolicitacaoContrato.objects.filter(
             Q(aprovacao_fornecedor_gerente="aprovado")
             | Q(aprovacao_fornecedor_diretor="aprovado")
-            | Q(status__in=["Planejamento do Contrato"])
+            | Q(status__in=["Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS])
         ).exclude(status__in=["Onboarding"]).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
@@ -1898,13 +2015,19 @@ def home(request):
 
     # ==================== FINANCEIRO ====================
     elif is_financeiro:
-        eventos_sem_nf = BM.objects.filter(
-            #status_coordenador="aprovado",
-            status_gerente="aprovado",
-            aprovacao_pagamento="aprovado"
+        eventos_sem_nf = Evento.objects.filter(
+            boletins_medicao__aprovacao_pagamento="aprovado",
+            nota_fiscal__isnull=True,
         ).filter(
-            Q(nota_fiscal__isnull=True)
-        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
+            Q(boletins_medicao__status_coordenador="aprovado")
+            | Q(boletins_medicao__status_gerente="aprovado")
+        ).select_related(
+            "contrato_terceiro",
+            "contrato_terceiro__empresa_terceira",
+            "empresa_terceira",
+        ).annotate(
+            ultima_data_pagamento_bm=Max("boletins_medicao__data_pagamento")
+        ).order_by("-ultima_data_pagamento_bm").distinct()
 
         eventos_proximos = Evento.objects.filter(
             data_prevista__range=[hoje, limite]
@@ -4636,6 +4759,7 @@ def detalhes_solicitacao_contrato(request, pk):
         "Fornecedor aprovado",
         "Planejamento do Contrato",
         "Aprovação Final",
+        SIGNED_FILES_PENDING_STATUS,
         "Onboarding",
     ]
 
@@ -4751,6 +4875,7 @@ def detalhes_solicitacao(request, pk):
         "Fornecedor aprovado",
         "Planejamento do Contrato",
         "Aprovação Final",
+        SIGNED_FILES_PENDING_STATUS,
         "Onboarding",
     ]
 
@@ -5019,11 +5144,22 @@ def cadastrar_contrato(request, solicitacao_id):
     )
 
     contrato_existente = DocumentoContratoTerceiro.objects.filter(solicitacao=solicitacao).first()
-
+    documento_bm = DocumentoBM.objects.filter(solicitacao=solicitacao).first()
+    proposta_escolhida = PropostaFornecedor.objects.filter(
+        solicitacao=solicitacao,
+        fornecedor=solicitacao.fornecedor_escolhido,
+    ).first()
+    allow_signed_upload = bool(
+        contrato_existente
+        and documento_bm
+        and documento_bm.status_gerente == "aprovado"
+        and solicitacao.aprovacao_gerencia is True
+    )
     if request.method == "POST":
         form = DocumentoContratoTerceiroForm(request.POST, request.FILES, instance=contrato_existente)
 
         if form.is_valid():
+            should_notify_minuta = bool(request.FILES.get("arquivo_contrato"))
             contrato = form.save(commit=False)
             contrato.solicitacao = solicitacao
             if DocumentoBM.objects.filter(solicitacao=solicitacao).exists():
@@ -5037,12 +5173,15 @@ def cadastrar_contrato(request, solicitacao_id):
             # mantém arquivo antigo se não foi enviado novo
             if not request.FILES.get("arquivo_contrato") and contrato_existente:
                 contrato.arquivo_contrato = contrato_existente.arquivo_contrato
+            if not request.FILES.get("arquivo_contrato_assinado") and contrato_existente:
+                contrato.arquivo_contrato_assinado = contrato_existente.arquivo_contrato_assinado
 
             contrato.save()
+            criar_contrato_se_aprovado(solicitacao)
 
             gerente = User.objects.filter(grupo="gerente_contrato").values_list("email", flat=True).distinct()
 
-            if gerente:
+            if should_notify_minuta and gerente:
                 assunto = "Foi anexado uma nova minuta de contrato"
                 mensagem = (
                     f"Olá,\n\n"
@@ -5071,6 +5210,9 @@ def cadastrar_contrato(request, solicitacao_id):
         "solicitacao": solicitacao,
         "fornecedor": solicitacao.fornecedor_escolhido,
         "contrato": contrato_existente,
+        "documento_bm": documento_bm,
+        "proposta_escolhida": proposta_escolhida,
+        "allow_signed_upload": allow_signed_upload,
         "generation_url": reverse_lazy("gerar_minuta_contrato_docm", kwargs={"solicitacao_id": solicitacao.id}),
     }
     return render(request, "fornecedores/cadastrar_contrato.html", context)
@@ -5087,11 +5229,22 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
     )
 
     contrato_existente = DocumentoContratoTerceiro.objects.filter(solicitacao_contrato=solicitacao).first()
-
+    documento_bm = DocumentoBM.objects.filter(solicitacao_contrato=solicitacao).first()
+    proposta_escolhida = PropostaFornecedor.objects.filter(
+        solicitacao_contrato=solicitacao,
+        fornecedor=solicitacao.fornecedor_escolhido,
+    ).first()
+    allow_signed_upload = bool(
+        contrato_existente
+        and documento_bm
+        and documento_bm.status_gerente == "aprovado"
+        and solicitacao.aprovacao_gerencia is True
+    )
     if request.method == "POST":
         form = DocumentoContratoTerceiroForm(request.POST, request.FILES, instance=contrato_existente)
 
         if form.is_valid():
+            should_notify_minuta = bool(request.FILES.get("arquivo_contrato"))
             contrato = form.save(commit=False)
             contrato.solicitacao_contrato = solicitacao
             contrato.prazo_inicio = solicitacao.data_inicio
@@ -5107,12 +5260,15 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
             # mantém arquivo antigo se não foi enviado novo
             if not request.FILES.get("arquivo_contrato") and contrato_existente:
                 contrato.arquivo_contrato = contrato_existente.arquivo_contrato
+            if not request.FILES.get("arquivo_contrato_assinado") and contrato_existente:
+                contrato.arquivo_contrato_assinado = contrato_existente.arquivo_contrato_assinado
 
             contrato.save()
+            criar_contrato_se_aprovado_minuta(solicitacao)
 
             gerente = User.objects.filter(grupo="gerente_contrato").values_list("email", flat=True).distinct()
 
-            if gerente:
+            if should_notify_minuta and gerente:
                 assunto = "Foi anexado uma nova minuta de contrato"
                 mensagem = (
                     f"Olá,\n\n"
@@ -5141,6 +5297,9 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
         "solicitacao": solicitacao,
         "fornecedor": solicitacao.fornecedor_escolhido,
         "contrato": contrato_existente,
+        "documento_bm": documento_bm,
+        "proposta_escolhida": proposta_escolhida,
+        "allow_signed_upload": allow_signed_upload,
         "generation_url": reverse_lazy("gerar_minuta_contrato_contratacao_docm", kwargs={"solicitacao_id": solicitacao.id}),
     }
     return render(request, "fornecedores/cadastrar_contrato.html", context)
@@ -5227,6 +5386,10 @@ def gerar_minuta_contrato_docm(request, solicitacao_id):
         fornecedor_escolhido__isnull=False,
     )
     contrato_existente = DocumentoContratoTerceiro.objects.filter(solicitacao=solicitacao).first()
+    proposta_escolhida = PropostaFornecedor.objects.filter(
+        solicitacao=solicitacao,
+        fornecedor=solicitacao.fornecedor_escolhido,
+    ).first()
 
     if request.method != "POST":
         return redirect("cadastrar_contrato", solicitacao_id=solicitacao_id)
@@ -5270,6 +5433,10 @@ def gerar_minuta_contrato_contratacao_docm(request, solicitacao_id):
         fornecedor_escolhido__isnull=False,
     )
     contrato_existente = DocumentoContratoTerceiro.objects.filter(solicitacao_contrato=solicitacao).first()
+    proposta_escolhida = PropostaFornecedor.objects.filter(
+        solicitacao_contrato=solicitacao,
+        fornecedor=solicitacao.fornecedor_escolhido,
+    ).first()
 
     if request.method != "POST":
         return redirect("cadastrar_minuta_contrato", solicitacao_id=solicitacao_id)
@@ -5335,6 +5502,11 @@ def criar_contrato_se_aprovado(solicitacao):
     contrato_existente = ContratoTerceiros.objects.filter(prospeccao=solicitacao).first()
     if bm_aprovado and contrato_aprovado and not contrato_existente:
         documento = DocumentoContratoTerceiro.objects.filter(solicitacao=solicitacao).first()
+        if not documento:
+            return None
+        if not (documento.arquivo_contrato_assinado and bm.minuta_boletim_assinado):
+            update_signed_files_pending_status(solicitacao, bm=bm, documento=documento)
+            return None
         proposta = PropostaFornecedor.objects.filter(
             solicitacao=solicitacao,
             fornecedor=solicitacao.fornecedor_escolhido
@@ -5353,7 +5525,7 @@ def criar_contrato_se_aprovado(solicitacao):
             objeto=documento.objeto if documento else "",
             condicao_pagamento=proposta.condicao_pagamento if proposta else None,
             status="ativo",
-            num_contrato_arquivo = documento.arquivo_contrato if documento else None,
+            num_contrato_arquivo = documento.arquivo_contrato_assinado,
             observacao=documento.observacao if documento else None,
         )
         Evento.objects.filter(
@@ -5364,28 +5536,7 @@ def criar_contrato_se_aprovado(solicitacao):
         solicitacao.status = "Onboarding"
         solicitacao.save()
 
-        # Envia e-mail
-        suprimentos = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email__exact="")
-        lista_emails = [u.email for u in suprimentos]
-        if lista_emails:
-            assunto = f"Contrato criado: {contrato.cod_projeto}"
-            mensagem = (
-                f"Olá, equipe de Suprimentos!\n\n"
-                f"O BM e o documento do contrato da solicitação '{solicitacao.id}' foram aprovados.\n\n"
-                f"Código do Projeto: {contrato.cod_projeto}\n"
-                f"Fornecedor: {contrato.empresa_terceira}\n"
-                f"Valor Total: R$ {contrato.valor_total:,.2f}\n"
-                f"Vigência: {contrato.data_inicio.strftime('%d/%m/%Y') if contrato.data_inicio else 'Não definida'} "
-                f"a {contrato.data_fim.strftime('%d/%m/%Y') if contrato.data_fim else 'Não definida'}\n\n"
-                f"Observações: {contrato.observacao or 'Nenhuma'}\n\n"
-                "Recomendação: Agendar reunião de onboarding com o fornecedor o quanto antes para alinhamento das responsabilidades.\n\n"
-                "Atenciosamente,\n"
-                "Sistema de Gestão de Terceiros - HIDROGestão"
-            )
-            try:
-                send_mail(assunto, mensagem, FROM_EMAIL, lista_emails, fail_silently=False)
-            except Exception as e:
-                pass
+        notify_contract_process_completed(solicitacao, contrato)
 
         return contrato
 
@@ -5405,6 +5556,11 @@ def criar_contrato_se_aprovado_minuta(solicitacao):
     contrato_existente = ContratoTerceiros.objects.filter(solicitacao=solicitacao).first()
     if bm_aprovado and contrato_aprovado and not contrato_existente:
         documento = DocumentoContratoTerceiro.objects.filter(solicitacao_contrato=solicitacao).first()
+        if not documento:
+            return None
+        if not (documento.arquivo_contrato_assinado and bm.minuta_boletim_assinado):
+            update_signed_files_pending_status(solicitacao, bm=bm, documento=documento)
+            return None
         proposta = PropostaFornecedor.objects.filter(
             solicitacao_contrato=solicitacao,
             fornecedor=solicitacao.fornecedor_escolhido
@@ -5425,7 +5581,7 @@ def criar_contrato_se_aprovado_minuta(solicitacao):
             objeto=documento.objeto if documento else "",
             condicao_pagamento=proposta.condicao_pagamento if proposta else None,
             status="ativo",
-            num_contrato_arquivo = documento.arquivo_contrato if documento else None,
+            num_contrato_arquivo = documento.arquivo_contrato_assinado,
             observacao=documento.observacao if documento else None,
         )
         Evento.objects.filter(
@@ -5436,28 +5592,7 @@ def criar_contrato_se_aprovado_minuta(solicitacao):
         solicitacao.status = "Onboarding"
         solicitacao.save()
 
-        # Envia e-mail
-        suprimentos = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email__exact="")
-        lista_emails = [u.email for u in suprimentos]
-        if lista_emails:
-            assunto = f"Contrato criado: {contrato.cod_projeto}"
-            mensagem = (
-                f"Olá, equipe de Suprimentos!\n\n"
-                f"O BM e o documento do contrato da solicitação '{solicitacao.id}' foram aprovados.\n\n"
-                f"Código do Projeto: {contrato.cod_projeto}\n"
-                f"Fornecedor: {contrato.empresa_terceira}\n"
-                f"Valor Total: R$ {contrato.valor_total:,.2f}\n"
-                f"Vigência: {contrato.data_inicio.strftime('%d/%m/%Y') if contrato.data_inicio else 'Não definida'} "
-                f"a {contrato.data_fim.strftime('%d/%m/%Y') if contrato.data_fim else 'Não definida'}\n\n"
-                f"Observações: {contrato.observacao or 'Nenhuma'}\n\n"
-                "Recomendação: Agendar reunião de onboarding com o fornecedor o quanto antes para alinhamento das responsabilidades.\n\n"
-                "Atenciosamente,\n"
-                "Sistema de Gestão de Terceiros - HIDROGestão"
-            )
-            try:
-                send_mail(assunto, mensagem, FROM_EMAIL, lista_emails, fail_silently=False)
-            except Exception as e:
-                pass
+        notify_contract_process_completed(solicitacao, contrato)
 
         return contrato
 
@@ -5477,6 +5612,7 @@ def detalhes_contrato(request, pk):
         proposta_escolhida = PropostaFornecedor.objects.filter(
             solicitacao=solicitacao, fornecedor=fornecedor_escolhido
         ).first()
+    documento_bm = getattr(solicitacao, "minuta_boletins_medicao", None)
     fornecedores_selecionados = solicitacao.fornecedores_selecionados.all()
     revisoes = solicitacao.revisoes.all()
     origem = solicitacao.solicitacao_origem
@@ -5508,11 +5644,13 @@ def detalhes_contrato(request, pk):
     return render(request, "gestao_contratos/detalhes_contrato.html", {
         "solicitacao": solicitacao,
         "contrato_doc": contrato_doc,
+        "documento_bm": documento_bm,
         "fornecedor_escolhido": fornecedor_escolhido,
         "proposta_escolhida": proposta_escolhida,
         "fornecedores_selecionados": fornecedores_selecionados,
         "revisoes": revisoes,
         "origem": origem,
+        "signed_files_pending_status": SIGNED_FILES_PENDING_STATUS,
     })
 
 
@@ -5528,6 +5666,7 @@ def detalhes_minuta_contrato(request, pk):
             solicitacao_contrato=solicitacao,
             fornecedor=fornecedor_escolhido,
         ).first()
+    documento_bm = getattr(solicitacao, "minuta_boletins_medicao_contrato", None)
 
     if request.method == "POST" and request.user.grupo == "gerente_contrato" and contrato_doc:
         acao = request.POST.get("acao")
@@ -5612,8 +5751,10 @@ def detalhes_minuta_contrato(request, pk):
     return render(request, "gestao_contratos/detalhes_minuta_contrato.html", {
         "solicitacao": solicitacao,
         "contrato_doc": contrato_doc,
+        "documento_bm": documento_bm,
         "fornecedor_escolhido": fornecedor_escolhido,
         "proposta_escolhida": proposta_escolhida,
+        "signed_files_pending_status": SIGNED_FILES_PENDING_STATUS,
     })
 
 
@@ -5683,16 +5824,28 @@ def inserir_minuta_bm(request, pk):
 
     # Cria ou recupera a minuta ligada Ã  solicitação
     documento_bm, created = DocumentoBM.objects.get_or_create(solicitacao=solicitacao)
+    contrato_doc = getattr(solicitacao, "contrato_relacionado", None)
+    allow_signed_upload = bool(
+        contrato_doc
+        and documento_bm.status_gerente == "aprovado"
+        and solicitacao.aprovacao_gerencia is True
+    )
 
     if request.method == "POST":
         form = DocumentoBMForm(request.POST, request.FILES, instance=documento_bm)
         if form.is_valid():
-            form.save()
+            documento_salvo = form.save(commit=False)
+            if not request.FILES.get("minuta_boletim") and documento_bm.minuta_boletim:
+                documento_salvo.minuta_boletim = documento_bm.minuta_boletim
+            if not request.FILES.get("minuta_boletim_assinado") and documento_bm.minuta_boletim_assinado:
+                documento_salvo.minuta_boletim_assinado = documento_bm.minuta_boletim_assinado
+            documento_salvo.save()
             if hasattr(solicitacao, "contrato_relacionado"):
                 solicitacao.status = "Aprovação Final"
             else:
                 solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
+            criar_contrato_se_aprovado(solicitacao)
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
             return redirect('lista_solicitacoes')
     else:
@@ -5701,6 +5854,8 @@ def inserir_minuta_bm(request, pk):
     return render(request, 'fornecedores/inserir_minuta_bm.html', {
         'solicitacao': solicitacao,
         'form': form,
+        'documento_bm': documento_bm,
+        'allow_signed_upload': allow_signed_upload,
     })
 
 
@@ -5714,14 +5869,26 @@ def inserir_minuta_bm_contrato(request, pk):
 
     # Cria ou recupera a minuta ligada Ã  solicitação
     documento_bm, created = DocumentoBM.objects.get_or_create(solicitacao_contrato=solicitacao)
+    contrato_doc = getattr(solicitacao, "minuta_contrato", None)
+    allow_signed_upload = bool(
+        contrato_doc
+        and documento_bm.status_gerente == "aprovado"
+        and solicitacao.aprovacao_gerencia is True
+    )
 
     if request.method == "POST":
         form = DocumentoBMForm(request.POST, request.FILES, instance=documento_bm)
         if form.is_valid():
-            form.save()
+            documento_salvo = form.save(commit=False)
+            if not request.FILES.get("minuta_boletim") and documento_bm.minuta_boletim:
+                documento_salvo.minuta_boletim = documento_bm.minuta_boletim
+            if not request.FILES.get("minuta_boletim_assinado") and documento_bm.minuta_boletim_assinado:
+                documento_salvo.minuta_boletim_assinado = documento_bm.minuta_boletim_assinado
+            documento_salvo.save()
             if hasattr(solicitacao, "minuta_contrato"):
                 solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
+            criar_contrato_se_aprovado_minuta(solicitacao)
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
             return redirect('lista_solicitacoes')
     else:
@@ -5730,6 +5897,8 @@ def inserir_minuta_bm_contrato(request, pk):
     return render(request, 'fornecedores/inserir_minuta_bm.html', {
         'solicitacao': solicitacao,
         'form': form,
+        'documento_bm': documento_bm,
+        'allow_signed_upload': allow_signed_upload,
     })
 
 
@@ -6162,6 +6331,7 @@ def registrar_entrega(request, pk):
     boletins_detalhados = []
     has_reprovacao_coordenador = False
     has_reprovacao_gerente = False
+    tem_reprovacao_diretor = False
 
     for bm in boletins:
         operational_pending = bm_is_operationally_pending(bm)
@@ -6181,6 +6351,8 @@ def registrar_entrega(request, pk):
             has_reprovacao_coordenador = True
         if bm.status_gerente == "reprovado":
             has_reprovacao_gerente = True
+        if bm.aprovacao_pagamento == "reprovado":
+            tem_reprovacao_diretor = True
 
         boletins_detalhados.append({
             "bm": bm,
@@ -6197,17 +6369,9 @@ def registrar_entrega(request, pk):
         form = EventoEntregaForm(request.POST, request.FILES, instance=evento)
 
         if form.is_valid():
-            if evento.nota_fiscal.exists() and not form.cleaned_data['data_pagamento']:
-                form.add_error('data_pagamento', 'Preencha a Data de Pagamento, pois existem NFs cadastrados.')
-            else:
-                if request.POST.get("valor_igual") == "on":
-                    ev = form.save(commit=False)
-                    ev.valor_pago = evento.valor_previsto
-                    ev.save()
-                else:
-                    form.save()
-                messages.success(request, "Entrega Registrada com sucesso")
-                return redirect('contrato_fornecedor_detalhe', pk=contrato.pk)
+            form.save()
+            messages.success(request, "Entrega Registrada com sucesso")
+            return redirect('contrato_fornecedor_detalhe', pk=contrato.pk)
         else:
             messages.error(request, "Erro ao registrar a entrega!")
     else:
@@ -6223,6 +6387,7 @@ def registrar_entrega(request, pk):
         "boletins_detalhados": boletins_detalhados,
         "has_reprovacao_coordenador": has_reprovacao_coordenador,
         "has_reprovacao_gerente": has_reprovacao_gerente,
+        "tem_reprovacao_diretor": tem_reprovacao_diretor,
         "notas_fiscais": notas_fiscais,
     })
 
@@ -6933,7 +7098,7 @@ def download_bms_aprovados(request):
                 zipf.writestr(nome_arquivo_zip, conteudo)
 
             except Exception as e:
-                print(f"âš ï¸ Erro ao adicionar BM {bm.id} ao ZIP: {e}")
+                print(f"⚠ Erro ao adicionar BM {bm.id} ao ZIP: {e}")
 
     buffer_zip.seek(0)
 
@@ -7296,7 +7461,7 @@ def cadastrar_bm(request, contrato_id, evento_id):
 
             except Exception as e:
                 print("Erro ao enviar e-mail:", e)
-                messages.error(request, "âš  Não foi possÃ­vel enviar o e-mail aos gestores.")
+                messages.error(request, "⚠ Não foi possível enviar o e-mail aos gestores.")
             return JsonResponse({"success": True})
 
         else:
@@ -7335,6 +7500,14 @@ def cadastrar_nf(request, evento_id):
     evento = get_object_or_404(Evento, id=evento_id)
     contrato = get_object_or_404(ContratoTerceiros, id=evento.contrato_terceiro.id)
 
+    def atualizar_evento_com_base_na_nf(nf_obj):
+        if not nf_obj.financeiro_autorizou:
+            return
+        evento.valor_pago = nf_obj.valor_pago
+        evento.data_pagamento = nf_obj.data_pagamento
+        evento.justificativa = nf_obj.observacao
+        evento.save(update_fields=["valor_pago", "data_pagamento", "justificativa"])
+
     if request.method == "POST":
         form = NFForm(request.POST, request.FILES, evento=evento)
         if form.is_valid():
@@ -7342,6 +7515,7 @@ def cadastrar_nf(request, evento_id):
             nf.contrato = contrato
             nf.evento = evento
             nf.save()
+            atualizar_evento_com_base_na_nf(nf)
 
             # ==============================
             # ENVIO DE E-MAIL AUTOMÁTICO
@@ -7360,7 +7534,7 @@ def cadastrar_nf(request, evento_id):
                     f"A nota fiscal do evento '{evento.descricao or 'Sem descrição'}'\n"
                     f"do contrato: {contrato}\n\n"
                     f"Foi cadastrada por: {request.user.get_full_name() or request.user.username} (Financeiro).\n\n"
-                    f"Data de pagamento: {evento.data_pagamento}\n"
+                    f"Data de pagamento: {nf.data_pagamento}\n"
                     f"Valor: R$ {nf.valor_pago}"
                 )
 
@@ -7441,7 +7615,12 @@ def editar_nf(request, nf_id):
     if request.method == "POST":
         form = NFForm(request.POST, request.FILES, evento=evento, instance=nf)
         if form.is_valid():
-            form.save()
+            nf = form.save()
+            if nf.financeiro_autorizou:
+                evento.valor_pago = nf.valor_pago
+                evento.data_pagamento = nf.data_pagamento
+                evento.justificativa = nf.observacao
+                evento.save(update_fields=["valor_pago", "data_pagamento", "justificativa"])
             return JsonResponse({"success": True})
         return JsonResponse({"success": False, "errors": form.errors})
 

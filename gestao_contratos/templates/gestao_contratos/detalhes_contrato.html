@@ -96,6 +96,12 @@
             {% if contrato_doc.arquivo_contrato %}
                 <a href="{{ contrato_doc.arquivo_contrato.url }}" target="_blank" class="btn btn-sm btn-outline-primary">Ver Contrato em PDF</a>
             {% endif %}
+            {% if contrato_doc.arquivo_contrato_assinado %}
+                <a href="{{ contrato_doc.arquivo_contrato_assinado.url }}" target="_blank" class="btn btn-sm btn-outline-success">Ver Contrato Assinado</a>
+            {% endif %}
+            {% if documento_bm and documento_bm.minuta_boletim_assinado %}
+                <a href="{{ documento_bm.minuta_boletim_assinado.url }}" target="_blank" class="btn btn-sm btn-outline-success">Ver BM Assinado</a>
+            {% endif %}
             <hr>
             <!-- Justificativa e aprovação da gerência -->
             <div>

@@ -721,7 +721,10 @@ class DocumentoContratoTerceiroForm(forms.ModelForm):
 
     class Meta:
         model = DocumentoContratoTerceiro
-        fields = ["numero_contrato", "objeto", "arquivo_contrato", "observacao", "valor_total"]
+        fields = ["numero_contrato", "objeto", "arquivo_contrato", "arquivo_contrato_assinado", "observacao", "valor_total"]
+        widgets = {
+            "arquivo_contrato_assinado": forms.ClearableFileInput(attrs={"class": "form-control"}),
+        }
 
     def clean_valor_total(self):
         valor = self.cleaned_data.get("valor_total")
@@ -740,9 +743,10 @@ class DocumentoContratoTerceiroForm(forms.ModelForm):
 class DocumentoBMForm(forms.ModelForm):
     class Meta:
         model = DocumentoBM
-        fields = ['minuta_boletim']
+        fields = ['minuta_boletim', 'minuta_boletim_assinado']
         widgets = {
             'minuta_boletim': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'minuta_boletim_assinado': forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }
 
 
@@ -807,36 +811,18 @@ class EventoPrevisaoForm(forms.ModelForm):
 
 
 class EventoEntregaForm(forms.ModelForm):
-    valor_pago = forms.CharField(
-        required=False,
-        widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"}),
-    )
-
     class Meta:
         model = Evento
         fields = [
-            "observacao", "caminho_evidencia", "justificativa", "avaliacao",
+            "observacao", "caminho_evidencia", "avaliacao",
             "data_entrega", "realizado", "com_atraso",
-            "valor_pago", "data_pagamento"
         ]
         widgets = {
             "caminho_evidencia": forms.Textarea(attrs={"class": "form-control", "rows": 1}),
-            "justificativa": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "avaliacao": forms.Select(attrs={"class": "form-select"}),
             "data_entrega": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
-            "data_pagamento": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance and self.instance.data_pagamento:
-            self.initial['data_pagamento'] = self.instance.data_pagamento.strftime('%Y-%m-%d')
-        if self.instance and self.instance.valor_pago is not None:
-            self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
-
-    def clean_valor_pago(self):
-        return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
 
@@ -951,6 +937,9 @@ class NFForm(forms.ModelForm):
             self.fields["bm"].queryset = BM.objects.none()
         if self.instance and self.instance.valor_pago is not None:
             self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+        self.fields["financeiro_autorizou"].label = "Valor foi pago ao fornecedor"
+        self.fields["financeiro_autorizou"].required = False
+        self.fields["nf_dentro_prazo"].required = False
 
     def clean_valor_pago(self):
         return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))

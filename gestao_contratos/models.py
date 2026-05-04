@@ -970,6 +970,11 @@ class DocumentoBM(models.Model):
         blank=True,
         null=True
     )
+    minuta_boletim_assinado = models.FileField(
+        upload_to='Minuta boletim/assinados/',
+        blank=True,
+        null=True
+    )
 
     status_coordenador = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
     data_aprovacao_coordenador = models.DateTimeField(null=True, blank=True)
@@ -1147,6 +1152,11 @@ class DocumentoContratoTerceiro(models.Model):
     arquivo_contrato = models.FileField(
         upload_to="contratos/",
         verbose_name="Contrato em PDF",
+        null=True, blank=True
+    )
+    arquivo_contrato_assinado = models.FileField(
+        upload_to="contratos/assinados/",
+        verbose_name="Contrato assinado em PDF",
         null=True, blank=True
     )
     observacao = models.TextField(null=True, blank=True)

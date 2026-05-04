@@ -51,9 +51,9 @@
                 <th>Número</th>
                 <th>Data do Pagamento</th>
                 <th>Valor do BM</th>
-                <th>Status Líder / Gerente-Líder</th>
+                <th>Status Líder de Contrato</th>
                 {% if tem_reprovacao_coordenador %}
-                  <th>Justificativa Líder / Gerente-Líder</th>
+                  <th>Justificativa Líder de Contrato</th>
                 {% endif %}
                 <th>Status Gerente</th>
                 {% if tem_reprovacao_gerente %}
@@ -140,6 +140,9 @@
                   <td>
                     {% if can_approve_bm_as_lider %}
                         <div class="d-flex gap-1">
+                            <small class="text-muted d-block mb-2 w-100">
+                                Basta uma aprovacao do lider ou do gerente.
+                            </small>
                             <button type="button" class="btn btn-sm btn-success btn-aprovar"
                                     data-bm-id="{{ bm.id }}"
                                     {% if not bm.operational_pending %}disabled{% endif %}>Aprovar</button>
@@ -150,6 +153,9 @@
 
                     {% elif can_approve_bm_as_gerente %}
                         <div class="d-flex gap-1">
+                            <small class="text-muted d-block mb-2 w-100">
+                                Basta uma aprovacao do lider ou do gerente.
+                            </small>
                             <button type="button" class="btn btn-sm btn-success btn-aprovar"
                                     data-bm-id="{{ bm.id }}"
                                     {% if not bm.operational_pending %}disabled{% endif %}>Aprovar</button>
@@ -558,6 +564,3 @@ document.addEventListener("DOMContentLoaded", function() {
 
 
 {% endblock %}
-
-
-

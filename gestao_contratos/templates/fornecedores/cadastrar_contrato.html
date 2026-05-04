@@ -6,6 +6,13 @@
 
     <p><strong>Solicitação:</strong> {{ solicitacao.contrato }}</p>
     <p><strong>Fornecedor Selecionado:</strong> {{ fornecedor.nome }}</p>
+    {% if proposta_escolhida and proposta_escolhida.arquivo_proposta %}
+    <p>
+        <a href="{{ proposta_escolhida.arquivo_proposta.url }}" target="_blank" class="btn btn-outline-primary btn-sm">
+            Baixar proposta do fornecedor
+        </a>
+    </p>
+    {% endif %}
 
     <form method="post" enctype="multipart/form-data" class="mt-3">
         {% csrf_token %}
@@ -68,6 +75,27 @@
                 {% if not contrato %}required{% endif %}
             >
         </div>
+
+        {% if allow_signed_upload %}
+        <div class="alert alert-info">
+            As minutas do contrato e do BM j&aacute; foram aprovadas pela ger&ecirc;ncia. Agora insira o arquivo assinado do contrato.
+        </div>
+        <div class="mb-3">
+            <label for="arquivo_contrato_assinado" class="form-label">Arquivo do Contrato Assinado (PDF)</label>
+            {% if contrato and contrato.arquivo_contrato_assinado %}
+                <p>J&aacute; existe um arquivo assinado:
+                    <a href="{{ contrato.arquivo_contrato_assinado.url }}" target="_blank">Ver atual</a>
+                </p>
+            {% endif %}
+            <input
+                type="file"
+                id="arquivo_contrato_assinado"
+                name="arquivo_contrato_assinado"
+                accept="application/pdf"
+                class="form-control"
+            >
+        </div>
+        {% endif %}
 
         <div class="d-flex gap-2 flex-wrap">
             <button type="submit" class="btn btn-success">

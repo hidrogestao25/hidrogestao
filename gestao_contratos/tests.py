@@ -59,6 +59,7 @@ from .views import (
     criar_contrato_se_aprovado_minuta,
     format_request_line,
     get_week_ranges,
+    get_signed_files_pending_status,
     is_request_concluded,
     send_request_notification_to_management,
     user_shares_center_with_coordinator,
@@ -376,17 +377,14 @@ class MoneyFieldNormalizationTests(BaseUserTestCase):
             data={
                 "observacao": "Entrega validada",
                 "caminho_evidencia": "Pasta/Arquivo",
-                "justificativa": "",
                 "avaliacao": "Aprovado",
                 "data_entrega": "2026-04-20",
                 "realizado": "on",
                 "com_atraso": "",
-                "valor_pago": "1.234,56",
-                "data_pagamento": "2026-04-22",
             },
         )
         self.assertTrue(evento_form.is_valid(), evento_form.errors)
-        self.assertEqual(evento_form.cleaned_data["valor_pago"], Decimal("1234.56"))
+        self.assertEqual(evento_form.cleaned_data["avaliacao"], "Aprovado")
 
         registro_os_form = RegistroEntregaOSForm(
             instance=self.os,
@@ -463,23 +461,20 @@ class MoneyFieldNormalizationTests(BaseUserTestCase):
         self.assertTrue(ordem_servico_form.is_valid(), ordem_servico_form.errors)
         self.assertEqual(ordem_servico_form.cleaned_data["valor"], Decimal("6789.01"))
 
-    def test_evento_entrega_tambem_aceita_formato_antigo_com_ponto_decimal(self):
+    def test_evento_entrega_aceita_fluxo_atual_sem_campos_financeiros(self):
         form = EventoEntregaForm(
             instance=self.evento,
             data={
                 "observacao": "Entrega validada",
                 "caminho_evidencia": "Pasta/Arquivo",
-                "justificativa": "",
                 "avaliacao": "Aprovado",
                 "data_entrega": "2026-04-20",
                 "realizado": "on",
                 "com_atraso": "",
-                "valor_pago": "480.00",
-                "data_pagamento": "2026-04-22",
             },
         )
         self.assertTrue(form.is_valid(), form.errors)
-        self.assertEqual(form.cleaned_data["valor_pago"], Decimal("480.00"))
+        self.assertNotIn("valor_pago", form.fields)
 
 
 class MultipleCoordenadoresContratoTests(BaseUserTestCase):
@@ -2049,6 +2044,31 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         self.assertContains(response, f"Aditivo #{aditivo_sem_documento.id}")
         self.assertContains(response, f"Aditivo #{aditivo_reprovado.id}")
 
+    def test_home_suprimento_lista_solicitacoes_aguardando_arquivos_assinados(self):
+        solicitacao_prospeccao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Prospecção aguardando assinaturas",
+            status="Aguardando Arquivos Assinados",
+        )
+        solicitacao_contrato = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Contratação aguardando assinaturas",
+            status="Aguardando Arquivos Assinados",
+        )
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(solicitacao_prospeccao, response.context["solicitacoes_prospeccao"])
+        self.assertIn(solicitacao_contrato, response.context["solicitacoes_contrato"])
+        self.assertContains(response, f"Prospecção #{solicitacao_prospeccao.id}")
+        self.assertContains(response, f"Contrato #{solicitacao_contrato.id}")
+
 
 class PrevisaoPagamentosTests(BaseUserTestCase):
     def setUp(self):
@@ -2613,7 +2633,50 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         self.assertTrue(response.context["is_financeiro"])
         self.assertEqual(response.context["painel_titulo"], "Painel do Financeiro")
         self.assertContains(response, "Painel do Financeiro")
-        self.assertIn(self.bm_aprovado, response.context["eventos_sem_nf"])
+        self.assertIn(self.evento, response.context["eventos_sem_nf"])
+
+    def test_home_financeiro_exibe_evento_com_pagamento_aprovado_sem_nf_quando_so_lider_aprovou(self):
+        evento_lider = self.create_event(
+            contrato=self.contrato_fornecedor,
+            empresa_terceira=self.fornecedor,
+            data_prevista=timezone.localdate(),
+            realizado=True,
+        )
+        BM.objects.create(
+            contrato=self.contrato_fornecedor,
+            evento=evento_lider,
+            numero_bm=2,
+            parcela_paga=1,
+            valor_pago=Decimal("500.00"),
+            data_pagamento=timezone.localdate(),
+            status_coordenador="aprovado",
+            status_gerente="pendente",
+            data_aprovacao_coordenador=timezone.now(),
+            aprovacao_pagamento="aprovado",
+            data_aprovacao_diretor=timezone.now(),
+        )
+
+        self.client.force_login(self.financeiro)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(evento_lider, response.context["eventos_sem_nf"])
+
+    def test_home_financeiro_nao_exibe_evento_que_ja_tem_nf(self):
+        NF.objects.create(
+            contrato=self.contrato_fornecedor,
+            evento=self.evento,
+            bm=self.bm_aprovado,
+            valor_pago=Decimal("1200.00"),
+            parcela_paga=1,
+            data_pagamento=timezone.localdate(),
+        )
+
+        self.client.force_login(self.financeiro)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(self.evento, response.context["eventos_sem_nf"])
 
     def test_lista_contratos_financeiro_ve_todos_os_contratos(self):
         self.client.force_login(self.financeiro)
@@ -2742,9 +2805,21 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         self.assertEqual(nf.contrato, self.contrato_fornecedor)
         self.assertEqual(nf.evento, self.evento)
         self.assertEqual(nf.valor_pago, Decimal("1200.00"))
+        self.evento.refresh_from_db()
+        self.assertEqual(self.evento.valor_pago, Decimal("1200.00"))
+        self.assertEqual(self.evento.data_pagamento, date(2026, 4, 20))
+        self.assertEqual(self.evento.justificativa, "NF do evento")
         self.assertEqual(len(mail.outbox), 2)
         self.assertEqual(mail.outbox[0].to, [self.suprimento.email])
         self.assertEqual(mail.outbox[1].to, [self.coordenador.email])
+
+    def test_popup_cadastrar_nf_exibe_campo_valor_pago_com_classe_money(self):
+        self.client.force_login(self.financeiro)
+
+        response = self.client.get(reverse("cadastrar_nf", args=[self.evento.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="form-control money"')
 
     def test_financeiro_edita_nf_evento(self):
         nf = NF.objects.create(
@@ -2775,6 +2850,10 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         nf.refresh_from_db()
         self.assertEqual(nf.valor_pago, Decimal("1350.00"))
         self.assertEqual(nf.parcela_paga, 2)
+        self.evento.refresh_from_db()
+        self.assertEqual(self.evento.valor_pago, Decimal("1350.00"))
+        self.assertEqual(self.evento.data_pagamento, date(2026, 4, 25))
+        self.assertEqual(self.evento.justificativa, "NF ajustada")
 
     def test_financeiro_deleta_nf_evento_e_retorna_para_detalhes_entrega(self):
         nf = NF.objects.create(
@@ -3076,6 +3155,53 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["evento"], self.evento)
 
+    def test_registrar_entrega_evento_expoe_reprovacao_diretor_no_contexto(self):
+        BM.objects.create(
+            contrato=self.contrato_terceiro,
+            evento=self.evento,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("500.00"),
+            data_pagamento=date(2026, 4, 22),
+            aprovacao_pagamento="reprovado",
+            justificativa_reprovacao_diretor="Pagamento bloqueado para revisão.",
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(reverse("registrar_entrega", args=[self.evento.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["tem_reprovacao_diretor"])
+        self.assertContains(response, "Justificativa Diretor")
+
+    def test_cadastrar_bm_nao_duplica_registro_no_banco(self):
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("cadastrar_bm", args=[self.contrato_terceiro.pk, self.evento.pk]),
+            {
+                "numero_bm": 10,
+                "parcela_paga": 1,
+                "valor_pago": "500,00",
+                "data_pagamento": "2026-04-22",
+                "data_inicial_medicao": "2026-04-01",
+                "data_final_medicao": "2026-04-20",
+                "observacao": "BM de teste sem duplicidade",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(response.content, {"success": True})
+
+        bms = BM.objects.filter(
+            contrato=self.contrato_terceiro,
+            evento=self.evento,
+            numero_bm=10,
+            parcela_paga=1,
+        )
+        self.assertEqual(bms.count(), 1)
+
     def test_registrar_entrega_evento_como_gerente_contrato_atualiza_campos(self):
         self.client.force_login(self.gerente_contrato)
 
@@ -3084,12 +3210,9 @@ class DeliveryRegistrationTests(BaseUserTestCase):
             {
                 "observacao": "Entrega concluída",
                 "caminho_evidencia": "C:/evidencias/entrega.pdf",
-                "justificativa": "",
                 "avaliacao": "Aprovado",
                 "data_entrega": "2026-04-21",
                 "realizado": "on",
-                "valor_pago": "480.00",
-                "data_pagamento": "2026-04-22",
             },
             follow=False,
         )
@@ -3103,7 +3226,8 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         self.assertTrue(self.evento.realizado)
         self.assertEqual(self.evento.avaliacao, "Aprovado")
         self.assertEqual(self.evento.data_entrega, date(2026, 4, 21))
-        self.assertEqual(self.evento.valor_pago, Decimal("480.00"))
+        self.assertIsNone(self.evento.valor_pago)
+        self.assertIsNone(self.evento.data_pagamento)
 
     def test_registrar_entrega_evento_como_suprimento_atualiza_campos(self):
         self.client.force_login(self.suprimento)
@@ -3113,12 +3237,9 @@ class DeliveryRegistrationTests(BaseUserTestCase):
             {
                 "observacao": "Entrega registrada pelo suprimento",
                 "caminho_evidencia": "C:/evidencias/suprimento.pdf",
-                "justificativa": "",
                 "avaliacao": "Aprovado",
                 "data_entrega": "2026-04-19",
                 "realizado": "on",
-                "valor_pago": "500.00",
-                "data_pagamento": "2026-04-22",
             },
             follow=False,
         )
@@ -3132,7 +3253,8 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         self.assertTrue(self.evento.realizado)
         self.assertEqual(self.evento.observacao, "Entrega registrada pelo suprimento")
         self.assertEqual(self.evento.data_entrega, date(2026, 4, 19))
-        self.assertEqual(self.evento.valor_pago, Decimal("500.00"))
+        self.assertIsNone(self.evento.valor_pago)
+        self.assertIsNone(self.evento.data_pagamento)
 
     def test_registrar_entrega_os_como_gerente_lider_finaliza_com_atraso(self):
         self.client.force_login(self.gerente_lider)
@@ -3568,7 +3690,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertEqual(documento.prazo_fim, date(2026, 6, 1))
         self.assertEqual(documento.valor_total, Decimal("1500.00"))
         self.solicitacao_contrato.refresh_from_db()
-        self.assertEqual(self.solicitacao_contrato.status, "Planejamento do contrato")
+        self.assertEqual(self.solicitacao_contrato.status, "Planejamento do Contrato")
 
     def test_cadastrar_contrato_cria_documento_para_solicitacao_prospeccao(self):
         self.client.force_login(self.suprimento)
@@ -3595,6 +3717,104 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertEqual(documento.prazo_fim, date(2026, 6, 1))
         self.assertEqual(documento.valor_total, Decimal("2345.67"))
 
+    def test_cadastrar_contrato_com_apenas_arquivo_assinado_nao_envia_email_de_nova_minuta(self):
+        self.solicitacao_prospeccao.aprovacao_gerencia = True
+        self.solicitacao_prospeccao.status = "Aguardando Arquivos Assinados"
+        self.solicitacao_prospeccao.save(update_fields=["aprovacao_gerencia", "status"])
+        DocumentoBM.objects.create(
+            solicitacao=self.solicitacao_prospeccao,
+            status_gerente="aprovado",
+            minuta_boletim=SimpleUploadedFile("bm.pdf", b"%PDF-1.4", content_type="application/pdf"),
+            minuta_boletim_assinado=SimpleUploadedFile("bm-assinado.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao=self.solicitacao_prospeccao,
+            numero_contrato="MIN-PROS-ASS-001",
+            objeto="Objeto da prospecção",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("2345.67"),
+            arquivo_contrato=SimpleUploadedFile("minuta.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
+        PropostaFornecedor.objects.create(
+            solicitacao=self.solicitacao_prospeccao,
+            fornecedor=self.fornecedor,
+            condicao_pagamento="30",
+        )
+        mail.outbox = []
+
+        self.client.force_login(self.suprimento)
+        response = self.client.post(
+            reverse("cadastrar_contrato", args=[self.solicitacao_prospeccao.pk]),
+            {
+                "numero_contrato": "MIN-PROS-ASS-001",
+                "objeto": "Objeto da prospecção",
+                "valor_total": "2.345,67",
+                "observacao": "Contrato assinado",
+                "arquivo_contrato_assinado": SimpleUploadedFile(
+                    "contrato-assinado.pdf",
+                    b"%PDF-1.4 signed",
+                    content_type="application/pdf",
+                ),
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn(
+            "Foi anexado uma nova minuta de contrato",
+            [email.subject for email in mail.outbox],
+        )
+
+    def test_cadastrar_minuta_contrato_com_apenas_arquivo_assinado_nao_envia_email_de_nova_minuta(self):
+        self.solicitacao_contrato.aprovacao_gerencia = True
+        self.solicitacao_contrato.status = "Aguardando Arquivos Assinados"
+        self.solicitacao_contrato.save(update_fields=["aprovacao_gerencia", "status"])
+        DocumentoBM.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            status_gerente="aprovado",
+            minuta_boletim=SimpleUploadedFile("bm-contrato.pdf", b"%PDF-1.4", content_type="application/pdf"),
+            minuta_boletim_assinado=SimpleUploadedFile("bm-contrato-assinado.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="MIN-CONTR-ASS-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+            arquivo_contrato=SimpleUploadedFile("minuta-contrato.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
+        PropostaFornecedor.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            fornecedor=self.fornecedor,
+            condicao_pagamento="30",
+        )
+        mail.outbox = []
+
+        self.client.force_login(self.suprimento)
+        response = self.client.post(
+            reverse("cadastrar_minuta_contrato", args=[self.solicitacao_contrato.pk]),
+            {
+                "numero_contrato": "MIN-CONTR-ASS-001",
+                "objeto": "Objeto da contratação",
+                "valor_total": "1.500,00",
+                "observacao": "Contrato assinado",
+                "arquivo_contrato_assinado": SimpleUploadedFile(
+                    "contrato-contratacao-assinado.pdf",
+                    b"%PDF-1.4 signed",
+                    content_type="application/pdf",
+                ),
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn(
+            "Foi anexado uma nova minuta de contrato",
+            [email.subject for email in mail.outbox],
+        )
+
 
 class AutomaticContractCreationTests(BaseUserTestCase):
     def setUp(self):
@@ -3602,14 +3822,22 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         self.lider = self.create_user("liderauto", "lider_contrato")
         self.gerente_contrato = self.create_user("gcauto", "gerente_contrato")
         self.suprimento = self.create_user("supauto", "suprimento")
+        self.diretoria = self.create_user("dirauto", "diretoria")
+        self.gerente_tecnico = self.create_user("gtauto", "gerente_lider")
         self.coordenador = self.create_user("coordauto", "coordenador")
         self.coordenador.centros.add(self.centro)
+        self.gerente_tecnico.centros.add(self.centro)
         self.contrato_base = self.create_contract(
             codigo="PRJ-AUTO",
             coordenador=self.coordenador,
             lider_contrato=self.lider,
         )
         self.fornecedor = self.create_supplier(nome="Fornecedor Auto")
+        self.signed_pdf = SimpleUploadedFile(
+            "assinado.pdf",
+            b"%PDF-1.4 signed file",
+            content_type="application/pdf",
+        )
 
     def test_criar_contrato_se_aprovado_gera_contrato_para_prospeccao(self):
         solicitacao = SolicitacaoProspeccao.objects.create(
@@ -3624,6 +3852,11 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         DocumentoBM.objects.create(
             solicitacao=solicitacao,
             status_gerente="aprovado",
+            minuta_boletim_assinado=SimpleUploadedFile(
+                "bm-assinado.pdf",
+                b"%PDF-1.4 bm signed",
+                content_type="application/pdf",
+            ),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao=solicitacao,
@@ -3632,6 +3865,11 @@ class AutomaticContractCreationTests(BaseUserTestCase):
             prazo_inicio=date(2026, 5, 1),
             prazo_fim=date(2026, 6, 1),
             valor_total=Decimal("3210.00"),
+            arquivo_contrato_assinado=SimpleUploadedFile(
+                "contrato-assinado.pdf",
+                b"%PDF-1.4 contract signed",
+                content_type="application/pdf",
+            ),
         )
         PropostaFornecedor.objects.create(
             solicitacao=solicitacao,
@@ -3654,11 +3892,23 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         self.assertEqual(contrato.num_contrato, "AUTO-PROS-001")
         self.assertEqual(contrato.valor_total, Decimal("3210.00"))
         self.assertEqual(contrato.status, "ativo")
+        self.assertIn("contratos/assinados/", str(contrato.num_contrato_arquivo))
         solicitacao.refresh_from_db()
         self.assertEqual(solicitacao.status, "Onboarding")
         evento.refresh_from_db()
         self.assertEqual(evento.contrato_terceiro, contrato)
         self.assertEqual(len(mail.outbox), 1)
+        self.assertCountEqual(
+            mail.outbox[0].to,
+            [
+                self.suprimento.email,
+                self.gerente_contrato.email,
+                self.diretoria.email,
+                self.gerente_tecnico.email,
+                self.coordenador.email,
+                self.lider.email,
+            ],
+        )
 
     def test_criar_contrato_se_aprovado_minuta_gera_contrato_para_contratacao(self):
         solicitacao = SolicitacaoContrato.objects.create(
@@ -3675,6 +3925,11 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         DocumentoBM.objects.create(
             solicitacao_contrato=solicitacao,
             status_gerente="aprovado",
+            minuta_boletim_assinado=SimpleUploadedFile(
+                "bm-assinado-contrato.pdf",
+                b"%PDF-1.4 bm signed contract",
+                content_type="application/pdf",
+            ),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao_contrato=solicitacao,
@@ -3683,6 +3938,11 @@ class AutomaticContractCreationTests(BaseUserTestCase):
             prazo_inicio=date(2026, 7, 1),
             prazo_fim=date(2026, 8, 1),
             valor_total=Decimal("4567.00"),
+            arquivo_contrato_assinado=SimpleUploadedFile(
+                "contrato-assinado-contratacao.pdf",
+                b"%PDF-1.4 contract signed contratacao",
+                content_type="application/pdf",
+            ),
         )
         PropostaFornecedor.objects.create(
             solicitacao_contrato=solicitacao,
@@ -3705,11 +3965,180 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         self.assertEqual(contrato.num_contrato, "AUTO-CONTR-001")
         self.assertTrue(contrato.guarda_chuva)
         self.assertEqual(contrato.valor_total, Decimal("4567.00"))
+        self.assertIn("contratos/assinados/", str(contrato.num_contrato_arquivo))
         solicitacao.refresh_from_db()
         self.assertEqual(solicitacao.status, "Onboarding")
         evento.refresh_from_db()
         self.assertEqual(evento.contrato_terceiro, contrato)
         self.assertEqual(len(mail.outbox), 1)
+        self.assertCountEqual(
+            mail.outbox[0].to,
+            [
+                self.suprimento.email,
+                self.gerente_contrato.email,
+                self.diretoria.email,
+                self.gerente_tecnico.email,
+                self.coordenador.email,
+                self.lider.email,
+            ],
+        )
+
+    def test_criar_contrato_se_aprovado_aguarda_arquivos_assinados(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            fornecedor_escolhido=self.fornecedor,
+            descricao="Prospecção aguardando assinaturas",
+            status="Aprovação Final",
+            aprovacao_gerencia=True,
+        )
+        DocumentoBM.objects.create(solicitacao=solicitacao, status_gerente="aprovado")
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao=solicitacao,
+            numero_contrato="AUTO-PEND-001",
+            objeto="Objeto pendente",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1000.00"),
+        )
+
+        contrato = criar_contrato_se_aprovado(solicitacao)
+
+        self.assertIsNone(contrato)
+        solicitacao.refresh_from_db()
+        self.assertEqual(solicitacao.status, get_signed_files_pending_status())
+
+    def test_upload_dos_arquivos_assinados_conclui_criacao_do_contrato(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            fornecedor_escolhido=self.fornecedor,
+            descricao="Fluxo com assinados",
+            status=get_signed_files_pending_status(),
+            aprovacao_gerencia=True,
+            data_inicio=date(2026, 5, 1),
+            data_fim=date(2026, 6, 1),
+        )
+        DocumentoBM.objects.create(
+            solicitacao=solicitacao,
+            status_gerente="aprovado",
+            minuta_boletim=SimpleUploadedFile("bm.pdf", b"%PDF-1.4 bm", content_type="application/pdf"),
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao=solicitacao,
+            numero_contrato="AUTO-UP-001",
+            objeto="Objeto upload",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+            arquivo_contrato=SimpleUploadedFile("contrato.pdf", b"%PDF-1.4 contrato", content_type="application/pdf"),
+        )
+        PropostaFornecedor.objects.create(
+            solicitacao=solicitacao,
+            fornecedor=self.fornecedor,
+            condicao_pagamento="30",
+        )
+
+        self.client.force_login(self.suprimento)
+        response_contrato = self.client.post(
+            reverse("cadastrar_contrato", args=[solicitacao.pk]),
+            {
+                "numero_contrato": "AUTO-UP-001",
+                "objeto": "Objeto upload",
+                "valor_total": "1.500,00",
+                "observacao": "",
+                "arquivo_contrato_assinado": SimpleUploadedFile(
+                    "contrato-final.pdf",
+                    b"%PDF-1.4 final contrato",
+                    content_type="application/pdf",
+                ),
+            },
+            follow=False,
+        )
+        self.assertEqual(response_contrato.status_code, 302)
+        response_bm = self.client.post(
+            reverse("inserir_minuta_bm", args=[solicitacao.pk]),
+            {
+                "minuta_boletim_assinado": SimpleUploadedFile(
+                    "bm-final.pdf",
+                    b"%PDF-1.4 final bm",
+                    content_type="application/pdf",
+                ),
+            },
+            follow=False,
+        )
+        self.assertEqual(response_bm.status_code, 302)
+        solicitacao.refresh_from_db()
+        contrato = ContratoTerceiros.objects.get(prospeccao=solicitacao)
+        self.assertEqual(solicitacao.status, "Onboarding")
+        self.assertIn("contratos/assinados/", str(contrato.num_contrato_arquivo))
+
+
+class SignedFilesDetailActionsTests(BaseUserTestCase):
+    def setUp(self):
+        self.suprimento = self.create_user("supdetailsigned", "suprimento")
+        self.coordenador = self.create_user("coordsigned", "coordenador")
+        self.lider = self.create_user("lidersigned", "lider_contrato")
+        self.centro = self.create_center()
+        self.coordenador.centros.add(self.centro)
+        self.contrato_base = self.create_contract(
+            codigo="PRJ-SIGNED-DETAIL",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+        self.fornecedor = self.create_supplier(nome="Fornecedor Signed Detail")
+
+    def test_detalhes_solicitacao_exibe_botoes_de_arquivos_assinados_para_suprimento(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            fornecedor_escolhido=self.fornecedor,
+            descricao="Prospecção aguardando assinados",
+            status="Aguardando Arquivos Assinados",
+        )
+        DocumentoBM.objects.create(solicitacao=solicitacao)
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao=solicitacao,
+            numero_contrato="DET-SIGNED-001",
+            objeto="Objeto",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1000.00"),
+        )
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("detalhes_solicitacao", args=[solicitacao.pk]))
+
+        self.assertContains(response, "Inserir BM Assinado")
+        self.assertContains(response, "Inserir Contrato Assinado")
+
+    def test_detalhes_solicitacao_contratacao_exibe_botoes_de_arquivos_assinados_para_suprimento(self):
+        solicitacao = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            fornecedor_escolhido=self.fornecedor,
+            descricao="Contratação aguardando assinados",
+            status="Aguardando Arquivos Assinados",
+        )
+        DocumentoBM.objects.create(solicitacao_contrato=solicitacao)
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=solicitacao,
+            numero_contrato="DET-SIGNED-002",
+            objeto="Objeto",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1000.00"),
+        )
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("detalhes_solicitacao_contrato", args=[solicitacao.pk]))
+
+        self.assertContains(response, "Inserir BM Assinado")
+        self.assertContains(response, "Inserir Contrato Assinado")
 
 
 class TemplateVisibilityTests(BaseUserTestCase):
