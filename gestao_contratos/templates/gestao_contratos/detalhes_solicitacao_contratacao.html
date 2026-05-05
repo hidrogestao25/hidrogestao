@@ -87,7 +87,7 @@ document.addEventListener("DOMContentLoaded", function() {
           {% elif solicitacao.status == "Aprovação Final" %}
             A gerência de contrato está avaliando as minutas desenvolvidas pela equipe de suprimento.
           {% elif solicitacao.status == "Aguardando Arquivos Assinados" %}
-            As minutas foram aprovadas pela gerÃªncia de contrato e a equipe de suprimento precisa anexar os arquivos assinados do contrato e do BM.
+            As minutas foram aprovadas pela gerÃªncia de contrato e a equipe de suprimento precisa anexar o contrato assinado.
           {% elif solicitacao.status == "Onboarding" %}
             As minutas foram ambas aprovadas e a equipe de suprimento está marcando uma reunião onboarding com todos os envolvidos.
           {% else %}
@@ -273,9 +273,6 @@ document.addEventListener("DOMContentLoaded", function() {
                               <th>Descrição</th>
                               <th>Data Prevista</th>
                               <th>Valor Previsto</th>
-                              <th>Realizado</th>
-                              <th>Com Atraso</th>
-                              <th>Valor Pago</th>
                               <th>Ações</th>
                           </tr>
                       </thead>
@@ -285,9 +282,6 @@ document.addEventListener("DOMContentLoaded", function() {
                               <td>{{ evento.descricao }}</td>
                               <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
                               <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
-                  <td>{% if evento.realizado %}Sim{% else %}Não{% endif %}</td>
-                  <td>{% if evento.com_atraso %}Sim{% else %}Não{% endif %}</td>
-                              <td>R$ {{ evento.valor_pago|default:"-" }}</td>
                               <td>
                                 {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_lider gerente_contrato' %}
                                 <a href="{% url 'duplicar_evento_solicitacao' evento.id %}" class="btn btn-sm btn-outline-secondary"
@@ -373,13 +367,6 @@ document.addEventListener("DOMContentLoaded", function() {
   {% endif %}
 
   {% if solicitacao.status == "Aguardando Arquivos Assinados" %}
-    {% if solicitacao.minuta_boletins_medicao_contrato %}
-      {% if solicitacao.minuta_boletins_medicao_contrato.minuta_boletim_assinado %}
-        <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Atualizar BM Assinado</a>
-      {% else %}
-        <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Inserir BM Assinado</a>
-      {% endif %}
-    {% endif %}
     {% with contrato=solicitacao.minuta_contrato %}
       {% if contrato %}
         {% if contrato.arquivo_contrato_assinado %}
@@ -399,7 +386,13 @@ document.addEventListener("DOMContentLoaded", function() {
             <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
             <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
         </div>
+        {% if eventos %}
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
+        {% else %}
+        <div class="alert alert-warning mt-3 mb-0">
+            Cadastre ao menos um evento antes de aprovar esta solicitacao.
+        </div>
+        {% endif %}
         <button type="submit" name="acao" value="reprovar" class="btn btn-danger"
         onclick="return validarJustificativa('justificativa')">
             Reprovar
@@ -408,6 +401,32 @@ document.addEventListener("DOMContentLoaded", function() {
 {% endif %}
 
 <!-- Botões de aprovação para gerente -->
+{% if request.user.grupo == 'gerente_contrato' %}
+  {% if solicitacao.minuta_boletins_medicao_contrato %}
+    {% if solicitacao.minuta_boletins_medicao_contrato.status_gerente == 'pendente' %}
+      <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-primary mt-3">
+        Avaliar Minuta BM
+      </a>
+    {% else %}
+      <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-warning mt-3">
+        Revisar Minuta BM
+      </a>
+    {% endif %}
+  {% endif %}
+
+  {% if solicitacao.minuta_contrato %}
+    {% if not solicitacao.aprovacao_gerencia and not solicitacao.reprovacao_gerencia %}
+      <a href="{% url 'detalhes_minuta_contrato' solicitacao.id %}" class="btn btn-primary mt-3">
+        Avaliar Contrato
+      </a>
+    {% else %}
+      <a href="{% url 'detalhes_minuta_contrato' solicitacao.id %}" class="btn btn-warning mt-3">
+        Reavaliar Contrato
+      </a>
+    {% endif %}
+  {% endif %}
+{% endif %}
+
 {% if request.user.grupo == 'diretoria' and solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
     <form method="post">
         {% csrf_token %}
@@ -415,7 +434,13 @@ document.addEventListener("DOMContentLoaded", function() {
             <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
             <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
         </div>
+        {% if eventos %}
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
+        {% else %}
+        <div class="alert alert-warning mt-3 mb-0">
+            Cadastre ao menos um evento antes de aprovar esta solicitacao.
+        </div>
+        {% endif %}
         <button type="submit" name="acao" value="reprovar" class="btn btn-danger"
         onclick="return validarJustificativa('justificativa')">
             Reprovar

@@ -224,6 +224,54 @@
 
             <div class="col-md-6 mb-4 animated-card">
                 <div class="card shadow-sm dashboard-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">BMs para entrega ate a proxima data de pagamento</h5>
+                    </div>
+
+                    <div class="card-body">
+                        {% if proxima_data_pagamento_bm %}
+                            <p class="mb-3">
+                                <span class="badge bg-info text-dark">
+                                    Corte: {{ proxima_data_pagamento_bm|date:"d/m/Y" }}
+                                </span>
+                            </p>
+                        {% endif %}
+
+                        {% if eventos_bm_para_entrega %}
+                            <ul class="list-group list-group-flush">
+                                {% for evento in eventos_bm_para_entrega %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>{{ evento.empresa_terceira }}</strong><br>
+                                            {% if evento.descricao %}
+                                                <small>{{ evento.descricao|truncatechars:60 }}</small><br>
+                                            {% endif %}
+                                            {% if evento.data_prevista %}
+                                                <span class="badge bg-secondary">
+                                                    Entrega: {{ evento.data_prevista|date:"d/m/Y" }}
+                                                </span>
+                                            {% endif %}
+                                            <span class="badge bg-info text-dark">
+                                                Pagamento previsto: {{ evento.data_prevista_pagamento|date:"d/m/Y" }}
+                                            </span>
+                                        </div>
+
+                                        <a href="{% url 'registrar_entrega' evento.id %}"
+                                           class="btn btn-sm btn-outline-info">
+                                            Ver evento
+                                        </a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted mb-0">Nenhum BM pendente ate a proxima data de pagamento.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 mb-4 animated-card">
+                <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-danger text-white">
                         <h5 class="mb-0">Entregas Atrasadas</h5>
                     </div>

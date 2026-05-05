@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-1">Indicadores de Suprimento</h2>
+      <p class="text-muted mb-0">Visao consolidada do fluxo de solicitacoes, contratos e pendencias operacionais.</p>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Prazo medio geral</h6>
+          <div class="display-6 fw-bold">
+            {% if media_prazo_geral is not None %}{{ media_prazo_geral }} dias{% else %}-{% endif %}
+          </div>
+          <small class="text-muted">Da solicitacao at&eacute; a entrada em onboarding.</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Prazo medio prospeccao</h6>
+          <div class="display-6 fw-bold">
+            {% if media_prazo_prospeccao is not None %}{{ media_prazo_prospeccao }} dias{% else %}-{% endif %}
+          </div>
+          <small class="text-muted">Solicitacoes de prospeccao conclu&iacute;das.</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Prazo medio contratacao</h6>
+          <div class="display-6 fw-bold">
+            {% if media_prazo_contratacao is not None %}{{ media_prazo_contratacao }} dias{% else %}-{% endif %}
+          </div>
+          <small class="text-muted">Solicitacoes de contratacao conclu&iacute;das.</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Prazo medio de OS</h6>
+          <div class="display-6 fw-bold">
+            {% if media_prazo_os is not None %}{{ media_prazo_os }} dias{% else %}-{% endif %}
+          </div>
+          <small class="text-muted">Da abertura da solicitacao de OS at&eacute; a conclusao do fluxo.</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Prazo medio guarda-chuva</h6>
+          <div class="display-6 fw-bold">
+            {% if media_prazo_guarda_chuva is not None %}{{ media_prazo_guarda_chuva }} dias{% else %}-{% endif %}
+          </div>
+          <small class="text-muted">Da solicitacao guarda-chuva at&eacute; a entrada em onboarding.</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Backlog atual</h6>
+          <div class="display-6 fw-bold">{{ backlog_total }}</div>
+          <small class="text-muted">Solicitacoes ainda nao conclu&iacute;das.</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Retrabalho</h6>
+          <div class="display-6 fw-bold">{{ percentual_retrabalho }}%</div>
+          <small class="text-muted">{{ total_retrabalho }} solicitacoes com retorno ou reprova&ccedil;&atilde;o.</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Contratos ativos</h6>
+          <div class="display-6 fw-bold">{{ contratos_ativos_total }}</div>
+          <small class="text-muted">Valor total: R$ {{ valor_total_contratos_ativos|floatformat:2 }}</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">Eventos sem NF</h6>
+          <div class="display-6 fw-bold">{{ eventos_sem_nf_count }}</div>
+          <small class="text-muted">Pagamento aprovado e NF ainda n&atilde;o cadastrada.</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h6 class="text-muted">BMs pendentes</h6>
+          <div class="fw-bold mb-2">Operacional: {{ bms_pendentes_operacionais }}</div>
+          <div class="fw-bold">Diretoria: {{ bms_pendentes_diretoria }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header card-header-custom">
+          <strong>Status das solicitacoes de prospeccao</strong>
+        </div>
+        <div class="card-body">
+          <p class="mb-3"><strong>Total:</strong> {{ total_solicitacoes_prospeccao }}</p>
+          {% if prospeccao_status_rows %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th class="text-end">Quantidade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for status, quantidade in prospeccao_status_rows %}
+                <tr>
+                  <td>{{ status }}</td>
+                  <td class="text-end">{{ quantidade }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">Sem dados de prospeccao.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header card-header-custom">
+          <strong>Status das solicitacoes de contratacao</strong>
+        </div>
+        <div class="card-body">
+          <p class="mb-3"><strong>Total:</strong> {{ total_solicitacoes_contratacao }}</p>
+          {% if contratacao_status_rows %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th class="text-end">Quantidade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for status, quantidade in contratacao_status_rows %}
+                <tr>
+                  <td>{{ status }}</td>
+                  <td class="text-end">{{ quantidade }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">Sem dados de contratacao.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header card-header-custom">
+          <strong>Status das solicitacoes guarda-chuva</strong>
+        </div>
+        <div class="card-body">
+          <p class="mb-3"><strong>Total:</strong> {{ total_solicitacoes_guarda_chuva }}</p>
+          {% if guarda_chuva_status_rows %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th class="text-end">Quantidade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for status, quantidade in guarda_chuva_status_rows %}
+                <tr>
+                  <td>{{ status }}</td>
+                  <td class="text-end">{{ quantidade }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">Sem dados de guarda-chuva.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header card-header-custom">
+          <strong>Status das solicitacoes de OS</strong>
+        </div>
+        <div class="card-body">
+          <p class="mb-3"><strong>Total:</strong> {{ total_solicitacoes_os }}</p>
+          {% if os_status_rows %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th class="text-end">Quantidade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for status, quantidade in os_status_rows %}
+                <tr>
+                  <td>{{ status }}</td>
+                  <td class="text-end">{{ quantidade }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">Sem dados de OS.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-header card-header-custom">
+      <strong>Indicadores por usuario</strong>
+    </div>
+    <div class="card-body">
+      <p class="text-muted mb-3">Visao por usuario envolvido no fluxo das solicitacoes, com volume, backlog, retrabalho e prazo medio at&eacute; onboarding.</p>
+      {% if user_indicator_rows %}
+      <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Usuario</th>
+              <th>Grupo</th>
+              <th>Papeis</th>
+              <th class="text-end">Solicitacoes</th>
+              <th class="text-end">Em aberto</th>
+              <th class="text-end">Concluidas</th>
+              <th class="text-end">Retrabalho</th>
+              <th class="text-end">Prazo medio</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in user_indicator_rows %}
+            <tr>
+              <td>{{ item.usuario_nome }}</td>
+              <td>{{ item.grupo }}</td>
+              <td>{{ item.papeis }}</td>
+              <td class="text-end">{{ item.solicitacoes_vinculadas }}</td>
+              <td class="text-end">{{ item.em_aberto }}</td>
+              <td class="text-end">{{ item.concluidas }}</td>
+              <td class="text-end">{{ item.retrabalho }}</td>
+              <td class="text-end">
+                {% if item.media_prazo is not None %}{{ item.media_prazo }} dias{% else %}-{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">Ainda nao ha usuarios suficientes para consolidar esse indicador.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom">
+      <strong>Ultimos processos concluidos</strong>
+    </div>
+    <div class="card-body">
+      {% if latest_completed %}
+      <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Tipo</th>
+              <th>Solicitacao</th>
+              <th>Projeto</th>
+              <th>Fornecedor</th>
+              <th>Prazo (dias)</th>
+              <th>Entrou em onboarding em</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in latest_completed %}
+            <tr>
+              <td>{{ item.tipo }}</td>
+              <td>#{{ item.solicitacao_id }}</td>
+              <td>{{ item.projeto }}</td>
+              <td>{{ item.fornecedor }}</td>
+              <td>{{ item.dias }}</td>
+              <td>{{ item.concluido_em|date:"d/m/Y H:i" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">Ainda nao ha contratos com auditoria suficiente para calcular esse indicador.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

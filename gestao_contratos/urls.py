@@ -4,6 +4,7 @@ from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, 
 
 urlpatterns = [
     path('guia-permissoes/', views.guia_permissoes, name='guia_permissoes'),
+    path('indicadores-suprimento/', views.indicadores_suprimento, name='indicadores_suprimento'),
     path('contratos/', views.lista_contratos, name='lista_contratos'),
     path('contratos/novo/', ContratoCreateView.as_view(), name='novo_contrato'),
     path('contratos/criar-contrato/', views.add_contrato, name='add_contrato'),

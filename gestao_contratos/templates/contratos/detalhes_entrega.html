@@ -347,6 +347,8 @@
   </div>
 </div>
 
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -361,6 +363,25 @@ document.addEventListener("DOMContentLoaded", function() {
   function esconderLoading() {
     document.getElementById("loadingOverlay").style.display = "none";
   }
+
+  function aplicarMascaraMoeda(root = document) {
+    if (typeof jQuery === "undefined" || typeof jQuery.fn.inputmask === "undefined") {
+      return;
+    }
+
+    jQuery(root).find(".money").inputmask("currency", {
+      groupSeparator: ".",
+      radixPoint: ",",
+      digits: 2,
+      digitsOptional: false,
+      autoGroup: true,
+      rightAlign: false,
+      removeMaskOnSubmit: false,
+      placeholder: "0",
+    });
+  }
+
+  aplicarMascaraMoeda(document);
 
 
 
@@ -406,6 +427,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(html => {
 
           document.getElementById("nfModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("nfModalBody"));
 
           const nfForm = document.getElementById("nfForm");
 
@@ -448,6 +470,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(r => r.text())
         .then(html => {
           document.getElementById("editarNFModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("editarNFModalBody"));
 
           const form = document.getElementById("formEditarNF");
 

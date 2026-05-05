@@ -16,22 +16,6 @@
             {{ form.minuta_boletim }}
         </div>
 
-        {% if allow_signed_upload %}
-        <div class="alert alert-info">
-            A minuta do contrato e a minuta do BM ja foram aprovadas pela gerencia. Agora insira o arquivo assinado do BM.
-        </div>
-        <div class="mb-3">
-            <label for="id_minuta_boletim_assinado" class="form-label">Arquivo Assinado do BM</label>
-            {% if documento_bm.minuta_boletim_assinado %}
-                <p>
-                    Ja existe um arquivo assinado:
-                    <a href="{{ documento_bm.minuta_boletim_assinado.url }}" target="_blank">Ver atual</a>
-                </p>
-            {% endif %}
-            {{ form.minuta_boletim_assinado }}
-        </div>
-        {% endif %}
-
         <button type="submit" class="btn btn-primary">Salvar Arquivo</button>
         <a href="javascript:history.back()" class="btn btn-secondary">Cancelar</a>
     </form>

@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import Group
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages import get_messages
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -50,6 +51,7 @@ from .forms import (
     SolicitacaoProspeccaoForm,
 )
 from .views import (
+    build_supply_user_indicator_rows,
     build_weekly_supply_report,
     can_user_request_contract_addendum,
     can_user_manage_event_delivery,
@@ -624,6 +626,392 @@ class GuiaPermissoesTests(BaseUserTestCase):
         self.assertContains(response, "Seu grupo")
         self.assertContains(response, "Líder de Contrato")
         self.assertNotContains(response, "Gerente de Contratos")
+
+
+class IndicadoresSuprimentoTests(BaseUserTestCase):
+    def setUp(self):
+        self.suprimento = self.create_user("supindic", "suprimento")
+        self.gerente = self.create_user("gerindic", "gerente")
+        self.gerente_contrato = self.create_user("gcindic", "gerente_contrato")
+        self.coordenador = self.create_user("coordindic", "coordenador")
+        self.centro = self.create_center("CTIND", "Centro Indicadores")
+        self.coordenador.centros.add(self.centro)
+
+        self.cliente = self.create_client("Cliente Indicadores", "00.000.000/0001-30")
+        self.fornecedor = self.create_supplier("Fornecedor Indicadores", "11.111.111/0001-30")
+
+        self.contrato_base_prospeccao = self.create_contract(
+            codigo="PRJ-IND-PROSP",
+            cliente=self.cliente,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+        )
+        self.contrato_base_contratacao = self.create_contract(
+            codigo="PRJ-IND-CONTR",
+            cliente=self.cliente,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+        )
+
+        self.solicitacao_prospeccao_concluida = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base_prospeccao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Prospeccao concluida",
+            status="Onboarding",
+            fornecedor_escolhido=self.fornecedor,
+        )
+        self.solicitacao_contratacao_concluida = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base_contratacao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Contratacao concluida",
+            status="Onboarding",
+            fornecedor_escolhido=self.fornecedor,
+        )
+
+        inicio_referencia = timezone.now() - timedelta(days=10)
+        SolicitacaoProspeccao.objects.filter(pk=self.solicitacao_prospeccao_concluida.pk).update(
+            data_solicitacao=inicio_referencia + timedelta(days=4)
+        )
+        SolicitacaoContrato.objects.filter(pk=self.solicitacao_contratacao_concluida.pk).update(
+            data_solicitacao=inicio_referencia
+        )
+        self.solicitacao_prospeccao_concluida.refresh_from_db()
+        self.solicitacao_contratacao_concluida.refresh_from_db()
+
+        self.contrato_fornecedor_prospeccao = self.create_supplier_contract(
+            cod_projeto=self.contrato_base_prospeccao,
+            empresa_terceira=self.fornecedor,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            status="ativo",
+            num_contrato="CT-IND-PROSP",
+        )
+        self.contrato_fornecedor_prospeccao.prospeccao = self.solicitacao_prospeccao_concluida
+        self.contrato_fornecedor_prospeccao.valor_total = Decimal("1000.00")
+        self.contrato_fornecedor_prospeccao.save()
+
+        self.contrato_fornecedor_contratacao = self.create_supplier_contract(
+            cod_projeto=self.contrato_base_contratacao,
+            empresa_terceira=self.fornecedor,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            status="ativo",
+            num_contrato="CT-IND-CONTR",
+        )
+        self.contrato_fornecedor_contratacao.solicitacao = self.solicitacao_contratacao_concluida
+        self.contrato_fornecedor_contratacao.valor_total = Decimal("2000.00")
+        self.contrato_fornecedor_contratacao.save()
+
+        prospeccao_content_type = ContentType.objects.get_for_model(SolicitacaoProspeccao)
+        contratacao_content_type = ContentType.objects.get_for_model(SolicitacaoContrato)
+        RegistroAuditoria.objects.create(
+            content_type=prospeccao_content_type,
+            object_id=self.solicitacao_prospeccao_concluida.pk,
+            acao="atualizado",
+            usuario=self.suprimento,
+            modelo=SolicitacaoProspeccao._meta.verbose_name.title(),
+            representacao_objeto=str(self.solicitacao_prospeccao_concluida),
+            data_hora=self.solicitacao_prospeccao_concluida.data_solicitacao + timedelta(days=4),
+        )
+        RegistroAuditoria.objects.create(
+            content_type=contratacao_content_type,
+            object_id=self.solicitacao_contratacao_concluida.pk,
+            acao="atualizado",
+            usuario=self.suprimento,
+            modelo=SolicitacaoContrato._meta.verbose_name.title(),
+            representacao_objeto=str(self.solicitacao_contratacao_concluida),
+            data_hora=self.solicitacao_contratacao_concluida.data_solicitacao + timedelta(days=8),
+        )
+
+        SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base_prospeccao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Prospeccao pendente",
+            status="Em análise",
+            nenhum_fornecedor_ideal=True,
+        )
+        SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base_contratacao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Contratacao pendente",
+            status="Planejamento do Contrato",
+            reprovacao_gerencia=True,
+        )
+
+        self.evento_sem_nf = self.create_event(
+            contrato=self.contrato_fornecedor_prospeccao,
+            empresa_terceira=self.fornecedor,
+            data_prevista=timezone.localdate(),
+            realizado=True,
+        )
+        BM.objects.create(
+            contrato=self.contrato_fornecedor_prospeccao,
+            evento=self.evento_sem_nf,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("400.00"),
+            data_pagamento=timezone.localdate(),
+            status_coordenador="aprovado",
+            status_gerente="pendente",
+            aprovacao_pagamento="aprovado",
+        )
+        BM.objects.create(
+            contrato=self.contrato_fornecedor_contratacao,
+            evento=self.create_event(
+                contrato=self.contrato_fornecedor_contratacao,
+                empresa_terceira=self.fornecedor,
+                data_prevista=timezone.localdate(),
+                realizado=True,
+            ),
+            numero_bm=2,
+            parcela_paga=1,
+            valor_pago=Decimal("300.00"),
+            data_pagamento=timezone.localdate(),
+            status_coordenador="pendente",
+            status_gerente="pendente",
+            aprovacao_pagamento="pendente",
+        )
+        BM.objects.create(
+            contrato=self.contrato_fornecedor_contratacao,
+            evento=self.create_event(
+                contrato=self.contrato_fornecedor_contratacao,
+                empresa_terceira=self.fornecedor,
+                data_prevista=timezone.localdate(),
+                realizado=True,
+            ),
+            numero_bm=3,
+            parcela_paga=1,
+            valor_pago=Decimal("350.00"),
+            data_pagamento=timezone.localdate(),
+            status_coordenador="aprovado",
+            status_gerente="pendente",
+            aprovacao_pagamento="pendente",
+        )
+
+    def test_indicadores_suprimento_bloqueia_usuario_sem_permissao(self):
+        self.client.force_login(self.gerente)
+
+        response = self.client.get(reverse("indicadores_suprimento"), follow=True)
+
+        self.assertRedirects(response, reverse("home"))
+
+    def test_indicadores_suprimento_exibe_metricas_principais(self):
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(reverse("indicadores_suprimento"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Indicadores de Suprimento")
+        self.assertEqual(response.context["media_prazo_prospeccao"], 4.0)
+        self.assertEqual(response.context["media_prazo_contratacao"], 8.0)
+        self.assertEqual(response.context["media_prazo_geral"], 6.0)
+        self.assertEqual(response.context["backlog_total"], 2)
+        self.assertEqual(response.context["backlog_os_total"], 0)
+        self.assertEqual(response.context["backlog_guarda_chuva_total"], 0)
+        self.assertIsNone(response.context["media_prazo_os"])
+        self.assertIsNone(response.context["media_prazo_guarda_chuva"])
+        self.assertEqual(response.context["total_solicitacoes_prospeccao"], 1)
+        self.assertEqual(response.context["total_solicitacoes_contratacao"], 1)
+        self.assertEqual(response.context["prospeccao_status_rows"], [("Onboarding", 1)])
+        self.assertEqual(response.context["contratacao_status_rows"], [("Onboarding", 1)])
+        self.assertEqual(response.context["guarda_chuva_status_rows"], [])
+        self.assertEqual(response.context["os_status_rows"], [])
+        self.assertEqual(response.context["total_retrabalho"], 2)
+        self.assertEqual(response.context["percentual_retrabalho"], 50.0)
+        self.assertEqual(response.context["contratos_ativos_total"], 2)
+        self.assertEqual(response.context["contratos_gerados_total"], 2)
+        self.assertEqual(response.context["eventos_sem_nf_count"], 1)
+        self.assertEqual(response.context["bms_pendentes_operacionais"], 1)
+        self.assertEqual(response.context["bms_pendentes_diretoria"], 1)
+        self.assertEqual(response.context["valor_total_contratos_ativos"], Decimal("3000"))
+        self.assertContains(response, "Indicadores por usuario")
+        user_rows = {item["usuario_id"]: item for item in response.context["user_indicator_rows"]}
+        self.assertIn(self.coordenador.pk, user_rows)
+        self.assertIn(self.gerente_contrato.pk, user_rows)
+        self.assertEqual(user_rows[self.coordenador.pk]["solicitacoes_vinculadas"], 2)
+        self.assertEqual(user_rows[self.coordenador.pk]["em_aberto"], 0)
+        self.assertEqual(user_rows[self.coordenador.pk]["concluidas"], 2)
+        self.assertEqual(user_rows[self.coordenador.pk]["retrabalho"], 0)
+        self.assertEqual(user_rows[self.coordenador.pk]["media_prazo"], 6.0)
+        self.assertEqual(user_rows[self.gerente_contrato.pk]["solicitacoes_vinculadas"], 2)
+        self.assertEqual(user_rows[self.gerente_contrato.pk]["em_aberto"], 0)
+        self.assertEqual(user_rows[self.gerente_contrato.pk]["concluidas"], 2)
+        self.assertEqual(user_rows[self.gerente_contrato.pk]["retrabalho"], 0)
+        self.assertEqual(user_rows[self.gerente_contrato.pk]["media_prazo"], 6.0)
+        self.assertContains(response, "Ultimos processos concluidos")
+
+    def test_indicadores_por_usuario_ignoram_solicitacoes_sem_data_solicitacao(self):
+        solicitacao_sem_data = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base_prospeccao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Sem data de solicitacao",
+            status="Onboarding",
+            fornecedor_escolhido=self.fornecedor,
+        )
+        solicitacao_sem_data.data_solicitacao = None
+
+        rows = build_supply_user_indicator_rows(
+            [self.solicitacao_prospeccao_concluida, solicitacao_sem_data],
+            [self.solicitacao_contratacao_concluida],
+            {self.solicitacao_prospeccao_concluida.pk: SimpleNamespace(data_hora=self.solicitacao_prospeccao_concluida.data_solicitacao + timedelta(days=4))},
+            {self.solicitacao_contratacao_concluida.pk: SimpleNamespace(data_hora=self.solicitacao_contratacao_concluida.data_solicitacao + timedelta(days=8))},
+        )
+
+        user_rows = {item["usuario_id"]: item for item in rows}
+        self.assertEqual(user_rows[self.coordenador.pk]["solicitacoes_vinculadas"], 2)
+        self.assertEqual(user_rows[self.coordenador.pk]["concluidas"], 2)
+        self.assertEqual(user_rows[self.coordenador.pk]["media_prazo"], 6.0)
+
+    def test_indicadores_por_usuario_ignoram_solicitacoes_sem_auditoria(self):
+        solicitacao_sem_auditoria = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base_prospeccao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Sem auditoria",
+            status="Em análise",
+            fornecedor_escolhido=self.fornecedor,
+        )
+
+        rows = build_supply_user_indicator_rows(
+            [self.solicitacao_prospeccao_concluida, solicitacao_sem_auditoria],
+            [self.solicitacao_contratacao_concluida],
+            {self.solicitacao_prospeccao_concluida.pk: SimpleNamespace(data_hora=self.solicitacao_prospeccao_concluida.data_solicitacao + timedelta(days=4))},
+            {self.solicitacao_contratacao_concluida.pk: SimpleNamespace(data_hora=self.solicitacao_contratacao_concluida.data_solicitacao + timedelta(days=8))},
+        )
+
+        user_rows = {item["usuario_id"]: item for item in rows}
+        self.assertEqual(user_rows[self.coordenador.pk]["solicitacoes_vinculadas"], 2)
+        self.assertEqual(user_rows[self.coordenador.pk]["em_aberto"], 0)
+        self.assertEqual(user_rows[self.coordenador.pk]["concluidas"], 2)
+        self.assertEqual(user_rows[self.coordenador.pk]["media_prazo"], 6.0)
+
+    def test_backlog_nao_contabiliza_solicitacoes_reprovadas_pelo_suprimento(self):
+        SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base_prospeccao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Prospeccao reprovada pelo suprimento",
+            status="Reprovada pelo suprimento",
+        )
+        SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base_contratacao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Contratacao reprovada pelo suprimento",
+            status="Reprovada pelo suprimento",
+        )
+
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(reverse("indicadores_suprimento"))
+
+        self.assertEqual(response.context["backlog_total"], 2)
+
+    def test_backlog_contabiliza_solicitacoes_guarda_chuva_e_os(self):
+        solicitacao_guarda_chuva = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base_contratacao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Contratacao guarda-chuva em aberto",
+            status="Em análise",
+            guarda_chuva=True,
+        )
+        solicitacao_os = SolicitacaoOrdemServico.objects.create(
+            contrato=self.contrato_fornecedor_contratacao,
+            cod_projeto=self.contrato_base_contratacao,
+            solicitante=self.gerente_contrato,
+            lider_contrato=self.gerente_contrato,
+            coordenador=self.coordenador,
+            titulo="OS pendente",
+            descricao="OS para backlog",
+            status="pendente_lider",
+        )
+        RegistroAuditoria.objects.create(
+            content_type=ContentType.objects.get_for_model(SolicitacaoContrato),
+            object_id=solicitacao_guarda_chuva.pk,
+            acao="criado",
+            usuario=self.suprimento,
+            modelo=SolicitacaoContrato._meta.verbose_name.title(),
+            representacao_objeto=str(solicitacao_guarda_chuva),
+        )
+        RegistroAuditoria.objects.create(
+            content_type=ContentType.objects.get_for_model(SolicitacaoOrdemServico),
+            object_id=solicitacao_os.pk,
+            acao="criado",
+            usuario=self.suprimento,
+            modelo=SolicitacaoOrdemServico._meta.verbose_name.title(),
+            representacao_objeto=str(solicitacao_os),
+        )
+
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(reverse("indicadores_suprimento"))
+
+        self.assertEqual(response.context["backlog_total"], 4)
+        self.assertEqual(response.context["backlog_os_total"], 1)
+        self.assertEqual(response.context["backlog_guarda_chuva_total"], 1)
+        self.assertEqual(response.context["guarda_chuva_status_rows"], [("Em análise", 1)])
+        self.assertEqual(response.context["os_status_rows"], [("pendente_lider", 1)])
+
+    def test_cards_exibem_prazo_medio_para_os_e_guarda_chuva(self):
+        solicitacao_guarda_chuva = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base_contratacao,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Contratacao guarda-chuva concluida",
+            status="Onboarding",
+            guarda_chuva=True,
+            fornecedor_escolhido=self.fornecedor,
+        )
+        inicio_guarda_chuva = timezone.now() - timedelta(days=12)
+        SolicitacaoContrato.objects.filter(pk=solicitacao_guarda_chuva.pk).update(
+            data_solicitacao=inicio_guarda_chuva
+        )
+        solicitacao_guarda_chuva.refresh_from_db()
+        RegistroAuditoria.objects.create(
+            content_type=ContentType.objects.get_for_model(SolicitacaoContrato),
+            object_id=solicitacao_guarda_chuva.pk,
+            acao="atualizado",
+            usuario=self.suprimento,
+            modelo=SolicitacaoContrato._meta.verbose_name.title(),
+            representacao_objeto=str(solicitacao_guarda_chuva),
+            data_hora=inicio_guarda_chuva + timedelta(days=5),
+        )
+
+        solicitacao_os = SolicitacaoOrdemServico.objects.create(
+            contrato=self.contrato_fornecedor_contratacao,
+            cod_projeto=self.contrato_base_contratacao,
+            solicitante=self.gerente_contrato,
+            lider_contrato=self.gerente_contrato,
+            coordenador=self.coordenador,
+            titulo="OS concluida",
+            descricao="OS concluida para prazo medio",
+            status="finalizada",
+        )
+        criado_os = timezone.now() - timedelta(days=9)
+        SolicitacaoOrdemServico.objects.filter(pk=solicitacao_os.pk).update(criado_em=criado_os)
+        solicitacao_os.refresh_from_db()
+        RegistroAuditoria.objects.create(
+            content_type=ContentType.objects.get_for_model(SolicitacaoOrdemServico),
+            object_id=solicitacao_os.pk,
+            acao="atualizado",
+            usuario=self.suprimento,
+            modelo=SolicitacaoOrdemServico._meta.verbose_name.title(),
+            representacao_objeto=str(solicitacao_os),
+            data_hora=criado_os + timedelta(days=3),
+        )
+
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(reverse("indicadores_suprimento"))
+
+        self.assertEqual(response.context["media_prazo_guarda_chuva"], 5.0)
+        self.assertEqual(response.context["media_prazo_os"], 3.0)
 
 
 class RankingFornecedoresTests(BaseUserTestCase):
@@ -2068,6 +2456,51 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         self.assertIn(solicitacao_contrato, response.context["solicitacoes_contrato"])
         self.assertContains(response, f"Prospecção #{solicitacao_prospeccao.id}")
         self.assertContains(response, f"Contrato #{solicitacao_contrato.id}")
+
+    def test_home_suprimento_lista_eventos_para_entrega_ate_proxima_data_pagamento(self):
+        data_corte = timezone.localdate() + timedelta(days=5)
+        evento_para_entrega = self.create_event(
+            contrato=self.contrato_terceiro,
+            empresa_terceira=self.contrato_terceiro.empresa_terceira,
+            data_prevista=timezone.localdate() + timedelta(days=2),
+        )
+        evento_para_entrega.data_prevista_pagamento = data_corte
+        evento_para_entrega.save(update_fields=["data_prevista_pagamento"])
+
+        evento_com_bm = self.create_event(
+            contrato=self.contrato_terceiro,
+            empresa_terceira=self.contrato_terceiro.empresa_terceira,
+            data_prevista=timezone.localdate() + timedelta(days=3),
+        )
+        evento_com_bm.data_prevista_pagamento = data_corte
+        evento_com_bm.save(update_fields=["data_prevista_pagamento"])
+        BM.objects.create(
+            contrato=self.contrato_terceiro,
+            evento=evento_com_bm,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("500.00"),
+        )
+
+        evento_fora_do_corte = self.create_event(
+            contrato=self.contrato_terceiro,
+            empresa_terceira=self.contrato_terceiro.empresa_terceira,
+            data_prevista=timezone.localdate() + timedelta(days=6),
+        )
+        evento_fora_do_corte.data_prevista_pagamento = timezone.localdate() + timedelta(days=9)
+        evento_fora_do_corte.save(update_fields=["data_prevista_pagamento"])
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["proxima_data_pagamento_bm"], data_corte)
+        self.assertEqual(
+            [evento.id for evento in response.context["eventos_bm_para_entrega"]],
+            [evento_para_entrega.id],
+        )
+        self.assertContains(response, "BMs para entrega ate a proxima data de pagamento")
+        self.assertContains(response, evento_para_entrega.empresa_terceira.nome)
 
 
 class PrevisaoPagamentosTests(BaseUserTestCase):
@@ -3623,6 +4056,13 @@ class ContratacaoFlowTests(BaseUserTestCase):
         )
 
     def test_detalhes_solicitacao_contrato_aprovacao_completa_define_status_final(self):
+        Evento.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            empresa_terceira=self.fornecedor,
+            descricao="Evento obrigatório contratação",
+            data_prevista=date(2026, 5, 10),
+            valor_previsto=Decimal("100.00"),
+        )
         self.client.force_login(self.gerente_contrato)
         response_gerente = self.client.post(
             reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk]),
@@ -3653,6 +4093,69 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.solicitacao_contrato.refresh_from_db()
         self.assertEqual(self.solicitacao_contrato.aprovacao_fornecedor_diretor, "aprovado")
         self.assertEqual(self.solicitacao_contrato.status, "Fornecedor aprovado")
+
+    def test_detalhes_solicitacao_contrato_bloqueia_aprovacao_sem_evento(self):
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.post(
+            reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk]),
+            {"acao": "aprovar"},
+            follow=True,
+        )
+
+        self.assertRedirects(response, reverse("detalhes_solicitacao_contrato", kwargs={"pk": self.solicitacao_contrato.pk}))
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertNotEqual(self.solicitacao_contrato.aprovacao_fornecedor_gerente, "aprovado")
+        self.assertContains(response, "Cadastre ao menos um evento antes de avançar esta solicitação.")
+
+    def test_detalhes_solicitacao_contrato_esconde_botao_aprovar_sem_evento(self):
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.get(
+            reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk])
+        )
+
+        self.assertNotContains(response, 'name="acao" value="aprovar"', html=False)
+        self.assertContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitacao.")
+        self.assertContains(response, 'name="acao" value="reprovar"', html=False)
+
+    def test_aprovar_solicitacao_prospeccao_exige_evento(self):
+        self.solicitacao_prospeccao.status = "Solicitação de prospecção"
+        self.solicitacao_prospeccao.aprovado = None
+        self.solicitacao_prospeccao.save(update_fields=["status", "aprovado"])
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(
+            reverse("aprovar_solicitacao", args=[self.solicitacao_prospeccao.pk, "aprovar"]),
+            follow=True,
+        )
+
+        self.assertRedirects(response, reverse("detalhes_solicitacao", kwargs={"pk": self.solicitacao_prospeccao.pk}))
+        self.solicitacao_prospeccao.refresh_from_db()
+        self.assertIsNone(self.solicitacao_prospeccao.aprovado)
+        self.assertContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitação.")
+
+    def test_detalhes_solicitacao_prospeccao_esconde_botao_aprovar_sem_evento(self):
+        self.solicitacao_prospeccao.status = "Solicitação de prospecção"
+        self.solicitacao_prospeccao.aprovado = None
+        self.solicitacao_prospeccao.save(update_fields=["status", "aprovado"])
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(
+            reverse("detalhes_solicitacao", kwargs={"pk": self.solicitacao_prospeccao.pk})
+        )
+
+        self.assertNotContains(
+            response,
+            reverse("aprovar_solicitacao", args=[self.solicitacao_prospeccao.pk, "aprovar"]),
+            html=False,
+        )
+        self.assertContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitacao.")
+        self.assertContains(
+            response,
+            reverse("aprovar_solicitacao", args=[self.solicitacao_prospeccao.pk, "reprovar"]),
+            html=False,
+        )
 
     def test_detalhes_solicitacao_contrato_reprovacao_sem_justificativa_redireciona_para_mesma_tela(self):
         self.client.force_login(self.diretoria)
@@ -3725,7 +4228,6 @@ class ContratacaoFlowTests(BaseUserTestCase):
             solicitacao=self.solicitacao_prospeccao,
             status_gerente="aprovado",
             minuta_boletim=SimpleUploadedFile("bm.pdf", b"%PDF-1.4", content_type="application/pdf"),
-            minuta_boletim_assinado=SimpleUploadedFile("bm-assinado.pdf", b"%PDF-1.4", content_type="application/pdf"),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao=self.solicitacao_prospeccao,
@@ -3774,7 +4276,6 @@ class ContratacaoFlowTests(BaseUserTestCase):
             solicitacao_contrato=self.solicitacao_contrato,
             status_gerente="aprovado",
             minuta_boletim=SimpleUploadedFile("bm-contrato.pdf", b"%PDF-1.4", content_type="application/pdf"),
-            minuta_boletim_assinado=SimpleUploadedFile("bm-contrato-assinado.pdf", b"%PDF-1.4", content_type="application/pdf"),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
@@ -3814,6 +4315,73 @@ class ContratacaoFlowTests(BaseUserTestCase):
             "Foi anexado uma nova minuta de contrato",
             [email.subject for email in mail.outbox],
         )
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertTrue(self.solicitacao_contrato.aprovacao_gerencia)
+        self.assertEqual(self.solicitacao_contrato.status, "Onboarding")
+
+    def test_detalhes_solicitacao_contratacao_exibe_botoes_de_avaliacao_de_minutas_para_gerente_contrato(self):
+        documento_bm = DocumentoBM.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            status_gerente="pendente",
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="MIN-DET-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+        )
+
+        self.client.force_login(self.gerente_contrato)
+        response = self.client.get(
+            reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk])
+        )
+
+        self.assertContains(response, reverse("detalhe_bm_contrato", args=[documento_bm.pk]))
+        self.assertContains(response, "Avaliar Minuta BM")
+        self.assertContains(
+            response,
+            reverse("detalhes_minuta_contrato", args=[self.solicitacao_contrato.pk]),
+        )
+        self.assertContains(response, "Avaliar Contrato")
+
+    def test_fluxo_contratacao_notifica_suprimento_para_inserir_contrato_assinado_apos_duas_aprovacoes(self):
+        documento_bm = DocumentoBM.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            status_gerente="pendente",
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="MIN-SIGNED-NOTIFY-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+        )
+        mail.outbox = []
+
+        self.client.force_login(self.gerente_contrato)
+        response_contrato = self.client.post(
+            reverse("detalhes_minuta_contrato", args=[self.solicitacao_contrato.pk]),
+            {"acao": "aprovar"},
+            follow=False,
+        )
+        self.assertEqual(response_contrato.status_code, 302)
+        self.assertEqual(len(mail.outbox), 0)
+
+        response_bm = self.client.post(
+            reverse("detalhe_bm_contrato", args=[documento_bm.pk]),
+            {"acao": "aprovar"},
+            follow=False,
+        )
+
+        self.assertEqual(response_bm.status_code, 302)
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertEqual(self.solicitacao_contrato.status, get_signed_files_pending_status())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Inserir arquivos assinados", mail.outbox[0].subject)
+        self.assertIn(self.suprimento.email, mail.outbox[0].to)
 
 
 class AutomaticContractCreationTests(BaseUserTestCase):
@@ -3852,11 +4420,6 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         DocumentoBM.objects.create(
             solicitacao=solicitacao,
             status_gerente="aprovado",
-            minuta_boletim_assinado=SimpleUploadedFile(
-                "bm-assinado.pdf",
-                b"%PDF-1.4 bm signed",
-                content_type="application/pdf",
-            ),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao=solicitacao,
@@ -3925,11 +4488,6 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         DocumentoBM.objects.create(
             solicitacao_contrato=solicitacao,
             status_gerente="aprovado",
-            minuta_boletim_assinado=SimpleUploadedFile(
-                "bm-assinado-contrato.pdf",
-                b"%PDF-1.4 bm signed contract",
-                content_type="application/pdf",
-            ),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao_contrato=solicitacao,
@@ -4009,7 +4567,7 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         solicitacao.refresh_from_db()
         self.assertEqual(solicitacao.status, get_signed_files_pending_status())
 
-    def test_upload_dos_arquivos_assinados_conclui_criacao_do_contrato(self):
+    def test_upload_do_contrato_assinado_conclui_criacao_do_contrato(self):
         solicitacao = SolicitacaoProspeccao.objects.create(
             contrato=self.contrato_base,
             coordenador=self.coordenador,
@@ -4058,18 +4616,6 @@ class AutomaticContractCreationTests(BaseUserTestCase):
             follow=False,
         )
         self.assertEqual(response_contrato.status_code, 302)
-        response_bm = self.client.post(
-            reverse("inserir_minuta_bm", args=[solicitacao.pk]),
-            {
-                "minuta_boletim_assinado": SimpleUploadedFile(
-                    "bm-final.pdf",
-                    b"%PDF-1.4 final bm",
-                    content_type="application/pdf",
-                ),
-            },
-            follow=False,
-        )
-        self.assertEqual(response_bm.status_code, 302)
         solicitacao.refresh_from_db()
         contrato = ContratoTerceiros.objects.get(prospeccao=solicitacao)
         self.assertEqual(solicitacao.status, "Onboarding")
@@ -4112,8 +4658,8 @@ class SignedFilesDetailActionsTests(BaseUserTestCase):
         self.client.force_login(self.suprimento)
         response = self.client.get(reverse("detalhes_solicitacao", args=[solicitacao.pk]))
 
-        self.assertContains(response, "Inserir BM Assinado")
         self.assertContains(response, "Inserir Contrato Assinado")
+        self.assertNotContains(response, "Inserir BM Assinado")
 
     def test_detalhes_solicitacao_contratacao_exibe_botoes_de_arquivos_assinados_para_suprimento(self):
         solicitacao = SolicitacaoContrato.objects.create(
@@ -4137,8 +4683,8 @@ class SignedFilesDetailActionsTests(BaseUserTestCase):
         self.client.force_login(self.suprimento)
         response = self.client.get(reverse("detalhes_solicitacao_contrato", args=[solicitacao.pk]))
 
-        self.assertContains(response, "Inserir BM Assinado")
         self.assertContains(response, "Inserir Contrato Assinado")
+        self.assertNotContains(response, "Inserir BM Assinado")
 
 
 class TemplateVisibilityTests(BaseUserTestCase):

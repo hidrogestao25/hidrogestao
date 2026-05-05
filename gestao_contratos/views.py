@@ -3,9 +3,10 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.core.paginator import Paginator
-from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max
+from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max, Min
 from decimal import Decimal
 from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
@@ -13,7 +14,7 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.html import escape, strip_tags
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato, AditivoContratoTerceiro
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato, AditivoContratoTerceiro, RegistroAuditoria
 from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm, SolicitacaoGuardaChuvaForm, SolicitacaoAditivoContratoTerceiroForm, DocumentoAditivoContratoTerceiroForm
 
 import plotly.graph_objs as go
@@ -35,6 +36,7 @@ from io import BytesIO
 from datetime import datetime, timedelta
 from pathlib import Path
 import xml.etree.ElementTree as ET
+from collections import Counter
 
 User = get_user_model()
 FROM_EMAIL = settings.DEFAULT_FROM_EMAIL
@@ -84,11 +86,11 @@ def notify_supply_about_signed_files_request(solicitacao):
     mensagem = (
         "Olá, equipe de Suprimento!\n\n"
         "A minuta do contrato e a minuta do BM já foram aprovadas pela gerência de contrato.\n"
-        "Agora é necessário inserir os arquivos assinados para concluir a geração do contrato.\n\n"
+        "Agora é necessário inserir o contrato assinado para concluir a geração do contrato.\n\n"
         f"Solicitação: {solicitacao.id}\n"
         f"Projeto: {contrato_referencia or '-'}\n"
         f"Fornecedor: {fornecedor or '-'}\n\n"
-        "Acesse o sistema HIDROGestão para anexar os arquivos assinados.\n"
+        "Acesse o sistema HIDROGestão para anexar o contrato assinado.\n"
         "https://hidrogestao.pythonanywhere.com/"
     )
     try:
@@ -172,7 +174,7 @@ def update_signed_files_pending_status(solicitacao, bm=None, documento=None):
         return False
 
     if bm.status_gerente == "aprovado" and solicitacao.aprovacao_gerencia is True:
-        if documento.arquivo_contrato_assinado and bm.minuta_boletim_assinado:
+        if documento.arquivo_contrato_assinado:
             return False
         if solicitacao.status != SIGNED_FILES_PENDING_STATUS:
             solicitacao.status = SIGNED_FILES_PENDING_STATUS
@@ -538,6 +540,201 @@ def send_request_notification_to_management(subject, message):
         send_mail(subject, message, FROM_EMAIL, recipients, fail_silently=False)
 
 
+def build_latest_audit_map(model_class, object_ids):
+    if not object_ids:
+        return {}
+
+    content_type = ContentType.objects.get_for_model(model_class)
+    audits = RegistroAuditoria.objects.filter(
+        content_type=content_type,
+        object_id__in=object_ids,
+    ).order_by("object_id", "-data_hora")
+
+    latest_audits = {}
+    for audit in audits:
+        latest_audits.setdefault(audit.object_id, audit)
+    return latest_audits
+
+
+def average_days_from_pairs(pairs):
+    valid_deltas = []
+    for start, end in pairs:
+        if not start or not end:
+            continue
+        delta = end - start
+        valid_deltas.append(delta.total_seconds() / 86400)
+    if not valid_deltas:
+        return None
+    return round(sum(valid_deltas) / len(valid_deltas), 1)
+
+
+def build_supply_retrabalho_queryset():
+    retrabalho_prospeccao = SolicitacaoProspeccao.objects.filter(
+        Q(solicitacao_origem__isnull=False)
+        | Q(nenhum_fornecedor_ideal=True)
+        | Q(aprovacao_fornecedor_gerente="reprovado")
+        | Q(aprovacao_fornecedor_diretor="reprovado")
+        | Q(reprovacao_gerencia=True)
+    )
+    retrabalho_contratacao = SolicitacaoContrato.objects.filter(
+        Q(aprovacao_fornecedor_gerente="reprovado")
+        | Q(aprovacao_fornecedor_diretor="reprovado")
+        | Q(reprovacao_gerencia=True)
+    )
+    return retrabalho_prospeccao, retrabalho_contratacao
+
+
+def is_supply_retrabalho_request(solicitacao):
+    if isinstance(solicitacao, SolicitacaoProspeccao):
+        return any(
+            [
+                bool(solicitacao.solicitacao_origem_id),
+                bool(solicitacao.nenhum_fornecedor_ideal),
+                solicitacao.aprovacao_fornecedor_gerente == "reprovado",
+                solicitacao.aprovacao_fornecedor_diretor == "reprovado",
+                bool(solicitacao.reprovacao_gerencia),
+            ]
+        )
+
+    if isinstance(solicitacao, SolicitacaoContrato):
+        return any(
+            [
+                solicitacao.aprovacao_fornecedor_gerente == "reprovado",
+                solicitacao.aprovacao_fornecedor_diretor == "reprovado",
+                bool(solicitacao.reprovacao_gerencia),
+            ]
+        )
+
+    return False
+
+
+def build_supply_user_indicator_rows(
+    solicitacoes_prospeccao,
+    solicitacoes_contratacao,
+    prospeccao_onboarding_map,
+    contratacao_onboarding_map,
+):
+    rows = {}
+
+    def ensure_row(user):
+        row = rows.get(user.pk)
+        if row is None:
+            row = {
+                "usuario_id": user.pk,
+                "usuario_nome": user.get_full_name() or user.username,
+                "grupo": user.get_grupo_display() if user.grupo else "-",
+                "papeis": set(),
+                "solicitacoes_vinculadas": 0,
+                "em_aberto": 0,
+                "concluidas": 0,
+                "retrabalho": 0,
+                "lead_times": [],
+            }
+            rows[user.pk] = row
+        return row
+
+    def register_request(solicitacao, onboarding_map):
+        if not solicitacao.data_solicitacao:
+            return
+
+        if solicitacao.pk not in onboarding_map:
+            return
+
+        participants = {}
+
+        if solicitacao.coordenador_id:
+            participants.setdefault(
+                solicitacao.coordenador_id,
+                {"user": solicitacao.coordenador, "roles": set()},
+            )["roles"].add("Coordenador")
+
+        if solicitacao.lider_contrato_id:
+            participants.setdefault(
+                solicitacao.lider_contrato_id,
+                {"user": solicitacao.lider_contrato, "roles": set()},
+            )["roles"].add("Lider do fluxo")
+
+        if not participants:
+            return
+
+        onboarding_audit = onboarding_map.get(solicitacao.pk) if solicitacao.status == "Onboarding" else None
+        lead_time_days = None
+        if onboarding_audit:
+            lead_time_days = round((onboarding_audit.data_hora - solicitacao.data_solicitacao).total_seconds() / 86400, 1)
+
+        retrabalho = is_supply_retrabalho_request(solicitacao)
+        concluida = solicitacao.status == "Onboarding"
+
+        for participant in participants.values():
+            row = ensure_row(participant["user"])
+            row["papeis"].update(participant["roles"])
+            row["solicitacoes_vinculadas"] += 1
+            if concluida:
+                row["concluidas"] += 1
+                if lead_time_days is not None:
+                    row["lead_times"].append(lead_time_days)
+            else:
+                row["em_aberto"] += 1
+
+            if retrabalho:
+                row["retrabalho"] += 1
+
+    for solicitacao in solicitacoes_prospeccao:
+        register_request(solicitacao, prospeccao_onboarding_map)
+
+    for solicitacao in solicitacoes_contratacao:
+        register_request(solicitacao, contratacao_onboarding_map)
+
+    finalized_rows = []
+    for row in rows.values():
+        finalized_rows.append(
+            {
+                "usuario_id": row["usuario_id"],
+                "usuario_nome": row["usuario_nome"],
+                "grupo": row["grupo"],
+                "papeis": ", ".join(sorted(row["papeis"])),
+                "solicitacoes_vinculadas": row["solicitacoes_vinculadas"],
+                "em_aberto": row["em_aberto"],
+                "concluidas": row["concluidas"],
+                "retrabalho": row["retrabalho"],
+                "media_prazo": round(sum(row["lead_times"]) / len(row["lead_times"]), 1) if row["lead_times"] else None,
+            }
+        )
+
+    return sorted(
+        finalized_rows,
+        key=lambda item: (
+            -item["solicitacoes_vinculadas"],
+            -item["em_aberto"],
+            item["usuario_nome"].lower(),
+        ),
+    )
+
+
+def filter_records_with_date_and_audit(records, audit_map, date_attr):
+    filtered_records = []
+    for record in records:
+        if not getattr(record, date_attr, None):
+            continue
+        if record.pk not in audit_map:
+            continue
+        filtered_records.append(record)
+    return filtered_records
+
+
+def build_os_average_pairs(os_records, os_audit_map):
+    pairs = []
+    for solicitacao_os in os_records:
+        if not solicitacao_os.criado_em:
+            continue
+        if solicitacao_os.pk not in os_audit_map:
+            continue
+        if not is_request_concluded(solicitacao_os):
+            continue
+        pairs.append((solicitacao_os.criado_em, os_audit_map[solicitacao_os.pk].data_hora))
+    return pairs
+
+
 @login_required
 def guia_permissoes(request):
     current_group = getattr(request.user, "grupo", None)
@@ -575,6 +772,207 @@ def guia_permissoes(request):
             "group_guides": all_group_items,
         },
     )
+
+
+@login_required
+def indicadores_suprimento(request):
+    if getattr(request.user, "grupo", None) != "suprimento":
+        messages.error(request, "Voce nao tem permissao para acessar os indicadores de suprimento.")
+        return redirect("home")
+
+    solicitacoes_prospeccao = SolicitacaoProspeccao.objects.select_related(
+        "contrato",
+        "fornecedor_escolhido",
+    )
+    solicitacoes_contratacao = SolicitacaoContrato.objects.select_related(
+        "contrato",
+        "fornecedor_escolhido",
+    )
+    contratos_fornecedor = list(
+        ContratoTerceiros.objects.select_related(
+            "cod_projeto",
+            "empresa_terceira",
+            "prospeccao",
+            "solicitacao",
+        )
+    )
+
+    prospeccoes_onboarding = list(solicitacoes_prospeccao.filter(status="Onboarding"))
+    contratacoes_onboarding = list(solicitacoes_contratacao.filter(status="Onboarding"))
+    prospeccao_audit_map = build_latest_audit_map(
+        SolicitacaoProspeccao,
+        list(solicitacoes_prospeccao.values_list("pk", flat=True)),
+    )
+    contratacao_audit_map = build_latest_audit_map(
+        SolicitacaoContrato,
+        list(solicitacoes_contratacao.values_list("pk", flat=True)),
+    )
+    os_queryset = SolicitacaoOrdemServico.objects.all()
+    os_audit_map = build_latest_audit_map(
+        SolicitacaoOrdemServico,
+        list(os_queryset.values_list("pk", flat=True)),
+    )
+    prospeccao_onboarding_map = build_latest_audit_map(
+        SolicitacaoProspeccao,
+        [solicitacao.pk for solicitacao in prospeccoes_onboarding],
+    )
+    contratacao_onboarding_map = build_latest_audit_map(
+        SolicitacaoContrato,
+        [solicitacao.pk for solicitacao in contratacoes_onboarding],
+    )
+
+    prospeccao_pairs = []
+    contratacao_pairs = []
+    latest_completed = []
+
+    for contrato in contratos_fornecedor:
+        if contrato.prospeccao and contrato.prospeccao.data_solicitacao:
+            onboarding_audit = prospeccao_onboarding_map.get(contrato.prospeccao.pk)
+            if onboarding_audit:
+                prospeccao_pairs.append((contrato.prospeccao.data_solicitacao, onboarding_audit.data_hora))
+                latest_completed.append(
+                    {
+                        "tipo": "Prospeccao",
+                        "solicitacao_id": contrato.prospeccao.pk,
+                        "projeto": str(contrato.cod_projeto) if contrato.cod_projeto else "-",
+                        "fornecedor": str(contrato.empresa_terceira),
+                        "dias": round((onboarding_audit.data_hora - contrato.prospeccao.data_solicitacao).total_seconds() / 86400, 1),
+                        "concluido_em": onboarding_audit.data_hora,
+                    }
+                )
+
+        if contrato.solicitacao and contrato.solicitacao.data_solicitacao:
+            onboarding_audit = contratacao_onboarding_map.get(contrato.solicitacao.pk)
+            if onboarding_audit:
+                contratacao_pairs.append((contrato.solicitacao.data_solicitacao, onboarding_audit.data_hora))
+                latest_completed.append(
+                    {
+                        "tipo": "Contratacao",
+                        "solicitacao_id": contrato.solicitacao.pk,
+                        "projeto": str(contrato.cod_projeto) if contrato.cod_projeto else "-",
+                        "fornecedor": str(contrato.empresa_terceira),
+                        "dias": round((onboarding_audit.data_hora - contrato.solicitacao.data_solicitacao).total_seconds() / 86400, 1),
+                        "concluido_em": onboarding_audit.data_hora,
+                    }
+                )
+
+    media_prazo_prospeccao = average_days_from_pairs(prospeccao_pairs)
+    media_prazo_contratacao = average_days_from_pairs(contratacao_pairs)
+    media_prazo_geral = average_days_from_pairs(prospeccao_pairs + contratacao_pairs)
+
+    backlog_status_excluded = ["Onboarding", "Reprovada pelo suprimento"]
+    backlog_prospeccao = solicitacoes_prospeccao.exclude(status__in=backlog_status_excluded)
+    backlog_contratacao = solicitacoes_contratacao.exclude(status__in=backlog_status_excluded)
+    backlog_os = SolicitacaoOrdemServico.objects.exclude(status__in=["aprovada", "reprovada", "finalizada"])
+    backlog_guarda_chuva = backlog_prospeccao.filter(guarda_chuva=True).count() + backlog_contratacao.filter(guarda_chuva=True).count()
+    backlog_total = backlog_prospeccao.count() + backlog_contratacao.count() + backlog_os.count()
+
+    guarda_chuva_pairs = []
+    for solicitacao in prospeccoes_onboarding:
+        if solicitacao.guarda_chuva:
+            onboarding_audit = prospeccao_onboarding_map.get(solicitacao.pk)
+            if onboarding_audit and solicitacao.data_solicitacao:
+                guarda_chuva_pairs.append((solicitacao.data_solicitacao, onboarding_audit.data_hora))
+    for solicitacao in contratacoes_onboarding:
+        if solicitacao.guarda_chuva:
+            onboarding_audit = contratacao_onboarding_map.get(solicitacao.pk)
+            if onboarding_audit and solicitacao.data_solicitacao:
+                guarda_chuva_pairs.append((solicitacao.data_solicitacao, onboarding_audit.data_hora))
+
+    media_prazo_guarda_chuva = average_days_from_pairs(guarda_chuva_pairs)
+    media_prazo_os = average_days_from_pairs(
+        build_os_average_pairs(list(os_queryset), os_audit_map)
+    )
+
+    retrabalho_prospeccao, retrabalho_contratacao = build_supply_retrabalho_queryset()
+    total_solicitacoes = solicitacoes_prospeccao.count() + solicitacoes_contratacao.count()
+    total_retrabalho = retrabalho_prospeccao.count() + retrabalho_contratacao.count()
+    percentual_retrabalho = round((total_retrabalho / total_solicitacoes) * 100, 1) if total_solicitacoes else 0.0
+
+    contratos_ativos_qs = ContratoTerceiros.objects.exclude(status="encerrado")
+    valor_total_contratos_ativos = contratos_ativos_qs.aggregate(total=Coalesce(Sum("valor_total"), Decimal("0.00")))["total"]
+
+    eventos_sem_nf_count = Evento.objects.filter(
+        boletins_medicao__aprovacao_pagamento="aprovado",
+        nota_fiscal__isnull=True,
+    ).filter(
+        Q(boletins_medicao__status_coordenador="aprovado")
+        | Q(boletins_medicao__status_gerente="aprovado")
+    ).distinct().count()
+
+    bms = list(BM.objects.all())
+    bms_pendentes_operacionais = sum(1 for bm in bms if bm_is_operationally_pending(bm))
+    bms_pendentes_diretoria = sum(
+        1
+        for bm in bms
+        if bm.aprovacao_pagamento == "pendente" and bm_has_operational_approval(bm)
+    )
+
+    prospeccao_status_records = filter_records_with_date_and_audit(
+        list(solicitacoes_prospeccao),
+        prospeccao_audit_map,
+        "data_solicitacao",
+    )
+    contratacao_status_records = filter_records_with_date_and_audit(
+        list(solicitacoes_contratacao),
+        contratacao_audit_map,
+        "data_solicitacao",
+    )
+    os_status_records = filter_records_with_date_and_audit(
+        list(backlog_os),
+        os_audit_map,
+        "criado_em",
+    )
+
+    prospeccao_status_rows = sorted(Counter(record.status for record in prospeccao_status_records).items(), key=lambda item: (-item[1], item[0]))
+    contratacao_status_rows = sorted(Counter(record.status for record in contratacao_status_records).items(), key=lambda item: (-item[1], item[0]))
+    guarda_chuva_status_counter = Counter()
+    for record in prospeccao_status_records:
+        if record.guarda_chuva:
+            guarda_chuva_status_counter[record.status] += 1
+    for record in contratacao_status_records:
+        if record.guarda_chuva:
+            guarda_chuva_status_counter[record.status] += 1
+    guarda_chuva_status_rows = sorted(guarda_chuva_status_counter.items(), key=lambda item: (-item[1], item[0]))
+    os_status_rows = sorted(Counter(record.status for record in os_status_records).items(), key=lambda item: (-item[1], item[0]))
+    user_indicator_rows = build_supply_user_indicator_rows(
+        solicitacoes_prospeccao,
+        solicitacoes_contratacao,
+        prospeccao_onboarding_map,
+        contratacao_onboarding_map,
+    )
+
+    latest_completed = sorted(latest_completed, key=lambda item: item["concluido_em"], reverse=True)[:10]
+
+    context = {
+        "media_prazo_geral": media_prazo_geral,
+        "media_prazo_prospeccao": media_prazo_prospeccao,
+        "media_prazo_contratacao": media_prazo_contratacao,
+        "total_solicitacoes_prospeccao": len(prospeccao_status_records),
+        "total_solicitacoes_contratacao": len(contratacao_status_records),
+        "total_solicitacoes_os": len(os_status_records),
+        "backlog_total": backlog_total,
+        "backlog_os_total": backlog_os.count(),
+        "backlog_guarda_chuva_total": backlog_guarda_chuva,
+        "media_prazo_os": media_prazo_os,
+        "media_prazo_guarda_chuva": media_prazo_guarda_chuva,
+        "total_retrabalho": total_retrabalho,
+        "percentual_retrabalho": percentual_retrabalho,
+        "valor_total_contratos_ativos": valor_total_contratos_ativos,
+        "contratos_ativos_total": contratos_ativos_qs.count(),
+        "contratos_gerados_total": len(latest_completed),
+        "eventos_sem_nf_count": eventos_sem_nf_count,
+        "bms_pendentes_operacionais": bms_pendentes_operacionais,
+        "bms_pendentes_diretoria": bms_pendentes_diretoria,
+        "prospeccao_status_rows": prospeccao_status_rows,
+        "contratacao_status_rows": contratacao_status_rows,
+        "guarda_chuva_status_rows": guarda_chuva_status_rows,
+        "os_status_rows": os_status_rows,
+        "user_indicator_rows": user_indicator_rows,
+        "latest_completed": latest_completed,
+        "total_solicitacoes_guarda_chuva": guarda_chuva_status_counter.total() if hasattr(guarda_chuva_status_counter, "total") else sum(guarda_chuva_status_counter.values()),
+    }
+    return render(request, "gestao_contratos/indicadores_suprimento.html", context)
 
 
 def get_week_ranges(reference_date):
@@ -1473,6 +1871,33 @@ def home(request):
             "contrato__empresa_terceira"
         ).order_by("-data_pagamento").distinct()
 
+        proxima_data_pagamento_bm = Evento.objects.filter(
+            data_prevista_pagamento__isnull=False,
+            data_prevista_pagamento__gte=hoje,
+            contrato_terceiro__isnull=False,
+        ).exclude(
+            boletins_medicao__isnull=False
+        ).aggregate(
+            proxima_data=Min("data_prevista_pagamento")
+        )["proxima_data"]
+
+        eventos_bm_para_entrega = Evento.objects.none()
+        if proxima_data_pagamento_bm:
+            eventos_bm_para_entrega = Evento.objects.filter(
+                data_prevista_pagamento__isnull=False,
+                data_prevista_pagamento__gte=hoje,
+                data_prevista_pagamento__lte=proxima_data_pagamento_bm,
+                contrato_terceiro__isnull=False,
+            ).exclude(
+                boletins_medicao__isnull=False
+            ).select_related(
+                "contrato_terceiro",
+                "empresa_terceira"
+            ).order_by(
+                "data_prevista_pagamento",
+                "data_prevista",
+            ).distinct()
+
         eventos_proximos = Evento.objects.filter(
             data_prevista__gte=hoje,
             data_prevista__lte=limite,
@@ -1531,6 +1956,8 @@ def home(request):
             "entregas_atrasadas": entregas_atrasadas,
             "is_suprimento": user.grupo == 'suprimento',
             "bms_pendentes": bms_pendentes,
+            "eventos_bm_para_entrega": eventos_bm_para_entrega,
+            "proxima_data_pagamento_bm": proxima_data_pagamento_bm,
             "contratos_vencendo":contratos_vencendo,
             "os_em_aberto": os_em_aberto,
             "today": hoje
@@ -2765,7 +3192,7 @@ def contrato_fornecedor_detalhe(request, pk):
         fig_comp = go.Figure()
 
         fig_comp.add_trace(go.Bar(
-            x=["Valor Total Contrato", "Total Pago em OS", "Saldo DisponÃ­vel"],
+            x=["Valor Total Contrato", "Total Pago em OS", "Saldo Disponí­vel"],
             y=[valor_total_contrato, total_os, saldo_contrato],
             text=[
                 f"R$ {valor_total_contrato:,.2f}",
@@ -3335,10 +3762,10 @@ def nova_solicitacao_contrato(request):
                     assunto = "Nova solicitação de Contratação"
                     mensagem = (
                         f"O usuário {request.user.get_full_name() or request.user.username} "
-                        f"deu inÃ­cio a uma solicitação de contratação. \n\n"
+                        f"deu iní­cio a uma solicitação de contratação. \n\n"
                         f"Detalhes da solicitação:\n"
                         f"- ID: {solicitacao.id}\n"
-                        f"- Valor Provisionado: {solicitacao.valor_provisionado}\n"
+                        f"- Valor Disponível: {solicitacao.valor_disponivel}\n"
                         f"- Descrição: {solicitacao.descricao}\n\n"
                         "Acesse o sistema HIDROGestão para mais informações.\n"
                         "https://hidrogestao.pythonanywhere.com/"
@@ -3366,7 +3793,7 @@ def nova_solicitacao_contrato(request):
                     except Exception as e:
                         messages.warning(request, f"Erro ao enviar e-mail para diretoria e gerente de contrato: {e}")
 
-                messages.success(request, "Solicitação de contratação criada com sucesso!")
+                messages.success(request, "Solicitação de contratação criada com sucesso! Por favor, cadastre os eventos que serão feitos pelo fornecedor.")
                 return redirect('detalhes_solicitacao_contrato', pk=solicitacao.pk )
             else:
                 messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
@@ -3394,16 +3821,16 @@ def aprovar_solicitacao_contrato(request, pk):
             usuario.grupo == "gerente_lider" and user_shares_center_with_coordinator(usuario, solicitacao.coordenador)
         ):
             if usuario.grupo == "lider_contrato" and usuario != solicitacao.lider_contrato:
-                messages.error(request, "VocÃƒÂª nÃƒÂ£o tem permissÃƒÂ£o para isso.")
+                messages.error(request, "Você não tem permissão para isso.")
                 return redirect("home")
             if acao == "aprovar":
                 bm.status_coordenador = "aprovado"
                 bm.data_aprovacao_coordenador = timezone.now()
-                messages.success(request, "Minuta BM aprovada pelo lÃƒÂ­der.")
+                messages.success(request, "Minuta BM aprovada pelo líder.")
             elif acao == "reprovar":
                 bm.status_coordenador = "reprovado"
                 bm.data_aprovacao_coordenador = timezone.now()
-                messages.warning(request, "Minuta BM reprovada pelo lÃƒÂ­der.")
+                messages.warning(request, "Minuta BM reprovada pelo líder.")
 
         # Busca todos os usuários do grupo 'suprimento'
         emails_suprimentos = list(
@@ -3659,7 +4086,7 @@ def nova_solicitacao_guarda_chuva(request):
                         f"solicitou uma contratação do tipo guarda-chuva.\n\n"
                         f"Detalhes da solicitação:\n"
                         f"- ID: {solicitacao.id}\n"
-                        f"- Valor DisponÃ­vel: {solicitacao.valor_disponivel}\n"
+                        f"- Valor Disponível: {solicitacao.valor_disponivel}\n"
                         f"- Descrição: {solicitacao.descricao}\n\n"
                         "Acesse o sistema HIDROGestão para mais informações.\n"
                         "https://hidrogestao.pythonanywhere.com/"
@@ -4238,6 +4665,9 @@ def aprovar_solicitacao(request, pk, acao):
 
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
     if acao == "aprovar":
+        if not solicitacao.evento_set.exists():
+            messages.error(request, "Cadastre ao menos um evento antes de aprovar esta solicitação.")
+            return redirect("detalhes_solicitacao", pk=solicitacao.pk)
         solicitacao.status = "Aprovada pelo suprimento"
         solicitacao.aprovado = True
     elif acao == "reprovar":
@@ -4767,6 +5197,10 @@ def detalhes_solicitacao_contrato(request, pk):
         acao = request.POST.get("acao")
         justificativa = request.POST.get("justificativa", "")
 
+        if acao == "aprovar" and not solicitacao.evento_set.exists():
+            messages.error(request, "Cadastre ao menos um evento antes de avançar esta solicitação.")
+            return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+
         # GERENTE DE CONTRATO
         if request.user.grupo == "gerente_contrato":
             if acao == "aprovar":
@@ -5160,13 +5594,15 @@ def cadastrar_contrato(request, solicitacao_id):
 
         if form.is_valid():
             should_notify_minuta = bool(request.FILES.get("arquivo_contrato"))
+            is_signed_file_upload_only = bool(request.FILES.get("arquivo_contrato_assinado")) and not should_notify_minuta
             contrato = form.save(commit=False)
             contrato.solicitacao = solicitacao
-            if DocumentoBM.objects.filter(solicitacao=solicitacao).exists():
-                solicitacao.status = "Aprovação Final"
-            else:
-                solicitacao.status = "Planejamento do Contrato"
-            solicitacao.save()
+            if not is_signed_file_upload_only:
+                if DocumentoBM.objects.filter(solicitacao=solicitacao).exists():
+                    solicitacao.status = "Aprovação Final"
+                else:
+                    solicitacao.status = "Planejamento do Contrato"
+                solicitacao.save()
             contrato.prazo_inicio = solicitacao.data_inicio
             contrato.prazo_fim = solicitacao.data_fim
 
@@ -5245,18 +5681,20 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
 
         if form.is_valid():
             should_notify_minuta = bool(request.FILES.get("arquivo_contrato"))
+            is_signed_file_upload_only = bool(request.FILES.get("arquivo_contrato_assinado")) and not should_notify_minuta
             contrato = form.save(commit=False)
             contrato.solicitacao_contrato = solicitacao
             contrato.prazo_inicio = solicitacao.data_inicio
             contrato.prazo_fim = solicitacao.data_fim
             if solicitacao.valor_provisionado:
                 contrato.valor_total = solicitacao.valor_provisionado
-            solicitacao.aprovacao_gerencia = False
-            if hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
-                solicitacao.status = "Aprovação Final"
-            else:
-                solicitacao.status = "Planejamento do Contrato"
-            solicitacao.save()
+            if not is_signed_file_upload_only:
+                solicitacao.aprovacao_gerencia = False
+                if hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
+                    solicitacao.status = "Aprovação Final"
+                else:
+                    solicitacao.status = "Planejamento do Contrato"
+                solicitacao.save()
             # mantém arquivo antigo se não foi enviado novo
             if not request.FILES.get("arquivo_contrato") and contrato_existente:
                 contrato.arquivo_contrato = contrato_existente.arquivo_contrato
@@ -5504,7 +5942,7 @@ def criar_contrato_se_aprovado(solicitacao):
         documento = DocumentoContratoTerceiro.objects.filter(solicitacao=solicitacao).first()
         if not documento:
             return None
-        if not (documento.arquivo_contrato_assinado and bm.minuta_boletim_assinado):
+        if not documento.arquivo_contrato_assinado:
             update_signed_files_pending_status(solicitacao, bm=bm, documento=documento)
             return None
         proposta = PropostaFornecedor.objects.filter(
@@ -5558,7 +5996,7 @@ def criar_contrato_se_aprovado_minuta(solicitacao):
         documento = DocumentoContratoTerceiro.objects.filter(solicitacao_contrato=solicitacao).first()
         if not documento:
             return None
-        if not (documento.arquivo_contrato_assinado and bm.minuta_boletim_assinado):
+        if not documento.arquivo_contrato_assinado:
             update_signed_files_pending_status(solicitacao, bm=bm, documento=documento)
             return None
         proposta = PropostaFornecedor.objects.filter(
@@ -5923,7 +6361,7 @@ def detalhe_bm(request, pk):
             usuario.grupo == "gerente_lider" and user_shares_center_with_coordinator(usuario, solicitacao.coordenador)
         ):
             if usuario.grupo == "lider_contrato" and usuario != solicitacao.lider_contrato:
-                messages.error(request, "VocÃƒÂª nÃƒÂ£o tem permissÃƒÂ£o para isso.")
+                messages.error(request, "Você não tem permissão para isso.")
                 return redirect("home")
             if acao == "aprovar":
                 bm.status_coordenador = "aprovado"

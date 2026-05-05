@@ -19,7 +19,7 @@ shutil.copy(db_path, backup_file)
 print(f"✅ Backup criado: {backup_file}")
 
 # --- 2️⃣ LIMPEZA DE BACKUPS ANTIGOS ---
-limite_dias = 10
+limite_dias = 30
 agora = time.time()
 
 for arquivo in os.listdir(backup_dir):
