@@ -155,8 +155,8 @@
                                             </a>
                                         {% else %}
                                             <!-- Já houve aprovação ou reprovação -->
-                                            <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">
-                                                Reavaliar Contrato
+                                            <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="d-none btn btn-warning btn-sm">
+                                                
                                             </a>
                                         {% endif %}
                                     {% endif %}
@@ -278,7 +278,7 @@
 
                       {% if request.user.grupo == 'suprimento' %}
 
-                          {% if solicitacao.status == 'Fornecedor aprovado' %}
+                          {% if solicitacao.status == 'Fornecedor aprovado' and not solicitacao.guarda_chuva %}
                             <div>
                             {% if solicitacao.minuta_boletins_medicao_contrato.minuta_boletim %}
                               <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">
@@ -324,16 +324,6 @@
 
                       {% endif %}
 
-                      {% if request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'gerente_lider' %}
-                          {% if solicitacao.status == 'Fornecedor Selecionado' %}
-                              <a href="{% url 'avaliar_contrato' solicitacao.id %}"
-                                 class="btn btn-primary btn-sm">
-                                  Avaliar Contrato
-                              </a>
-                          {% endif %}
-
-                      {% endif %}
-
                       {% if request.user.grupo == 'diretoria' %}
                           {% if solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
                               <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
@@ -343,14 +333,14 @@
                           {% endif %}
                       {% endif %}
 
-                      {% if request.user.grupo == 'gerente_contrato' or request.user.grupo == 'lider_contrato' and request.user == solicitacao.lider_contrato or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:solicitacao.coordenador %}
+                      {% if request.user.grupo == 'gerente_contrato' %}
                           {% if solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                           <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
                           class="btn btn-success btn-sm">
                             Avaliar Solicitação
                           </a>
                           {% endif %}
-                          {% if solicitacao.minuta_boletins_medicao_contrato %}
+                          {% if not solicitacao.guarda_chuva and solicitacao.minuta_boletins_medicao_contrato %}
                               {% if solicitacao.minuta_boletins_medicao_contrato.status_gerente == 'pendente' %}
                                   <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-primary btn-sm">
                                       Avaliar Minuta BM
@@ -372,7 +362,7 @@
                                   {% else %}
                                       <!-- Já houve aprovação ou reprovação -->
                                       <a href="{% url 'detalhes_minuta_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">
-                                          Reavaliar Contrato
+                                          
                                       </a>
                                   {% endif %}
                               {% endif %}
@@ -560,6 +550,88 @@
 
     {% else %}
     <p class="text-muted">Nenhuma Ordem de Serviço encontrada.</p>
+    {% endif %}
+
+    <hr class="my-5">
+
+    <h3 class="mb-3">Solicitacoes de Aditivo</h3>
+
+    {% if aditivos_page.object_list %}
+    <table class="table table-striped text-center">
+        <thead class="table-light">
+            <tr>
+                <th>ID</th>
+                <th>Contrato</th>
+                <th>Solicitante</th>
+                <th>Solicitado em</th>
+                <th>Novo valor total</th>
+                <th>Nova data fim</th>
+                <th>Etapa atual</th>
+                <th>Acoes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for aditivo in aditivos_page %}
+            <tr class="linha-hover" onclick="window.location='{% url 'detalhes_aditivo_contrato' aditivo.id %}'">
+                <td>#{{ aditivo.id }}</td>
+                <td>{{ aditivo.contrato.num_contrato }} - {{ aditivo.contrato.empresa_terceira }}</td>
+                <td>{{ aditivo.solicitado_por.get_full_name|default:aditivo.solicitado_por }}</td>
+                <td>{{ aditivo.criado_em|date:"d/m/Y H:i" }}</td>
+                <td>{% if aditivo.novo_valor_total %}R$ {{ aditivo.novo_valor_total|floatformat:2 }}{% else %}-{% endif %}</td>
+                <td>{{ aditivo.nova_data_fim|date:"d/m/Y"|default:"-" }}</td>
+                <td>{{ aditivo.etapa_atual }}</td>
+                <td onclick="event.stopPropagation();">
+                    <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
+                        Detalhes
+                    </a>
+                    {% if request.user.grupo == "gerente_contrato" and aditivo.status_gerente == "pendente" %}
+                        <a href="{% url 'avaliar_solicitacao_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-success">
+                            Avaliar solicitacao
+                        </a>
+                    {% elif request.user.grupo == "diretoria" and aditivo.status_diretoria == "pendente" %}
+                        <a href="{% url 'avaliar_solicitacao_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-success">
+                            Avaliar solicitacao
+                        </a>
+                    {% elif request.user.grupo == "suprimento" and aditivo.solicitacao_aprovada_totalmente and not aditivo.tem_documento and not aditivo.minuta_aprovada %}
+                        <a href="{% url 'enviar_documento_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-primary">
+                            Inserir minuta
+                        </a>
+                    {% elif request.user.grupo == "suprimento" and aditivo.minuta_reprovada %}
+                        <a href="{% url 'enviar_documento_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-warning">
+                            Revisar minuta
+                        </a>
+                    {% elif request.user.grupo == "gerente_contrato" and aditivo.tem_documento and aditivo.status_lider == "pendente" %}
+                        <a href="{% url 'avaliar_minuta_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-primary">
+                            Avaliar minuta
+                        </a>
+                    {% elif request.user.grupo == "suprimento" and aditivo.minuta_aprovada and not aditivo.tem_documento_assinado %}
+                        <a href="{% url 'enviar_aditivo_assinado_contrato' aditivo.id %}" class="btn btn-sm btn-primary">
+                            Inserir documento assinado
+                        </a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <nav>
+        <ul class="pagination">
+            {% if aditivos_page.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page_ad=1">« Primeiro</a></li>
+                <li class="page-item"><a class="page-link" href="?page_ad={{ aditivos_page.previous_page_number }}">Anterior</a></li>
+            {% endif %}
+            <li class="page-item disabled">
+                <span class="page-link">Pagina {{ aditivos_page.number }} de {{ aditivos_page.paginator.num_pages }}</span>
+            </li>
+            {% if aditivos_page.has_next %}
+                <li class="page-item"><a class="page-link" href="?page_ad={{ aditivos_page.next_page_number }}">Proximo</a></li>
+                <li class="page-item"><a class="page-link" href="?page_ad={{ aditivos_page.paginator.num_pages }}">Ultimo »</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% else %}
+    <p class="text-muted">Nenhuma solicitacao de aditivo encontrada.</p>
     {% endif %}
 
 </div>

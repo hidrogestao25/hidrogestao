@@ -1,5 +1,6 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% block content %}
+{% load l10n %}
 
 <div class="container mt-4">
     <h2>Detalhes da Solicitação</h2>
@@ -31,7 +32,7 @@
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     const progressBar = document.getElementById("timeline-progress");
-    const targetWidth = "{{ progress_percent }}%"; // vindo da view
+    const targetWidth = "{{ progress_percent|unlocalize }}%"; // vindo da view
     setTimeout(() => {
         progressBar.style.width = targetWidth;
     }, 200); // atraso pequeno para garantir a animação
@@ -45,7 +46,7 @@ document.addEventListener("DOMContentLoaded", function() {
         <p><strong>Id:</strong> #{{ solicitacao.id }}</p>
       {% else %}
         <p><strong>Contrato:</strong> {{ solicitacao.contrato }}</p>
-        <p><strong>Líder Técnico:</strong> {{ solicitacao.coordenador.get_full_name|default:solicitacao.coordenador }}</p>
+        <p><strong>Líder TÃ©cnico:</strong> {{ solicitacao.coordenador.get_full_name|default:solicitacao.coordenador }}</p>
       {% endif %}
         <p><strong>Líder de Contrato:</strong> {{ solicitacao.lider_contrato }}</p>
         <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
@@ -77,23 +78,34 @@ document.addEventListener("DOMContentLoaded", function() {
              </p>
         {% endif %}
         <p><strong>Status:</strong> {{ solicitacao.status }}</p>
-        <p><strong>Descrição do Status:</strong>
+        <p><strong>Descricao do Status:</strong>
           {% if solicitacao.status == "Solicitação de contratação" %}
-            A solicitação foi encaminhada para avaliação da equipe de Suprimentos.
+            A solicitacao foi encaminhada para avaliacao da equipe de suprimento.
           {% elif solicitacao.status == "Fornecedor aprovado" %}
-            A direção e gerência de contrato aprovaram e a equipe de suprimento deu início ao desenvolvimento das minutas dos Boletins de Medição e do Contrato.
+            {% if solicitacao.guarda_chuva %}
+              A diretoria e a gerencia de contrato aprovaram a solicitacao, e a equipe de suprimento iniciou a elaboracao da minuta de contrato.
+            {% else %}
+              A diretoria e a gerencia de contrato aprovaram a solicitacao, e a equipe de suprimento iniciou a elaboracao das minutas de BM e de contrato.
+            {% endif %}
           {% elif solicitacao.status == "Planejamento do Contrato" %}
-            A equipe de suprimentos está desenvolvendo as minutas do boletim de medição e do contrato.
+            {% if solicitacao.guarda_chuva %}
+              A equipe de suprimento esta elaborando a minuta do contrato.
+            {% else %}
+              A equipe de suprimento esta elaborando as minutas do BM e do contrato.
+            {% endif %}
           {% elif solicitacao.status == "Aprovação Final" %}
-            A gerência de contrato está avaliando as minutas desenvolvidas pela equipe de suprimento.
+            {% if solicitacao.guarda_chuva %}
+              A gerencia de contrato esta avaliando a minuta do contrato.
+            {% else %}
+              A gerencia de contrato esta avaliando as minutas desenvolvidas pela equipe de suprimento.
+            {% endif %}
           {% elif solicitacao.status == "Aguardando Arquivos Assinados" %}
-            As minutas foram aprovadas pela gerÃªncia de contrato e a equipe de suprimento precisa anexar o contrato assinado.
+            A gerencia de contrato aprovou as minutas necessarias, e a equipe de suprimento precisa anexar o contrato assinado.
           {% elif solicitacao.status == "Onboarding" %}
-            As minutas foram ambas aprovadas e a equipe de suprimento está marcando uma reunião onboarding com todos os envolvidos.
+            A solicitacao foi concluida e a equipe de suprimento esta organizando o onboarding com os envolvidos.
           {% else %}
-            ERRO DE STATUS
+            Status sem descricao configurada.
           {% endif %}
-
         </p>
 
         <p><strong>Arquivo do Contrato:</strong>
@@ -352,10 +364,12 @@ document.addEventListener("DOMContentLoaded", function() {
 <!-- Botões de aprovação para gerente -->
 {% if request.user.grupo == 'suprimento' %}
   {% if solicitacao.status == "Fornecedor aprovado" or solicitacao.status == "Planejamento do Contrato" %}
-    {% if solicitacao.minuta_boletins_medicao_contrato %}
-      <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Revisar Minuta do BM</a>
-    {% else %}
-      <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Inserir Minuta do BM</a>
+    {% if not solicitacao.guarda_chuva %}
+      {% if solicitacao.minuta_boletins_medicao_contrato %}
+        <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-warning mt-3">Revisar Minuta do BM</a>
+      {% else %}
+        <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-primary mt-3">Inserir Minuta do BM</a>
+      {% endif %}
     {% endif %}
     {% with contrato=solicitacao.minuta_contrato %}
       {% if contrato %}
@@ -386,7 +400,7 @@ document.addEventListener("DOMContentLoaded", function() {
             <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
             <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
         </div>
-        {% if eventos %}
+        {% if eventos or solicitacao.guarda_chuva %}
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
         {% else %}
         <div class="alert alert-warning mt-3 mb-0">
@@ -402,7 +416,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
 <!-- Botões de aprovação para gerente -->
 {% if request.user.grupo == 'gerente_contrato' %}
-  {% if solicitacao.minuta_boletins_medicao_contrato %}
+  {% if not solicitacao.guarda_chuva and solicitacao.minuta_boletins_medicao_contrato %}
     {% if solicitacao.minuta_boletins_medicao_contrato.status_gerente == 'pendente' %}
       <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-primary mt-3">
         Avaliar Minuta BM
@@ -419,10 +433,6 @@ document.addEventListener("DOMContentLoaded", function() {
       <a href="{% url 'detalhes_minuta_contrato' solicitacao.id %}" class="btn btn-primary mt-3">
         Avaliar Contrato
       </a>
-    {% else %}
-      <a href="{% url 'detalhes_minuta_contrato' solicitacao.id %}" class="btn btn-warning mt-3">
-        Reavaliar Contrato
-      </a>
     {% endif %}
   {% endif %}
 {% endif %}
@@ -434,7 +444,7 @@ document.addEventListener("DOMContentLoaded", function() {
             <label for="justificativa" class="form-label">Justificativa (se reprovar)</label>
             <textarea class="form-control" name="justificativa" id="justificativa" rows="3"></textarea>
         </div>
-        {% if eventos %}
+        {% if eventos or solicitacao.guarda_chuva %}
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
         {% else %}
         <div class="alert alert-warning mt-3 mb-0">
@@ -459,7 +469,7 @@ function validarJustificativa(idCampo){
     let campo = document.getElementById(idCampo).value.trim();
 
     if(campo === ""){
-  alert("É obrigatório informar a justificativa para reprovar.");
+  alert("Ã‰ obrigatório informar a justificativa para reprovar.");
         return false;
     }
 

@@ -15,7 +15,7 @@ from django.utils import timezone
 from django.utils.html import escape, strip_tags
 from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato, AditivoContratoTerceiro, RegistroAuditoria
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm, SolicitacaoGuardaChuvaForm, SolicitacaoAditivoContratoTerceiroForm, DocumentoAditivoContratoTerceiroForm
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm, SolicitacaoGuardaChuvaForm, SolicitacaoAditivoContratoTerceiroForm, DocumentoAditivoContratoTerceiroForm, DocumentoAditivoAssinadoContratoTerceiroForm
 
 import plotly.graph_objs as go
 import plotly.express as px
@@ -83,9 +83,14 @@ def notify_supply_about_signed_files_request(solicitacao):
     contrato_referencia = getattr(solicitacao, "contrato", None)
     fornecedor = getattr(solicitacao, "fornecedor_escolhido", None)
     assunto = f"Solicitacao #{solicitacao.id} - Inserir arquivos assinados"
+    etapa_aprovada = (
+        "A minuta do contrato já foi aprovada pela gerência de contrato.\n"
+        if getattr(solicitacao, "guarda_chuva", False)
+        else "A minuta do contrato e a minuta do BM já foram aprovadas pela gerência de contrato.\n"
+    )
     mensagem = (
         "Olá, equipe de Suprimento!\n\n"
-        "A minuta do contrato e a minuta do BM já foram aprovadas pela gerência de contrato.\n"
+        f"{etapa_aprovada}"
         "Agora é necessário inserir o contrato assinado para concluir a geração do contrato.\n\n"
         f"Solicitação: {solicitacao.id}\n"
         f"Projeto: {contrato_referencia or '-'}\n"
@@ -130,6 +135,35 @@ def get_contract_completion_notification_emails(solicitacao):
     return sorted(emails)
 
 
+def get_addendum_completion_notification_emails(aditivo):
+    emails = set()
+
+    def add_email(value):
+        if value:
+            emails.add(value)
+
+    for grupo in ["suprimento", "gerente_contrato", "diretoria"]:
+        for email in User.objects.filter(grupo=grupo).exclude(email__isnull=True).exclude(email__exact="").values_list("email", flat=True):
+            add_email(email)
+
+    contrato = aditivo.contrato
+    if contrato.lider_contrato:
+        add_email(contrato.lider_contrato.email)
+    if aditivo.solicitado_por:
+        add_email(aditivo.solicitado_por.email)
+
+    gerente_lider_qs = User.objects.filter(grupo="gerente_lider", is_active=True)
+    if contrato.coordenador_id:
+        gerente_lider_qs = gerente_lider_qs.filter(
+            Q(centros__in=contrato.coordenador.centros.all())
+            | Q(centros__in=contrato.coordenadores.values_list("centros__id", flat=True))
+        ).distinct()
+    for email in gerente_lider_qs.exclude(email__isnull=True).exclude(email__exact="").values_list("email", flat=True):
+        add_email(email)
+
+    return sorted(emails)
+
+
 def notify_contract_process_completed(solicitacao, contrato):
     lista_emails = get_contract_completion_notification_emails(solicitacao)
     if not lista_emails:
@@ -137,13 +171,23 @@ def notify_contract_process_completed(solicitacao, contrato):
 
     contrato_path = reverse_lazy("contrato_fornecedor_detalhe", kwargs={"pk": contrato.pk})
     contrato_url = f"https://hidrogestao.pythonanywhere.com{contrato_path}"
-    assunto = f"Processo concluido - Contrato gerado para {contrato.cod_projeto}"
+    projeto_label = "-"
+    if getattr(contrato, "cod_projeto", None):
+        projeto_label = getattr(contrato.cod_projeto, "cod_projeto", None) or str(contrato.cod_projeto)
+    elif getattr(solicitacao, "contrato", None):
+        projeto_label = getattr(solicitacao.contrato, "cod_projeto", None) or str(solicitacao.contrato)
+    elif contrato.num_contrato:
+        projeto_label = contrato.num_contrato
+    elif getattr(contrato, "guarda_chuva", False):
+        projeto_label = "Guarda-chuva"
+
+    assunto = f"Processo concluido - Contrato gerado para {projeto_label}"
     mensagem = (
         "Prezados,\n\n"
         "Informamos que o processo de solicitacao foi concluido com sucesso, "
         "e o contrato foi gerado apos a insercao dos arquivos assinados.\n\n"
         f"Solicitação: {solicitacao.id}\n"
-        f"Código do Projeto: {contrato.cod_projeto}\n"
+        f"Código do Projeto: {projeto_label}\n"
         f"Fornecedor: {contrato.empresa_terceira}\n"
         f"Número do Contrato: {contrato.num_contrato or '-'}\n"
         f"Valor Total: R$ {contrato.valor_total:,.2f}\n"
@@ -170,10 +214,15 @@ def update_signed_files_pending_status(solicitacao, bm=None, documento=None):
         if documento is None:
             documento = getattr(solicitacao, "minuta_contrato", None)
 
-    if not bm or not documento:
+    if not documento:
         return False
 
-    if bm.status_gerente == "aprovado" and solicitacao.aprovacao_gerencia is True:
+    if getattr(solicitacao, "guarda_chuva", False):
+        fluxo_aprovado = solicitacao.aprovacao_gerencia is True
+    else:
+        fluxo_aprovado = bool(bm and bm.status_gerente == "aprovado" and solicitacao.aprovacao_gerencia is True)
+
+    if fluxo_aprovado:
         if documento.arquivo_contrato_assinado:
             return False
         if solicitacao.status != SIGNED_FILES_PENDING_STATUS:
@@ -1627,20 +1676,112 @@ def can_user_request_contract_addendum(user, contrato):
     return False
 
 
-def can_user_approve_addendum_as_lider(user, aditivo):
-    return bool(aditivo and can_user_request_contract_addendum(user, aditivo.contrato) and user.grupo in ["lider_contrato", "gerente_lider"])
+def can_user_view_addendum(user, aditivo):
+    if not user or not aditivo:
+        return False
+    if user.grupo in ["suprimento", "diretoria", "gerente_contrato"]:
+        return True
+    if user.grupo == "lider_contrato":
+        return user == aditivo.contrato.lider_contrato or user == aditivo.solicitado_por
+    if user.grupo == "gerente_lider":
+        return user_shares_center_with_contract_coordinators(user, aditivo.contrato)
+    return False
 
 
-def can_user_approve_addendum_as_gerente(user, aditivo):
-    return bool(aditivo and user and user.grupo == "gerente_contrato")
+def can_user_approve_addendum_request_as_gerente(user, aditivo):
+    return bool(user and aditivo and user.grupo == "gerente_contrato" and aditivo.status_gerente == "pendente")
 
 
-def aditivo_has_operational_approval(aditivo):
-    return aditivo.status_lider == "aprovado" or aditivo.status_gerente == "aprovado"
+def can_user_approve_addendum_request_as_diretoria(user, aditivo):
+    return bool(user and aditivo and user.grupo == "diretoria" and aditivo.status_diretoria == "pendente")
 
 
-def aditivo_is_operationally_pending(aditivo):
-    return aditivo.status_lider == "pendente" and aditivo.status_gerente == "pendente"
+def can_user_upload_addendum_draft(user, aditivo):
+    return bool(
+        user
+        and aditivo
+        and user.grupo == "suprimento"
+        and aditivo.solicitacao_aprovada_totalmente
+        and not aditivo.aprovado_totalmente
+        and not aditivo.minuta_aprovada
+    )
+
+
+def can_user_approve_addendum_draft(user, aditivo):
+    return bool(
+        user
+        and aditivo
+        and user.grupo == "gerente_contrato"
+        and aditivo.tem_documento
+        and aditivo.status_lider == "pendente"
+        and not aditivo.aprovado_totalmente
+    )
+
+
+def can_user_upload_signed_addendum(user, aditivo):
+    return bool(
+        user
+        and aditivo
+        and user.grupo == "suprimento"
+        and aditivo.minuta_aprovada
+        and not aditivo.tem_documento_assinado
+    )
+
+
+def build_addendum_timeline(aditivo):
+    labels = [
+        "Solicitacao do Aditivo",
+        "Aprovacao da Solicitacao",
+        "Minuta do Aditivo",
+        "Aprovacao da Minuta",
+        "Documento Assinado",
+        "Concluido",
+    ]
+    if aditivo.aprovado_totalmente:
+        current_index = 5
+    elif aditivo.minuta_aprovada:
+        current_index = 4
+    elif aditivo.tem_documento:
+        current_index = 3
+    elif aditivo.solicitacao_aprovada_totalmente:
+        current_index = 2
+    else:
+        current_index = 1
+
+    progress_percent = 0
+    if len(labels) > 1:
+        if current_index == 5:
+            progress_percent = 100
+        else:
+            progress_percent = (current_index / (len(labels))) * 100
+
+    return {
+        "labels": labels,
+        "current_index": current_index,
+        "progress_percent": float(progress_percent),
+    }
+
+
+def get_visible_addendums_for_user(user):
+    queryset = AditivoContratoTerceiro.objects.select_related(
+        "contrato",
+        "contrato__empresa_terceira",
+        "contrato__cod_projeto",
+        "contrato__lider_contrato",
+        "contrato__coordenador",
+        "solicitado_por",
+        "documento_enviado_por",
+        "documento_assinado_enviado_por",
+    )
+    if not user:
+        return queryset.none()
+    if user.grupo in ["suprimento", "diretoria", "gerente_contrato"]:
+        return queryset
+    if user.grupo == "lider_contrato":
+        return queryset.filter(Q(contrato__lider_contrato=user) | Q(solicitado_por=user)).distinct()
+    if user.grupo == "gerente_lider":
+        return queryset.filter(contrato__coordenadores__centros__in=user.centros.all()).distinct()
+    return queryset.none()
 
 
 def bm_operational_approval_query():
@@ -1849,11 +1990,11 @@ def home(request):
         ).distinct()
 
         aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
-            Q(arquivo_aditivo__isnull=True)
-            | Q(arquivo_aditivo="")
+            Q(status_gerente="aprovado", status_diretoria="aprovado", arquivo_aditivo__isnull=True)
+            | Q(status_gerente="aprovado", status_diretoria="aprovado", arquivo_aditivo="")
             | Q(status_lider="reprovado")
-            | Q(status_gerente="reprovado")
-            | Q(status_diretoria="reprovado")
+            | Q(status_lider="aprovado", arquivo_aditivo_assinado__isnull=True)
+            | Q(status_lider="aprovado", arquivo_aditivo_assinado="")
         ).select_related(
             "contrato",
             "contrato__empresa_terceira",
@@ -2284,12 +2425,33 @@ def home(request):
             Q(status__in=["Aprovação Final", "Fornecedor selecionado"])
         ).distinct()
         solicitacoes_contrato = SolicitacaoContrato.objects.filter(
-            lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
-            status__in=["Solicitação de contratação", "Aprovação Final"]
+            lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"]
+        ).filter(
+            Q(status="Solicitação de contratação")
+            | Q(status="Aprovação Final")
+            | (
+                Q(status="Planejamento do Contrato")
+                & Q(minuta_contrato__arquivo_contrato__isnull=False)
+            )
         ).distinct()
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
             status__in=["pendente_lider", "pendente_gerente"]
+        ).distinct()
+
+        aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
+            Q(status_gerente="pendente")
+            | (
+                Q(status_gerente="aprovado")
+                & Q(status_diretoria="aprovado")
+                & Q(status_lider="pendente")
+                & Q(arquivo_aditivo__isnull=False)
+                & ~Q(arquivo_aditivo="")
+            )
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira",
+            "solicitado_por",
         ).distinct()
 
         eventos_proximos = Evento.objects.filter(
@@ -2341,6 +2503,7 @@ def home(request):
             "solicitacoes_prospeccao": solicitacoes_prospeccao,
             "solicitacoes_contrato": solicitacoes_contrato,
             "solicitacoes_os": solicitacoes_os,
+            "aditivos_pendentes": aditivos_pendentes,
             #"bms_pendentes": bms_pendentes,
             "eventos_proximos": eventos_proximos,
             "entregas_atrasadas": entregas_atrasadas,
@@ -2367,10 +2530,6 @@ def home(request):
 
         aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
             status_diretoria="pendente"
-        ).filter(
-            Q(status_lider="aprovado") | Q(status_gerente="aprovado")
-        ).exclude(
-            Q(status_lider="reprovado") | Q(status_gerente="reprovado")
         ).select_related(
             "contrato",
             "contrato__empresa_terceira",
@@ -3118,9 +3277,25 @@ def contrato_fornecedor_detalhe(request, pk):
         ).first()
 
     eventos = Evento.objects.filter(contrato_terceiro=contrato).order_by("data_prevista")
-    aditivos = contrato.aditivos.select_related("solicitado_por", "documento_enviado_por").all()
-    aditivo_ativo = aditivos.filter(status_diretoria="pendente").first()
-    ultimo_aditivo_aprovado = aditivos.filter(status_diretoria="aprovado").order_by("-data_aprovacao_diretoria", "-criado_em").first()
+    aditivos = contrato.aditivos.select_related(
+        "solicitado_por",
+        "documento_enviado_por",
+        "documento_assinado_enviado_por",
+    ).all()
+    aditivo_ativo = next(
+        (
+            item
+            for item in aditivos
+            if not item.aprovado_totalmente and not item.solicitacao_reprovada_por_alguem
+        ),
+        None,
+    )
+    ultimo_aditivo_aprovado = (
+        aditivos.filter(arquivo_aditivo_assinado__isnull=False)
+        .exclude(arquivo_aditivo_assinado="")
+        .order_by("-documento_assinado_enviado_em", "-criado_em")
+        .first()
+    )
     valor_total_contrato_vigente = (
         ultimo_aditivo_aprovado.novo_valor_total
         if ultimo_aditivo_aprovado and ultimo_aditivo_aprovado.novo_valor_total is not None
@@ -3281,10 +3456,17 @@ def solicitar_aditivo_contrato(request, pk):
         messages.error(request, "Você não tem permissão para solicitar aditivo neste contrato.")
         return redirect("contrato_fornecedor_detalhe", pk=pk)
 
-    aditivo_em_aberto = contrato.aditivos.filter(status_diretoria="pendente").first()
+    aditivo_em_aberto = next(
+        (
+            item
+            for item in contrato.aditivos.all()
+            if not item.aprovado_totalmente and not item.solicitacao_reprovada_por_alguem
+        ),
+        None,
+    )
     if aditivo_em_aberto:
         messages.warning(request, "Já existe um aditivo em andamento para este contrato.")
-        return redirect("contrato_fornecedor_detalhe", pk=pk)
+        return redirect("detalhes_aditivo_contrato", pk=aditivo_em_aberto.pk)
 
     if request.method == "POST":
         form = SolicitacaoAditivoContratoTerceiroForm(request.POST)
@@ -3296,18 +3478,18 @@ def solicitar_aditivo_contrato(request, pk):
             aditivo.data_fim_anterior = contrato.data_fim
             aditivo.save()
 
-            emails_suprimento = list(
-                User.objects.filter(grupo="suprimento", is_active=True)
+            destinatarios = list(
+                User.objects.filter(grupo__in=["gerente_contrato", "diretoria"], is_active=True)
                 .exclude(email__isnull=True)
                 .exclude(email__exact="")
                 .values_list("email", flat=True)
                 .distinct()
             )
-            if emails_suprimento:
+            if destinatarios:
                 send_mail(
                     f"Nova solicitação de aditivo - Contrato {contrato.num_contrato}",
                     (
-                        f"Olá, equipe de Suprimento!\n\n"
+                        f"Olá,\n\n"
                         f"Foi solicitada uma nova análise de aditivo para o contrato abaixo:\n\n"
                         f"Projeto: {contrato.cod_projeto}\n"
                         f"Contrato: {contrato.num_contrato} - {contrato.empresa_terceira}\n"
@@ -3315,16 +3497,17 @@ def solicitar_aditivo_contrato(request, pk):
                         f"Novo valor total: R$ {aditivo.novo_valor_total or 0}\n"
                         f"Nova data fim: {aditivo.nova_data_fim.strftime('%d/%m/%Y') if aditivo.nova_data_fim else 'Não informada'}\n"
                         f"Motivo: {aditivo.motivo}\n\n"
+                        f"A solicitação aguarda aprovação do gerente de contrato e da diretoria.\n\n"
                         f"Atenciosamente,\n"
                         f"Sistema HIDROGestão"
                     ),
                     FROM_EMAIL,
-                    emails_suprimento,
+                    destinatarios,
                     fail_silently=False,
                 )
 
-            messages.success(request, "Solicitação de aditivo registrada e enviada para o Suprimento.")
-            return redirect("contrato_fornecedor_detalhe", pk=pk)
+            messages.success(request, "Solicitação de aditivo registrada e enviada para aprovação.")
+            return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
     else:
         form = SolicitacaoAditivoContratoTerceiroForm(
             initial={
@@ -3336,7 +3519,132 @@ def solicitar_aditivo_contrato(request, pk):
     return render(
         request,
         "contratos/solicitar_aditivo_contrato.html",
-        {"contrato": contrato, "form": form},
+        {"contrato": contrato, "form": form, "timeline_steps": None},
+    )
+
+
+@login_required
+def detalhes_aditivo_contrato(request, pk):
+    aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
+
+    if not can_user_view_addendum(request.user, aditivo):
+        messages.error(request, "Você não tem permissão para visualizar este aditivo.")
+        return redirect("home")
+
+    return render(
+        request,
+        "contratos/detalhes_aditivo_contrato.html",
+        {
+            "aditivo": aditivo,
+            "contrato": aditivo.contrato,
+            "timeline_steps": build_addendum_timeline(aditivo),
+            "can_approve_request_as_gerente": can_user_approve_addendum_request_as_gerente(request.user, aditivo),
+            "can_approve_request_as_diretoria": can_user_approve_addendum_request_as_diretoria(request.user, aditivo),
+            "can_upload_draft": can_user_upload_addendum_draft(request.user, aditivo),
+            "can_approve_draft": can_user_approve_addendum_draft(request.user, aditivo),
+            "can_upload_signed": can_user_upload_signed_addendum(request.user, aditivo),
+        },
+    )
+
+
+@login_required
+def avaliar_solicitacao_aditivo_contrato(request, pk):
+    aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
+    contrato = aditivo.contrato
+
+    if not can_user_view_addendum(request.user, aditivo):
+        messages.error(request, "Você não tem permissão para avaliar esta solicitação de aditivo.")
+        return redirect("home")
+
+    if request.method == "POST":
+        acao = request.POST.get("acao")
+        justificativa = request.POST.get("justificativa", "").strip()
+
+        if acao in ["reprovar_gerente", "reprovar_diretoria"] and not justificativa:
+            messages.error(request, "A justificativa é obrigatória para reprovar a solicitação de aditivo.")
+            return redirect("avaliar_solicitacao_aditivo_contrato", pk=aditivo.pk)
+
+        if request.user.grupo == "gerente_contrato":
+            if acao not in ["aprovar_gerente", "reprovar_gerente"]:
+                messages.error(request, "Ação inválida para a gerência de contrato.")
+                return redirect("avaliar_solicitacao_aditivo_contrato", pk=aditivo.pk)
+            if aditivo.status_gerente != "pendente":
+                messages.warning(request, "A gerência de contrato já avaliou esta solicitação.")
+                return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+            aditivo.status_gerente = "aprovado" if acao == "aprovar_gerente" else "reprovado"
+            aditivo.data_aprovacao_gerente = timezone.now()
+            aditivo.justificativa_reprovacao_gerente = justificativa if acao == "reprovar_gerente" else None
+        elif request.user.grupo == "diretoria":
+            if acao not in ["aprovar_diretoria", "reprovar_diretoria"]:
+                messages.error(request, "Ação inválida para a diretoria.")
+                return redirect("avaliar_solicitacao_aditivo_contrato", pk=aditivo.pk)
+            if aditivo.status_diretoria != "pendente":
+                messages.warning(request, "A diretoria já avaliou esta solicitação.")
+                return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+            aditivo.status_diretoria = "aprovado" if acao == "aprovar_diretoria" else "reprovado"
+            aditivo.data_aprovacao_diretoria = timezone.now()
+            aditivo.justificativa_reprovacao_diretoria = justificativa if acao == "reprovar_diretoria" else None
+        else:
+            messages.error(request, "Você não tem permissão para avaliar esta solicitação de aditivo.")
+            return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+        aditivo.save()
+
+        if aditivo.solicitacao_reprovada_por_alguem:
+            destinatarios = []
+            if aditivo.solicitado_por and aditivo.solicitado_por.email:
+                destinatarios.append(aditivo.solicitado_por.email)
+            if destinatarios:
+                send_mail(
+                    f"Solicitação de aditivo reprovada - Contrato {contrato.num_contrato}",
+                    (
+                        f"Olá,\n\n"
+                        f"A solicitação de aditivo do contrato {contrato.num_contrato} foi reprovada.\n\n"
+                        f"Justificativa: {justificativa}\n\n"
+                        f"Atenciosamente,\n"
+                        f"Sistema HIDROGestão"
+                    ),
+                    FROM_EMAIL,
+                    list(dict.fromkeys(destinatarios)),
+                    fail_silently=False,
+                )
+        elif aditivo.solicitacao_aprovada_totalmente:
+            destinatarios = list(
+                User.objects.filter(grupo="suprimento", is_active=True)
+                .exclude(email__isnull=True)
+                .exclude(email__exact="")
+                .values_list("email", flat=True)
+                .distinct()
+            )
+            if destinatarios:
+                send_mail(
+                    f"Solicitação de aditivo aprovada - Contrato {contrato.num_contrato}",
+                    (
+                        f"Olá, equipe de Suprimento!\n\n"
+                        f"A solicitação de aditivo do contrato {contrato.num_contrato} foi aprovada "
+                        f"pela gerência de contrato e pela diretoria.\n\n"
+                        f"Favor inserir a minuta do aditivo no sistema.\n\n"
+                        f"Atenciosamente,\n"
+                        f"Sistema HIDROGestão"
+                    ),
+                    FROM_EMAIL,
+                    destinatarios,
+                    fail_silently=False,
+                )
+
+        messages.success(request, "Ação registrada com sucesso.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    return render(
+        request,
+        "contratos/avaliar_solicitacao_aditivo_contrato.html",
+        {
+            "aditivo": aditivo,
+            "contrato": contrato,
+            "timeline_steps": build_addendum_timeline(aditivo),
+            "can_approve_request_as_gerente": can_user_approve_addendum_request_as_gerente(request.user, aditivo),
+            "can_approve_request_as_diretoria": can_user_approve_addendum_request_as_diretoria(request.user, aditivo),
+        },
     )
 
 
@@ -3345,12 +3653,16 @@ def enviar_documento_aditivo_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
 
     if request.user.grupo != "suprimento":
-        messages.error(request, "Somente o Suprimento pode anexar o documento do aditivo.")
-        return redirect("contrato_fornecedor_detalhe", pk=aditivo.contrato_id)
+        messages.error(request, "Somente o Suprimento pode inserir a minuta do aditivo.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    if not aditivo.solicitacao_aprovada_totalmente:
+        messages.error(request, "A solicitação do aditivo ainda não foi aprovada por completo.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
 
     if aditivo.aprovado_totalmente:
-        messages.warning(request, "Este aditivo já foi aprovado e não pode mais ser alterado.")
-        return redirect("contrato_fornecedor_detalhe", pk=aditivo.contrato_id)
+        messages.warning(request, "Este aditivo já foi concluído e não pode mais ser alterado.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
 
     if request.method == "POST":
         form = DocumentoAditivoContratoTerceiroForm(request.POST, request.FILES, instance=aditivo)
@@ -3361,251 +3673,184 @@ def enviar_documento_aditivo_contrato(request, pk):
             aditivo.status_lider = "pendente"
             aditivo.data_aprovacao_lider = None
             aditivo.justificativa_reprovacao_lider = None
-            aditivo.status_gerente = "pendente"
-            aditivo.data_aprovacao_gerente = None
-            aditivo.justificativa_reprovacao_gerente = None
-            aditivo.status_diretoria = "pendente"
-            aditivo.data_aprovacao_diretoria = None
-            aditivo.justificativa_reprovacao_diretoria = None
             aditivo.save()
 
-            emails = []
-            lider = aditivo.contrato.lider_contrato
-            if lider and lider.grupo in ["lider_contrato", "gerente_lider"] and lider.email:
-                emails.append(lider.email)
-            emails.extend(
+            destinatarios = list(
                 User.objects.filter(grupo="gerente_contrato", is_active=True)
                 .exclude(email__isnull=True)
                 .exclude(email__exact="")
                 .values_list("email", flat=True)
+                .distinct()
             )
-            emails = list(dict.fromkeys(emails))
-            if emails:
+            if destinatarios:
                 send_mail(
-                    f"Documento de aditivo disponível - Contrato {aditivo.contrato.num_contrato}",
+                    f"Minuta de aditivo disponível - Contrato {aditivo.contrato.num_contrato}",
                     (
                         f"Olá,\n\n"
-                        f"O Suprimento anexou o documento do aditivo do contrato abaixo:\n\n"
+                        f"O Suprimento anexou a minuta do aditivo do contrato abaixo:\n\n"
                         f"Projeto: {aditivo.contrato.cod_projeto}\n"
                         f"Contrato: {aditivo.contrato.num_contrato} - {aditivo.contrato.empresa_terceira}\n"
                         f"Novo valor total: R$ {aditivo.novo_valor_total or 0}\n"
                         f"Nova data fim: {aditivo.nova_data_fim.strftime('%d/%m/%Y') if aditivo.nova_data_fim else 'Não informada'}\n\n"
+                        f"Favor avaliar a minuta do aditivo.\n\n"
                         f"Atenciosamente,\n"
                         f"Sistema HIDROGestão"
                     ),
                     FROM_EMAIL,
-                    emails,
+                    destinatarios,
                     fail_silently=False,
                 )
 
-            messages.success(request, "Documento do aditivo enviado para aprovação.")
-            return redirect("contrato_fornecedor_detalhe", pk=aditivo.contrato_id)
+            messages.success(request, "Minuta do aditivo enviada para aprovação.")
+            return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
     else:
         form = DocumentoAditivoContratoTerceiroForm(instance=aditivo)
 
     return render(
         request,
         "contratos/enviar_documento_aditivo.html",
-        {"aditivo": aditivo, "contrato": aditivo.contrato, "form": form},
+        {"aditivo": aditivo, "contrato": aditivo.contrato, "form": form, "timeline_steps": build_addendum_timeline(aditivo)},
     )
 
 
 @login_required
 def avaliar_aditivo_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
-    contrato = aditivo.contrato
-    usuario = request.user
+    return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
 
-    if usuario.grupo not in ["lider_contrato", "gerente_lider", "gerente_contrato", "diretoria"]:
-        messages.error(request, "Você não tem permissão para avaliar este aditivo.")
-        return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
+
+@login_required
+def avaliar_minuta_aditivo_contrato(request, pk):
+    aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
+    contrato = aditivo.contrato
+
+    if request.user.grupo != "gerente_contrato":
+        messages.error(request, "Somente a gerência de contrato pode avaliar a minuta do aditivo.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    if not aditivo.tem_documento:
+        messages.error(request, "A minuta do aditivo ainda não foi anexada pelo Suprimento.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
 
     if request.method == "POST":
         acao = request.POST.get("acao")
         justificativa = request.POST.get("justificativa", "").strip()
 
-        if not aditivo.tem_documento:
-            messages.error(request, "O documento do aditivo ainda não foi anexado pelo Suprimento.")
-            return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
+        if acao not in ["aprovar_minuta", "reprovar_minuta"]:
+            messages.error(request, "Ação inválida para a minuta do aditivo.")
+            return redirect("avaliar_minuta_aditivo_contrato", pk=aditivo.pk)
 
-        if acao in ["reprovar_lider", "reprovar_gerente", "reprovar_diretoria"] and not justificativa:
-            messages.error(request, "A justificativa é obrigatória para reprovar o aditivo.")
-            return redirect("avaliar_aditivo_contrato", pk=aditivo.pk)
+        if acao == "reprovar_minuta" and not justificativa:
+            messages.error(request, "A justificativa é obrigatória para reprovar a minuta do aditivo.")
+            return redirect("avaliar_minuta_aditivo_contrato", pk=aditivo.pk)
 
-        if usuario.grupo in ["lider_contrato", "gerente_lider"]:
-            if not can_user_approve_addendum_as_lider(usuario, aditivo):
-                messages.error(request, "Você não tem permissão para avaliar este aditivo como liderança.")
-                return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
-            if acao not in ["aprovar_lider", "reprovar_lider"]:
-                messages.error(request, "Ação inválida para a liderança.")
-                return redirect("avaliar_aditivo_contrato", pk=aditivo.pk)
-            if not aditivo_is_operationally_pending(aditivo):
-                messages.warning(request, "Este aditivo já recebeu uma decisão operacional.")
-                return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
+        if aditivo.status_lider != "pendente":
+            messages.warning(request, "A minuta do aditivo já foi avaliada.")
+            return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
 
-            aditivo.status_lider = "aprovado" if acao == "aprovar_lider" else "reprovado"
-            aditivo.data_aprovacao_lider = timezone.now()
-            aditivo.justificativa_reprovacao_lider = justificativa if acao == "reprovar_lider" else None
-
-            if acao == "aprovar_lider":
-                destinatarios = list(
-                    User.objects.filter(grupo__in=["gerente_contrato", "diretoria"], is_active=True)
-                    .exclude(email__isnull=True)
-                    .exclude(email__exact="")
-                    .values_list("email", flat=True)
-                    .distinct()
-                )
-                if destinatarios:
-                    send_mail(
-                        f"Aditivo aprovado pela liderança - Contrato {contrato.num_contrato}",
-                        (
-                            f"Olá,\n\n"
-                            f"O aditivo do contrato {contrato.num_contrato} foi aprovado por liderança.\n"
-                            f"A aprovação da gerência não é mais obrigatória e a diretoria já pode avaliar.\n\n"
-                            f"Atenciosamente,\n"
-                            f"Sistema HIDROGestão"
-                        ),
-                        FROM_EMAIL,
-                        destinatarios,
-                        fail_silently=False,
-                    )
-            else:
-                emails_suprimento = list(
-                    User.objects.filter(grupo="suprimento", is_active=True)
-                    .exclude(email__isnull=True)
-                    .exclude(email__exact="")
-                    .values_list("email", flat=True)
-                    .distinct()
-                )
-                if emails_suprimento:
-                    send_mail(
-                        f"Aditivo reprovado pela liderança - Contrato {contrato.num_contrato}",
-                        (
-                            f"Olá, equipe de Suprimento!\n\n"
-                            f"O documento de aditivo do contrato {contrato.num_contrato} foi reprovado pela liderança.\n\n"
-                            f"Justificativa: {justificativa}\n\n"
-                            f"Favor anexar uma nova versão.\n\n"
-                            f"Atenciosamente,\n"
-                            f"Sistema HIDROGestão"
-                        ),
-                        FROM_EMAIL,
-                        emails_suprimento,
-                        fail_silently=False,
-                    )
-
-        elif usuario.grupo == "gerente_contrato":
-            if acao not in ["aprovar_gerente", "reprovar_gerente"]:
-                messages.error(request, "Ação inválida para a gerência de contrato.")
-                return redirect("avaliar_aditivo_contrato", pk=aditivo.pk)
-            if not aditivo_is_operationally_pending(aditivo):
-                messages.warning(request, "Este aditivo já recebeu uma decisão operacional.")
-                return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
-
-            aditivo.status_gerente = "aprovado" if acao == "aprovar_gerente" else "reprovado"
-            aditivo.data_aprovacao_gerente = timezone.now()
-            aditivo.justificativa_reprovacao_gerente = justificativa if acao == "reprovar_gerente" else None
-
-            if acao == "aprovar_gerente":
-                destinatarios = list(
-                    User.objects.filter(grupo="diretoria", is_active=True)
-                    .exclude(email__isnull=True)
-                    .exclude(email__exact="")
-                    .values_list("email", flat=True)
-                    .distinct()
-                )
-                if destinatarios:
-                    send_mail(
-                        f"Aditivo aprovado pela gerência - Contrato {contrato.num_contrato}",
-                        (
-                            f"Olá, diretoria!\n\n"
-                            f"O aditivo do contrato {contrato.num_contrato} foi aprovado pela gerência de contrato e está pronto para avaliação final.\n\n"
-                            f"Atenciosamente,\n"
-                            f"Sistema HIDROGestão"
-                        ),
-                        FROM_EMAIL,
-                        destinatarios,
-                        fail_silently=False,
-                    )
-            else:
-                emails_suprimento = list(
-                    User.objects.filter(grupo="suprimento", is_active=True)
-                    .exclude(email__isnull=True)
-                    .exclude(email__exact="")
-                    .values_list("email", flat=True)
-                    .distinct()
-                )
-                if emails_suprimento:
-                    send_mail(
-                        f"Aditivo reprovado pela gerência - Contrato {contrato.num_contrato}",
-                        (
-                            f"Olá, equipe de Suprimento!\n\n"
-                            f"O documento de aditivo do contrato {contrato.num_contrato} foi reprovado pela gerência de contrato.\n\n"
-                            f"Justificativa: {justificativa}\n\n"
-                            f"Favor anexar uma nova versão.\n\n"
-                            f"Atenciosamente,\n"
-                            f"Sistema HIDROGestão"
-                        ),
-                        FROM_EMAIL,
-                        emails_suprimento,
-                        fail_silently=False,
-                    )
-
-        elif usuario.grupo == "diretoria":
-            if acao not in ["aprovar_diretoria", "reprovar_diretoria"]:
-                messages.error(request, "Ação inválida para a diretoria.")
-                return redirect("avaliar_aditivo_contrato", pk=aditivo.pk)
-            if not aditivo_has_operational_approval(aditivo):
-                messages.error(request, "O aditivo ainda não recebeu aprovação operacional.")
-                return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
-            if aditivo.reprovado_operacionalmente:
-                messages.error(request, "O aditivo foi reprovado operacionalmente e precisa de novo arquivo.")
-                return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
-
-            aditivo.status_diretoria = "aprovado" if acao == "aprovar_diretoria" else "reprovado"
-            aditivo.data_aprovacao_diretoria = timezone.now()
-            aditivo.justificativa_reprovacao_diretoria = justificativa if acao == "reprovar_diretoria" else None
-
-            if acao == "aprovar_diretoria":
-                contrato.data_fim = aditivo.nova_data_fim
-                contrato.valor_total = aditivo.novo_valor_total
-                contrato.save(update_fields=["data_fim", "valor_total"])
-            else:
-                emails_suprimento = list(
-                    User.objects.filter(grupo="suprimento", is_active=True)
-                    .exclude(email__isnull=True)
-                    .exclude(email__exact="")
-                    .values_list("email", flat=True)
-                    .distinct()
-                )
-                if emails_suprimento:
-                    send_mail(
-                        f"Aditivo reprovado pela diretoria - Contrato {contrato.num_contrato}",
-                        (
-                            f"Olá, equipe de Suprimento!\n\n"
-                            f"O documento de aditivo do contrato {contrato.num_contrato} foi reprovado pela diretoria.\n\n"
-                            f"Justificativa: {justificativa}\n\n"
-                            f"Favor anexar uma nova versão.\n\n"
-                            f"Atenciosamente,\n"
-                            f"Sistema HIDROGestão"
-                        ),
-                        FROM_EMAIL,
-                        emails_suprimento,
-                        fail_silently=False,
-                    )
-
+        aditivo.status_lider = "aprovado" if acao == "aprovar_minuta" else "reprovado"
+        aditivo.data_aprovacao_lider = timezone.now()
+        aditivo.justificativa_reprovacao_lider = justificativa if acao == "reprovar_minuta" else None
         aditivo.save()
+
+        destinatarios = list(
+            User.objects.filter(grupo="suprimento", is_active=True)
+            .exclude(email__isnull=True)
+            .exclude(email__exact="")
+            .values_list("email", flat=True)
+            .distinct()
+        )
+        if destinatarios:
+            if acao == "aprovar_minuta":
+                assunto = f"Minuta de aditivo aprovada - Contrato {contrato.num_contrato}"
+                mensagem = (
+                    f"Olá, equipe de Suprimento!\n\n"
+                    f"A minuta do aditivo do contrato {contrato.num_contrato} foi aprovada pela gerência de contrato.\n\n"
+                    f"Favor anexar o documento do aditivo assinado.\n\n"
+                    f"Atenciosamente,\n"
+                    f"Sistema HIDROGestão"
+                )
+            else:
+                assunto = f"Minuta de aditivo reprovada - Contrato {contrato.num_contrato}"
+                mensagem = (
+                    f"Olá, equipe de Suprimento!\n\n"
+                    f"A minuta do aditivo do contrato {contrato.num_contrato} foi reprovada pela gerência de contrato.\n\n"
+                    f"Justificativa: {justificativa}\n\n"
+                    f"Favor anexar uma nova versão da minuta.\n\n"
+                    f"Atenciosamente,\n"
+                    f"Sistema HIDROGestão"
+                )
+            send_mail(assunto, mensagem, FROM_EMAIL, destinatarios, fail_silently=False)
+
         messages.success(request, "Ação registrada com sucesso.")
-        return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
 
     return render(
         request,
-        "contratos/avaliar_aditivo_contrato.html",
+        "contratos/avaliar_minuta_aditivo_contrato.html",
         {
             "aditivo": aditivo,
             "contrato": contrato,
-            "can_approve_as_lider": can_user_approve_addendum_as_lider(usuario, aditivo),
-            "can_approve_as_gerente": can_user_approve_addendum_as_gerente(usuario, aditivo),
-            "can_approve_as_diretoria": usuario.grupo == "diretoria",
+            "timeline_steps": build_addendum_timeline(aditivo),
+        },
+    )
+
+
+@login_required
+def enviar_aditivo_assinado_contrato(request, pk):
+    aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
+
+    if request.user.grupo != "suprimento":
+        messages.error(request, "Somente o Suprimento pode inserir o aditivo assinado.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    if not aditivo.minuta_aprovada:
+        messages.error(request, "A minuta do aditivo ainda não foi aprovada pela gerência de contrato.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    if request.method == "POST":
+        form = DocumentoAditivoAssinadoContratoTerceiroForm(request.POST, request.FILES, instance=aditivo)
+        if form.is_valid():
+            aditivo = form.save(commit=False)
+            aditivo.documento_assinado_enviado_por = request.user
+            aditivo.documento_assinado_enviado_em = timezone.now()
+            aditivo.save()
+
+            if aditivo.nova_data_fim:
+                aditivo.contrato.data_fim = aditivo.nova_data_fim
+            if aditivo.novo_valor_total is not None:
+                aditivo.contrato.valor_total = aditivo.novo_valor_total
+            aditivo.contrato.save(update_fields=["data_fim", "valor_total"])
+
+            destinatarios = get_addendum_completion_notification_emails(aditivo)
+            if destinatarios:
+                assunto = f"Aditivo concluido - Contrato {aditivo.contrato.num_contrato}"
+                mensagem = (
+                    "Prezados,\n\n"
+                    f"O processo de aditivo do contrato {aditivo.contrato.num_contrato} foi concluido com sucesso.\n\n"
+                    f"Projeto: {aditivo.contrato.cod_projeto}\n"
+                    f"Fornecedor: {aditivo.contrato.empresa_terceira}\n"
+                    f"Novo valor total: R$ {aditivo.contrato.valor_total or 0}\n"
+                    f"Nova data fim: {format_date_br(aditivo.contrato.data_fim)}\n\n"
+                    "O documento assinado ja foi anexado no sistema e as informacoes do contrato foram atualizadas.\n\n"
+                    "Atenciosamente,\n"
+                    "Sistema HIDROGestão"
+                )
+                send_mail(assunto, mensagem, FROM_EMAIL, destinatarios, fail_silently=False)
+
+            messages.success(request, "Documento do aditivo assinado inserido com sucesso.")
+            return redirect("contrato_fornecedor_detalhe", pk=aditivo.contrato_id)
+    else:
+        form = DocumentoAditivoAssinadoContratoTerceiroForm(instance=aditivo)
+
+    return render(
+        request,
+        "contratos/enviar_aditivo_assinado_contrato.html",
+        {
+            "aditivo": aditivo,
+            "contrato": aditivo.contrato,
+            "form": form,
+            "timeline_steps": build_addendum_timeline(aditivo),
         },
     )
 
@@ -4078,19 +4323,19 @@ def nova_solicitacao_guarda_chuva(request):
                 solicitacao.save()
 
                 suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
+                assunto = "Nova Solicitação de contratação guarda-chuva"
+                mensagem = (
+                    f"O usuário {request.user.get_full_name() or request.user.username} "
+                    f"solicitou uma contratação do tipo guarda-chuva.\n\n"
+                    f"Detalhes da solicitação:\n"
+                    f"- ID: {solicitacao.id}\n"
+                    f"- Valor Disponível: {solicitacao.valor_disponivel}\n"
+                    f"- Descrição: {solicitacao.descricao}\n\n"
+                    "Acesse o sistema HIDROGestão para mais informações.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                )
 
                 if suprimentos:
-                    assunto = "Nova Solicitação de contratação guarda-chuva"
-                    mensagem = (
-                        f"O usuário {request.user.get_full_name() or request.user.username} "
-                        f"solicitou uma contratação do tipo guarda-chuva.\n\n"
-                        f"Detalhes da solicitação:\n"
-                        f"- ID: {solicitacao.id}\n"
-                        f"- Valor Disponível: {solicitacao.valor_disponivel}\n"
-                        f"- Descrição: {solicitacao.descricao}\n\n"
-                        "Acesse o sistema HIDROGestão para mais informações.\n"
-                        "https://hidrogestao.pythonanywhere.com/"
-                    )
                     try:
                         send_mail(
                             assunto, mensagem,
@@ -4100,6 +4345,7 @@ def nova_solicitacao_guarda_chuva(request):
                         )
                     except Exception as e:
                         messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+                if solicitacao.lider_contrato and solicitacao.lider_contrato.email:
                     try:
                         send_mail(
                             assunto, mensagem,
@@ -4109,10 +4355,10 @@ def nova_solicitacao_guarda_chuva(request):
                         )
                     except Exception as e:
                         messages.warning(request, f"Erro ao enviar e-mail para o líder de contrato: {e}")
-                    try:
-                        send_request_notification_to_management(assunto, mensagem)
-                    except Exception as e:
-                        messages.warning(request, f"Erro ao enviar e-mail para diretoria e gerente de contrato: {e}")
+                try:
+                    send_request_notification_to_management(assunto, mensagem)
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para diretoria e gerente de contrato: {e}")
                 messages.success(request, "Solicitação de contratação criada com sucesso!")
                 return redirect('lista_solicitacoes')
             else:
@@ -4647,11 +4893,21 @@ def lista_solicitacoes(request):
     page_number_os = request.GET.get('page_os')
     page_obj_os = paginator_os.get_page(page_number_os)
 
+    aditivos_queryset = [
+        item
+        for item in get_visible_addendums_for_user(request.user)
+        if not item.aprovado_totalmente and not item.solicitacao_reprovada_por_alguem
+    ]
+    paginator_aditivos = Paginator(aditivos_queryset, 10)
+    page_number_aditivos = request.GET.get('page_ad')
+    page_obj_aditivos = paginator_aditivos.get_page(page_number_aditivos)
+
     context = {
             'page_obj': page_obj,
             'page_obj_contrato': page_obj_c,
             "lista_solicitacoes": lista_solicitacoes,
-            'ordens_servico_page': page_obj_os
+            'ordens_servico_page': page_obj_os,
+            'aditivos_page': page_obj_aditivos,
         }
 
     return render(request, 'gestao_contratos/lista_solicitacoes.html', context)
@@ -4665,7 +4921,7 @@ def aprovar_solicitacao(request, pk, acao):
 
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
     if acao == "aprovar":
-        if not solicitacao.evento_set.exists():
+        if not solicitacao.guarda_chuva and not solicitacao.evento_set.exists():
             messages.error(request, "Cadastre ao menos um evento antes de aprovar esta solicitação.")
             return redirect("detalhes_solicitacao", pk=solicitacao.pk)
         solicitacao.status = "Aprovada pelo suprimento"
@@ -5197,7 +5453,7 @@ def detalhes_solicitacao_contrato(request, pk):
         acao = request.POST.get("acao")
         justificativa = request.POST.get("justificativa", "")
 
-        if acao == "aprovar" and not solicitacao.evento_set.exists():
+        if acao == "aprovar" and not solicitacao.guarda_chuva and not solicitacao.evento_set.exists():
             messages.error(request, "Cadastre ao menos um evento antes de avançar esta solicitação.")
             return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
 
@@ -5672,8 +5928,10 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
     ).first()
     allow_signed_upload = bool(
         contrato_existente
-        and documento_bm
-        and documento_bm.status_gerente == "aprovado"
+        and (
+            solicitacao.guarda_chuva
+            or (documento_bm and documento_bm.status_gerente == "aprovado")
+        )
         and solicitacao.aprovacao_gerencia is True
     )
     if request.method == "POST":
@@ -5690,7 +5948,7 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
                 contrato.valor_total = solicitacao.valor_provisionado
             if not is_signed_file_upload_only:
                 solicitacao.aprovacao_gerencia = False
-                if hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
+                if not solicitacao.guarda_chuva and hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
                     solicitacao.status = "Aprovação Final"
                 else:
                     solicitacao.status = "Planejamento do Contrato"
@@ -5756,6 +6014,7 @@ def build_contract_docm_replacements(documento_contrato, fornecedor, contrato_pr
     return {
         "__nome_empresa_terceira__": fornecedor.nome or "-",
         "__nome_empresa__": fornecedor.nome or "-",
+        "__cpf_cnpj__": fornecedor.cpf_cnpj or "-",
         "__endereco__": fornecedor.endereco or "-",
         "__numero__": fornecedor.numero or "-",
         "__bairro__": fornecedor.bairro or "-",
@@ -5790,10 +6049,12 @@ def build_addendum_docm_replacements(aditivo):
     ordem_aditivo = contrato.aditivos.filter(pk__lte=aditivo.pk).count() or 1
     ordem_label = f"{ordem_aditivo}º"
     descricao = contrato.objeto or aditivo.motivo or "-"
+    contract_type_line = "☐ ESPECÍFICO    ☒ GUARDA-CHUVA" if contrato.guarda_chuva else "☒ ESPECÍFICO    ☐ GUARDA-CHUVA"
 
     return {
         "__ordem_aditivo__": ordem_label,
         "__ordem_adtivo__": ordem_label,
+        "__cpf_cnpj__": fornecedor.cpf_cnpj or "-",
         "__numero_contrato__": contrato.num_contrato or "-",
         "__data_fim__": format_date_br(aditivo.data_fim_anterior or contrato.data_fim),
         "__data_fim_aditivo__": format_date_br(aditivo.nova_data_fim),
@@ -5802,6 +6063,18 @@ def build_addendum_docm_replacements(aditivo):
         "__novo_valor _total_extenso__": decimal_to_money_words_pt_br(aditivo.novo_valor_total or contrato.valor_total or Decimal("0.00")),
         "__contrato__": contrato_codigo or "-",
         "__informacoes_bancarias__": fornecedor.informacoes_bancarias or "-",
+        "__endereco__": fornecedor.endereco or "-",
+        "__numero__": fornecedor.numero or "-",
+        "__complemento__": "-",
+        "__bairro__": fornecedor.bairro or "-",
+        "__municipio__": fornecedor.municipio or "-",
+        "__estado__": fornecedor.estado or "-",
+        "__cep__": fornecedor.cep or "-",
+        "__telefone__": fornecedor.telefone or "-",
+        "__email__": fornecedor.email or "-",
+        "__ponto_focal__": fornecedor.ponto_focal or "-",
+        "__telefone_focal__": fornecedor.telefone_focal or "-",
+        "__email_focal__": fornecedor.email_focal or "-",
         "__dias_totais_novo__": calculate_inclusive_days(contrato.data_inicio, aditivo.nova_data_fim or contrato.data_fim),
         "__data_inicio__": format_date_br(contrato.data_inicio),
         "__nova_data_fim__": format_date_br(aditivo.nova_data_fim),
@@ -5809,6 +6082,7 @@ def build_addendum_docm_replacements(aditivo):
         "__nome_empresa__": fornecedor.nome or "-",
         "__numero_revisao__": "00",
         "__data_hoje__": format_date_br(timezone.localdate()),
+        "☒ ESPECÍFICO    ☐ GUARDA-CHUVA": contract_type_line,
     }
 
 
@@ -5982,13 +6256,14 @@ def criar_contrato_se_aprovado(solicitacao):
 
 
 def criar_contrato_se_aprovado_minuta(solicitacao):
-    try:
-        bm = solicitacao.minuta_boletins_medicao_contrato
-    except DocumentoBM.DoesNotExist:
-        return None
+    bm = None
+    if not solicitacao.guarda_chuva:
+        try:
+            bm = solicitacao.minuta_boletins_medicao_contrato
+        except DocumentoBM.DoesNotExist:
+            return None
 
-    #bm_aprovado = bm.aprovado_por_ambos
-    bm_aprovado = bm.aprovado_gerente
+    bm_aprovado = True if solicitacao.guarda_chuva else bm.aprovado_gerente
     contrato_aprovado = solicitacao.aprovacao_gerencia is True
 
     contrato_existente = ContratoTerceiros.objects.filter(solicitacao=solicitacao).first()
@@ -6304,6 +6579,9 @@ def inserir_minuta_bm_contrato(request, pk):
     if request.user.grupo != 'suprimento':
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
+    if solicitacao.guarda_chuva:
+        messages.warning(request, "Solicitações guarda-chuva não exigem minuta de BM.")
+        return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
 
     # Cria ou recupera a minuta ligada Ã  solicitação
     documento_bm, created = DocumentoBM.objects.get_or_create(solicitacao_contrato=solicitacao)

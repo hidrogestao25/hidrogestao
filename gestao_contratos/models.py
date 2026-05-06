@@ -1231,6 +1231,7 @@ class AditivoContratoTerceiro(models.Model):
     data_fim_anterior = models.DateField(null=True, blank=True)
     nova_data_fim = models.DateField(null=True, blank=True)
     arquivo_aditivo = models.FileField(upload_to="aditivos_fornecedor/", null=True, blank=True)
+    arquivo_aditivo_assinado = models.FileField(upload_to="aditivos_fornecedor_assinados/", null=True, blank=True)
     documento_enviado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1239,6 +1240,14 @@ class AditivoContratoTerceiro(models.Model):
         related_name="aditivos_enviados_terceiros",
     )
     documento_enviado_em = models.DateTimeField(null=True, blank=True)
+    documento_assinado_enviado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="aditivos_assinados_enviados_terceiros",
+    )
+    documento_assinado_enviado_em = models.DateTimeField(null=True, blank=True)
     status_lider = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
     data_aprovacao_lider = models.DateTimeField(null=True, blank=True)
     justificativa_reprovacao_lider = models.TextField(null=True, blank=True)
@@ -1262,21 +1271,45 @@ class AditivoContratoTerceiro(models.Model):
         return bool(self.arquivo_aditivo)
 
     @property
-    def operacional_pendente(self):
-        return self.status_lider == "pendente" and self.status_gerente == "pendente"
+    def tem_documento_assinado(self):
+        return bool(self.arquivo_aditivo_assinado)
 
     @property
-    def aprovado_operacionalmente(self):
-        return self.status_lider == "aprovado" or self.status_gerente == "aprovado"
+    def solicitacao_aprovada_totalmente(self):
+        return self.status_gerente == "aprovado" and self.status_diretoria == "aprovado"
 
     @property
-    def reprovado_operacionalmente(self):
-        return self.status_lider == "reprovado" or self.status_gerente == "reprovado"
+    def solicitacao_reprovada_por_alguem(self):
+        return self.status_gerente == "reprovado" or self.status_diretoria == "reprovado"
+
+    @property
+    def minuta_aprovada(self):
+        return self.status_lider == "aprovado" and self.tem_documento
+
+    @property
+    def minuta_reprovada(self):
+        return self.status_lider == "reprovado"
 
     @property
     def reprovado_por_alguem(self):
-        return self.reprovado_operacionalmente or self.status_diretoria == "reprovado"
+        return self.solicitacao_reprovada_por_alguem or self.minuta_reprovada
 
     @property
     def aprovado_totalmente(self):
-        return self.status_diretoria == "aprovado"
+        return self.tem_documento_assinado
+
+    @property
+    def etapa_atual(self):
+        if self.aprovado_totalmente:
+            return "Concluido"
+        if self.minuta_aprovada:
+            return "Aguardando Documento Assinado"
+        if self.tem_documento:
+            if self.minuta_reprovada:
+                return "Minuta Reprovada"
+            return "Aguardando Aprovacao da Minuta"
+        if self.solicitacao_aprovada_totalmente:
+            return "Aguardando Minuta do Aditivo"
+        if self.solicitacao_reprovada_por_alguem:
+            return "Solicitacao Reprovada"
+        return "Aguardando Aprovacao da Solicitacao"

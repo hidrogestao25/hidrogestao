@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container mt-4">
+  {% include "contratos/_timeline_aditivo.html" %}
   <div class="card shadow-sm">
     <div class="card-header card-header-custom text-white">
       <h5>Solicitar aditivo do contrato</h5>
@@ -23,6 +24,11 @@
           <label class="form-label" for="{{ form.nova_data_fim.id_for_label }}">Nova data fim</label>
           {{ form.nova_data_fim }}
         </div>
+        {% if form.errors %}
+          <div class="alert alert-danger">
+            Revise os campos obrigatorios do formulario antes de continuar.
+          </div>
+        {% endif %}
         <div class="d-flex gap-2">
           <button type="submit" class="btn btn-primary">Enviar solicitacao</button>
           <a href="{% url 'contrato_fornecedor_detalhe' contrato.id %}" class="btn btn-outline-secondary">Cancelar</a>

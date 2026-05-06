@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 {% load custom_tags %}
+{% load l10n %}
 
 <div class="container mt-4">
     <h2>Detalhes da Solicitação</h2>
@@ -32,7 +33,7 @@
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     const progressBar = document.getElementById("timeline-progress");
-    const targetWidth = "{{ progress_percent }}%"; // vindo da view
+    const targetWidth = "{{ progress_percent|unlocalize }}%"; // vindo da view
     setTimeout(() => {
         progressBar.style.width = targetWidth;
     }, 200); // atraso pequeno para garantir a animação
@@ -470,7 +471,7 @@ document.addEventListener("DOMContentLoaded", function() {
 <!-- Botões de aprovação para suprimento-->
 {% if request.user.grupo == 'suprimento' %}
     {% if solicitacao.aprovado == None %}
-        {% if eventos %}
+        {% if eventos or solicitacao.guarda_chuva %}
         <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success mt-3">Aprovar</a>
         {% else %}
         <div class="alert alert-warning mt-3 mb-0">
@@ -563,8 +564,8 @@ document.addEventListener("DOMContentLoaded", function() {
               </a>
           {% else %}
               <!-- Já houve aprovação ou reprovação -->
-              <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="btn btn-warning mt-3">
-                  Reavaliar Contrato
+            <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="d-none btn btn-warning mt-3">
+                
               </a>
           {% endif %}
       {% endif %}

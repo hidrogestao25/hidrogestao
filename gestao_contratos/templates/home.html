@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load static %}
 {% block title %}Home - HIDROGestão{% endblock %}
 
@@ -164,7 +164,7 @@
                                     <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
                                     <span class="badge bg-dark">Aditivo</span>
                                 </div>
-                                <a href="{% url 'contrato_fornecedor_detalhe' aditivo.contrato.id %}" class="btn btn-sm btn-outline-primary">
+                                <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
                                     Ver
                                 </a>
                             </li>
@@ -547,12 +547,12 @@
                                       <span class="badge bg-info">Ordem de Serviço</span>
                                   </div>
                                   <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-sm btn-outline-primary">
-                                      Ver
-                                  </a>
-                              </li>
-                              {% endfor %}
+                                          Ver
+                                      </a>
+                                  </li>
+                                  {% endfor %}
 
-                          </ul>
+                              </ul>
 
                           {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os %}
                               <p class="text-muted">Nenhuma solicitação pendente.</p>
@@ -1802,6 +1802,19 @@
                                       </a>
                                   </li>
                                   {% endfor %}
+                                  {% for aditivo in aditivos_pendentes %}
+                                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                                      <div>
+                                          <strong>Aditivo #{{ aditivo.id }}</strong><br>
+                                          <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
+                                          <span class="badge bg-dark">Aditivo</span>
+                                      </div>
+                                      <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
+                                          Ver
+                                      </a>
+                                  </li>
+                                  {% endfor %}
+
 
                               </ul>
 
@@ -2052,10 +2065,22 @@
                                       </a>
                                   </li>
                                   {% endfor %}
+                                  {% for aditivo in aditivos_pendentes %}
+                                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                                      <div>
+                                          <strong>Aditivo #{{ aditivo.id }}</strong><br>
+                                          <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
+                                          <span class="badge bg-dark">Aditivo</span>
+                                      </div>
+                                      <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
+                                          Ver
+                                      </a>
+                                  </li>
+                                  {% endfor %}
+
 
                               </ul>
-
-                              {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os %}
+                              {% if not solicitacoes_prospeccao and not solicitacoes_contrato and not solicitacoes_os and not aditivos_pendentes %}
                                   <p class="text-muted">Nenhuma solicitação pendente.</p>
                               {% endif %}
                           </div>
@@ -2292,32 +2317,6 @@
                       </div>
                   </div>
                   <!-- Fim do is_diretor -->
-                  {% endif %}
-
-                  {% if aditivos_pendentes and is_suprimento or aditivos_pendentes and is_diretoria %}
-                  <div class="col-md-6 mb-4 animated-card">
-                      <div class="card shadow-sm dashboard-card">
-                          <div class="card-header bg-dark text-white">
-                              <h5 class="mb-0">Aditivos Pendentes</h5>
-                          </div>
-                          <div class="card-body">
-                              <ul class="list-group list-group-flush">
-                                  {% for aditivo in aditivos_pendentes %}
-                                  <li class="list-group-item d-flex justify-content-between align-items-center">
-                                      <div>
-                                          <strong>Aditivo #{{ aditivo.id }}</strong><br>
-                                          <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
-                                          <span class="badge bg-dark">{{ aditivo.contrato.num_contrato }}</span>
-                                      </div>
-                                      <a href="{% url 'contrato_fornecedor_detalhe' aditivo.contrato.id %}" class="btn btn-sm btn-outline-primary">
-                                          Ver
-                                      </a>
-                                  </li>
-                                  {% endfor %}
-                              </ul>
-                          </div>
-                      </div>
-                  </div>
                   {% endif %}
 
         </div>

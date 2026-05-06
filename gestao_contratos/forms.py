@@ -621,7 +621,6 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
             'descricao',
             'valor_previsto',
             'prazo_execucao',
-            'coordenador'
         ]
         widgets = {
             "prazo_execucao": ISODateInput(attrs={ "class": "form-control"}),
@@ -645,29 +644,17 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(
                 contratoterceiros__in=contratos_terceiros
             ).distinct()
-            self.fields['coordenador'].queryset = User.objects.filter(
-                grupo='coordenador',
-                is_active=True,
-            )
         elif user and user.grupo == 'gerente_lider':
             contratos_terceiros = ContratoTerceiros.objects.filter(
                 guarda_chuva=True,
                 coordenador__centros__in=user.centros.all(),
             ).distinct()
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(
-                contratoterceiros__in=contratos_terceiros
-            ).distinct()
-            self.fields['coordenador'].queryset = User.objects.filter(
-                grupo='coordenador',
-                centros__in=user.centros.all(),
-                is_active=True,
+                Q(coordenador__centros__in=user.centros.all())
+                | Q(coordenadores__centros__in=user.centros.all())
             ).distinct()
         else:
             contratos_terceiros = ContratoTerceiros.objects.none()
-            self.fields['coordenador'].queryset = User.objects.filter(
-                grupo='coordenador',
-                is_active=True
-            )
 
         self.fields['cod_projeto'].widget.attrs.update({'style': 'width:250px;'})
         self.fields['contrato'].queryset = contratos_terceiros
@@ -682,10 +669,6 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(
                 pk=contrato_fixo.cod_projeto_id
             )
-            self.fields['coordenador'].queryset = User.objects.filter(
-                pk=contrato_fixo.coordenador_id
-            )
-            self.initial['coordenador'] = contrato_fixo.coordenador
 
     def clean_valor_previsto(self):
         valor = self.cleaned_data.get('valor_previsto')
@@ -702,6 +685,21 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
             return Decimal(valor)
         except InvalidOperation:
             raise forms.ValidationError("Informe um valor monetário válido.")
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        contrato = self.cleaned_data.get("contrato") or getattr(instance, "contrato", None)
+        cod_projeto = self.cleaned_data.get("cod_projeto") or getattr(instance, "cod_projeto", None)
+
+        if cod_projeto is not None:
+            instance.coordenador = cod_projeto.coordenador
+        elif contrato is not None and contrato.cod_projeto_id:
+            instance.coordenador = contrato.cod_projeto.coordenador
+
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 
 class UploadContratoOSForm(forms.ModelForm):
@@ -1109,4 +1107,13 @@ class DocumentoAditivoContratoTerceiroForm(forms.ModelForm):
         fields = ["arquivo_aditivo"]
         widgets = {
             "arquivo_aditivo": forms.ClearableFileInput(attrs={"class": "form-control"}),
+        }
+
+
+class DocumentoAditivoAssinadoContratoTerceiroForm(forms.ModelForm):
+    class Meta:
+        model = AditivoContratoTerceiro
+        fields = ["arquivo_aditivo_assinado"]
+        widgets = {
+            "arquivo_aditivo_assinado": forms.ClearableFileInput(attrs={"class": "form-control"}),
         }

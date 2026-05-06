@@ -1,10 +1,12 @@
 {% extends "base.html" %}
+
 {% block content %}
 <div class="container mt-4">
   {% include "contratos/_timeline_aditivo.html" %}
+
   <div class="card shadow-sm">
     <div class="card-header card-header-custom text-white">
-      <h5>Inserir minuta do aditivo</h5>
+      <h5>Inserir documento do aditivo assinado</h5>
     </div>
     <div class="card-body">
       <p><strong>Contrato:</strong> {{ contrato.num_contrato }} - {{ contrato.empresa_terceira }}</p>
@@ -13,12 +15,11 @@
       <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
         <div class="mb-3">
-          <label class="form-label" for="{{ form.arquivo_aditivo.id_for_label }}">Arquivo da minuta do aditivo</label>
-          {{ form.arquivo_aditivo }}
+          <label class="form-label" for="{{ form.arquivo_aditivo_assinado.id_for_label }}">Arquivo assinado</label>
+          {{ form.arquivo_aditivo_assinado }}
         </div>
         <div class="d-flex gap-2">
-          <button type="submit" class="btn btn-primary">Salvar minuta</button>
-          <a href="{% url 'gerar_aditivo_contrato_docm' aditivo.id %}" class="btn btn-success">Gerar aditivo</a>
+          <button type="submit" class="btn btn-primary">Salvar documento assinado</button>
           <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-outline-secondary">Cancelar</a>
         </div>
       </form>

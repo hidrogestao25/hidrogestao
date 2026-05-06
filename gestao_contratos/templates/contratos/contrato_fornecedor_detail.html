@@ -85,53 +85,30 @@
     {% for aditivo in aditivos %}
       <div class="card mb-3">
         <div class="card-body">
-          <p><strong>Solicitado por:</strong> {{ aditivo.solicitado_por.get_full_name|default:aditivo.solicitado_por }}</p>
-          <p><strong>Solicitado em:</strong> {{ aditivo.criado_em|date:"d/m/Y H:i" }}</p>
           <p><strong>Motivo:</strong> {{ aditivo.motivo }}</p>
           <p><strong>Valor total anterior:</strong> {% if aditivo.valor_total_anterior %}R$ {{ aditivo.valor_total_anterior|floatformat:2 }}{% else %}-{% endif %}</p>
           <p><strong>Novo valor total:</strong> {% if aditivo.novo_valor_total %}R$ {{ aditivo.novo_valor_total|floatformat:2 }}{% else %}-{% endif %}</p>
           <p><strong>Data fim anterior:</strong> {{ aditivo.data_fim_anterior|date:"d/m/Y"|default:"-" }}</p>
           <p><strong>Nova data fim:</strong> {{ aditivo.nova_data_fim|date:"d/m/Y"|default:"-" }}</p>
-          <p><strong>Status lideranca:</strong> {{ aditivo.get_status_lider_display }}</p>
-          <p><strong>Status gerencia:</strong> {{ aditivo.get_status_gerente_display }}</p>
-          <p><strong>Status diretoria:</strong> {{ aditivo.get_status_diretoria_display }}</p>
-          {% if aditivo.justificativa_reprovacao_lider and aditivo.status_lider == "reprovado" %}
-            <p><strong>Justificativa da lideranca:</strong> {{ aditivo.justificativa_reprovacao_lider }}</p>
-          {% endif %}
-          {% if aditivo.justificativa_reprovacao_gerente and aditivo.status_gerente == "reprovado" %}
-            <p><strong>Justificativa da gerencia:</strong> {{ aditivo.justificativa_reprovacao_gerente }}</p>
-          {% endif %}
-          {% if aditivo.justificativa_reprovacao_diretoria and aditivo.status_diretoria == "reprovado" %}
-            <p><strong>Justificativa da diretoria:</strong> {{ aditivo.justificativa_reprovacao_diretoria }}</p>
-          {% endif %}
-          {% if aditivo.arquivo_aditivo %}
+          {% if aditivo.arquivo_aditivo_assinado %}
             <p>
-              <strong>Documento do aditivo:</strong>
-              <a href="{{ aditivo.arquivo_aditivo.url }}" class="btn btn-sm btn-outline-primary">Baixar</a>
+              <strong>Documento do aditivo assinado:</strong>
+              <a href="{{ aditivo.arquivo_aditivo_assinado.url }}" class="btn btn-sm btn-outline-primary">Baixar</a>
             </p>
-            <p><strong>Documento enviado em:</strong> {{ aditivo.documento_enviado_em|date:"d/m/Y H:i"|default:"-" }}</p>
-          {% else %}
-            <p><strong>Documento do aditivo:</strong> Pendente de envio pelo Suprimento</p>
+            <p><strong>Documento assinado enviado em:</strong> {{ aditivo.documento_assinado_enviado_em|date:"d/m/Y H:i"|default:"-" }}</p>
           {% endif %}
 
           <div class="d-flex gap-2 flex-wrap">
-            {% if request.user.grupo == "suprimento" and not aditivo.aprovado_totalmente %}
-              <a href="{% url 'enviar_documento_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-success">
-                {% if aditivo.arquivo_aditivo and aditivo.reprovado_por_alguem %}
-                  Enviar nova versao
-                {% elif not aditivo.arquivo_aditivo %}
-                  Inserir documento
-                {% else %}
-                  Atualizar documento
-                {% endif %}
-              </a>
-            {% endif %}
-            {% if request.user.grupo == "lider_contrato" or request.user.grupo == "gerente_lider" or request.user.grupo == "gerente_contrato" or request.user.grupo == "diretoria" %}
-              <a href="{% url 'avaliar_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-dark">
-                Avaliar aditivo
-              </a>
-            {% endif %}
+            <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-dark">
+              Detalhes do aditivo
+            </a>
           </div>
+        </div>
+
+        <hr>
+        <div class="text-end text-muted" style="font-size: 0.85rem;">
+            <div><strong>Solicitante:</strong> {{ aditivo.solicitado_por.get_full_name|default:aditivo.solicitado_por }}</div>
+            <div><strong>Data:</strong> {{ aditivo.criado_em|date:"d/m/Y H:i" }}</div>
         </div>
       </div>
     {% endfor %}
@@ -166,6 +143,7 @@
   <hr>
 
   {# Bloco de eventos vinculados ao contrato #}
+  {% if not contrato.guarda_chuva %}
   <h5>Eventos do Contrato</h5>
   {% if eventos %}
     <table class="table table-sm table-bordered align-middle">
@@ -320,6 +298,7 @@
   {% endif %}
   {% if request.user.grupo == 'suprimento' %}
       <a href="{% url 'cadastrar_evento_contrato' contrato.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
+  {% endif %}
   {% endif %}
 
   {% if contrato.guarda_chuva %}
@@ -616,7 +595,7 @@
     {% if plot_div %}
         {{ plot_div|safe }}
     {% else %}
-      Não hÃ¡ nenhuma previsão ou pagamento cadastrado.
+      Não há nenhuma previsão ou pagamento cadastrado.
     {% endif %}
   </div>
 

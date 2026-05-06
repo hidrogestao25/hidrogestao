@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  {% include "contratos/_timeline_aditivo.html" %}
+
+  <div class="card shadow-sm">
+    <div class="card-header card-header-custom text-white">
+      <h5>Detalhes da solicitacao de aditivo</h5>
+    </div>
+    <div class="card-body">
+      <p><strong>Contrato:</strong> {{ contrato.num_contrato }} - {{ contrato.empresa_terceira }}</p>
+      <p><strong>Projeto:</strong> {{ contrato.cod_projeto }}</p>
+      <p><strong>Solicitado por:</strong> {{ aditivo.solicitado_por.get_full_name|default:aditivo.solicitado_por }}</p>
+      <p><strong>Solicitado em:</strong> {{ aditivo.criado_em|date:"d/m/Y H:i" }}</p>
+      <p><strong>Motivo:</strong> {{ aditivo.motivo }}</p>
+      <p><strong>Valor total anterior:</strong> {% if aditivo.valor_total_anterior %}R$ {{ aditivo.valor_total_anterior|floatformat:2 }}{% else %}-{% endif %}</p>
+      <p><strong>Novo valor total:</strong> {% if aditivo.novo_valor_total %}R$ {{ aditivo.novo_valor_total|floatformat:2 }}{% else %}-{% endif %}</p>
+      <p><strong>Data fim anterior:</strong> {{ aditivo.data_fim_anterior|date:"d/m/Y"|default:"-" }}</p>
+      <p><strong>Nova data fim:</strong> {{ aditivo.nova_data_fim|date:"d/m/Y"|default:"-" }}</p>
+      <p><strong>Etapa atual:</strong> {{ aditivo.etapa_atual }}</p>
+
+      <hr>
+
+      <p><strong>Aprovacao da solicitacao - Gerencia:</strong>
+        {% if aditivo.get_status_gerente_display == 'Aprovado' %}
+              <span class="badge bg-success">Aprovado</span>
+        {% elif aditivo.get_status_gerente_display == 'Reprovado' %}
+              <span class="badge bg-danger">Reprovado</span>
+        {% else %}
+          <span class="badge bg-warning text-dark">Em Analise</span>
+        {% endif %}
+      </p>
+      {% if aditivo.justificativa_reprovacao_gerente %}
+        <p><strong>Justificativa da gerencia:</strong> {{ aditivo.justificativa_reprovacao_gerente }}</p>
+      {% endif %}
+      <p><strong>Aprovacao da solicitacao - Diretoria:</strong>
+        {% if aditivo.get_status_diretoria_display == 'Aprovado' %}
+              <span class="badge bg-success">Aprovado</span>
+        {% elif aditivo.get_status_diretoria_display == 'Reprovado' %}
+              <span class="badge bg-danger">Reprovado</span>
+        {% else %}
+          <span class="badge bg-warning text-dark">Em Analise</span>
+        {% endif %}
+        </p>
+      {% if aditivo.justificativa_reprovacao_diretoria %}
+        <p><strong>Justificativa da diretoria:</strong> {{ aditivo.justificativa_reprovacao_diretoria }}</p>
+      {% endif %}
+      <p><strong>Aprovacao da minuta - Gerencia:</strong>
+        {% if aditivo.get_status_lider_display == 'Aprovado' %}
+              <span class="badge bg-success">Aprovado</span>
+        {% elif aditivo.get_status_lider_display == 'Reprovado' %}
+              <span class="badge bg-danger">Reprovado</span>
+        {% else %}
+          <span class="badge bg-warning text-dark">Em Analise</span>
+        {% endif %}
+        </p>
+      {% if aditivo.justificativa_reprovacao_lider %}
+        <p><strong>Justificativa da minuta:</strong> {{ aditivo.justificativa_reprovacao_lider }}</p>
+      {% endif %}
+
+      <hr>
+
+      <p>
+        <strong>Minuta do aditivo:</strong>
+        {% if aditivo.arquivo_aditivo %}
+          <a href="{{ aditivo.arquivo_aditivo.url }}" class="btn btn-sm btn-outline-primary">Baixar minuta</a>
+        {% else %}
+          Nao enviada
+        {% endif %}
+      </p>
+      <p>
+        <strong>Documento assinado:</strong>
+        {% if aditivo.arquivo_aditivo_assinado %}
+          <a href="{{ aditivo.arquivo_aditivo_assinado.url }}" class="btn btn-sm btn-outline-primary">Baixar documento assinado</a>
+        {% else %}
+          Nao enviado
+        {% endif %}
+      </p>
+
+      <div class="d-flex gap-2 flex-wrap mt-4">
+        {% if can_approve_request_as_gerente or can_approve_request_as_diretoria %}
+          <a href="{% url 'avaliar_solicitacao_aditivo_contrato' aditivo.id %}" class="btn btn-primary">
+            Avaliar solicitacao
+          </a>
+        {% endif %}
+
+        {% if can_upload_draft %}
+          <a href="{% url 'enviar_documento_aditivo_contrato' aditivo.id %}" class="btn btn-primary">
+            {% if aditivo.arquivo_aditivo %}Atualizar minuta{% else %}Inserir minuta{% endif %}
+          </a>
+        {% endif %}
+
+        {% if can_approve_draft %}
+          <a href="{% url 'avaliar_minuta_aditivo_contrato' aditivo.id %}" class="btn btn-primary">
+            Avaliar minuta
+          </a>
+        {% endif %}
+
+        {% if can_upload_signed %}
+          <a href="{% url 'enviar_aditivo_assinado_contrato' aditivo.id %}" class="btn btn-primary">
+            {% if aditivo.arquivo_aditivo_assinado %}Atualizar documento assinado{% else %}Inserir documento assinado{% endif %}
+          </a>
+        {% endif %}
+
+        <a href="{% url 'contrato_fornecedor_detalhe' contrato.id %}" class="btn btn-outline-secondary">Voltar ao contrato</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

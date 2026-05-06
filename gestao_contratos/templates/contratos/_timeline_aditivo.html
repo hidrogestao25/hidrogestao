@@ -1,0 +1,56 @@
+{% load l10n %}
+{% if timeline_steps %}
+<div class="timeline">
+  <div
+    id="timeline-progress"
+    class="timeline-progress"
+    data-target-width="{{ timeline_steps.progress_percent|unlocalize }}%"
+  ></div>
+  {% for label in timeline_steps.labels %}
+    {% if forloop.counter0 < timeline_steps.current_index %}
+      <div class="step completed">
+        <div class="circle">{{ forloop.counter }}</div>
+        <span>{{ label }}</span>
+      </div>
+    {% elif forloop.counter0 == 5 %}
+      <div class="step completed">
+        <div class="circle">{{ forloop.counter }}</div>
+        <span>{{ label }}</span>
+      </div>
+    {% elif forloop.counter0 == timeline_steps.current_index %}
+      <div class="step active">
+        <div class="circle">{{ forloop.counter }}</div>
+        <span>{{ label }}</span>
+      </div>
+    {% else %}
+      <div class="step">
+        <div class="circle">{{ forloop.counter }}</div>
+        <span>{{ label }}</span>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
+<script>
+(function() {
+    function animateTimeline() {
+        const progressBar = document.getElementById("timeline-progress");
+        if (!progressBar) return;
+
+        const targetWidth = progressBar.dataset.targetWidth || "0%";
+        progressBar.style.width = "0%";
+
+        requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+                progressBar.style.width = targetWidth;
+            });
+        });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", animateTimeline, { once: true });
+    } else {
+        animateTimeline();
+    }
+})();
+</script>
+{% endif %}

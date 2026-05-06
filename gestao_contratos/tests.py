@@ -1996,6 +1996,40 @@ class ProspeccaoFlowAdjustmentsTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(reverse("aprovar_fornecedor_gerente", args=[solicitacao.pk]), response.content.decode("utf-8"))
 
+    def test_nova_solicitacao_guarda_chuva_notifica_gerente_contrato_e_diretoria(self):
+        lider = self.create_user("lider_guardachuva", "lider_contrato", email="lider.guardachuva@example.com")
+        coordenador = self.create_user("coord_guardachuva", "coordenador")
+        fornecedor = self.create_supplier("Fornecedor Guarda Chuva", "44.444.444/0001-44")
+        self.client.force_login(lider)
+
+        response = self.client.post(
+            reverse("nova_solicitacao_guarda_chuva"),
+            {
+                "fornecedor_escolhido": fornecedor.pk,
+                "coordenador": coordenador.pk,
+                "descricao": "Contratação guarda-chuva para suporte especializado",
+                "requisitos": "Equipe dedicada",
+                "previsto_no_orcamento": "",
+                "justificativa_fornecedor_escolhido": "Fornecedor já homologado",
+                "valor_disponivel": "10.000,00",
+                "data_inicio": "01-05-2026",
+                "data_fim": "31-12-2026",
+                "cronograma": "Cronograma anual",
+                "forma_pagamento": "30",
+                "justificativa_orcamento": "Demanda recorrente",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 2)
+        management_email = next(email for email in mail.outbox if self.gerente_contrato.email in email.to)
+        self.assertIn(self.diretoria.email, management_email.to)
+        self.assertEqual(
+            management_email.subject,
+            "Nova Solicitação de contratação guarda-chuva",
+        )
+
 
 class DocumentoBMApprovalTests(BaseUserTestCase):
     def setUp(self):
@@ -2145,6 +2179,10 @@ class DiretoriaPagamentoBMTests(BaseUserTestCase):
         self.assertEqual(self.bm.aprovacao_pagamento, "aprovado")
         self.assertIsNotNone(self.bm.data_aprovacao_diretor)
         self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            mail.outbox[0].subject,
+            f"Processo concluido - Contrato gerado para {self.contrato_base.cod_projeto}",
+        )
         self.assertCountEqual(
             mail.outbox[0].to,
             [
@@ -2340,29 +2378,31 @@ class DiretoriaHomeDashboardTests(BaseUserTestCase):
             [bm_aprovado_por_ambos.id, bm_aprovado_pelo_gerente.id, bm_aprovado_pelo_lider.id],
         )
 
-    def test_home_diretoria_lista_aditivos_pendentes_de_aprovacao_final(self):
+    def test_home_diretoria_lista_aditivos_pendentes_de_aprovacao_da_solicitacao(self):
         aditivo_visivel = AditivoContratoTerceiro.objects.create(
             contrato=self.contrato_terceiro,
             solicitado_por=self.lider,
             motivo="Prorrogacao",
             novo_valor_total=Decimal("2000.00"),
             nova_data_fim=date(2026, 7, 31),
-            status_lider="aprovado",
+            status_gerente="aprovado",
         )
         AditivoContratoTerceiro.objects.create(
             contrato=self.contrato_terceiro,
             solicitado_por=self.lider,
-            motivo="Ainda sem aprovacao operacional",
+            motivo="Ja aprovado pela diretoria",
             novo_valor_total=Decimal("2100.00"),
             nova_data_fim=date(2026, 8, 15),
+            status_gerente="aprovado",
+            status_diretoria="aprovado",
         )
         AditivoContratoTerceiro.objects.create(
             contrato=self.contrato_terceiro,
             solicitado_por=self.lider,
-            motivo="Reprovado operacionalmente",
+            motivo="Reprovado pela diretoria",
             novo_valor_total=Decimal("2200.00"),
             nova_data_fim=date(2026, 8, 20),
-            status_gerente="reprovado",
+            status_diretoria="reprovado",
         )
 
         self.client.force_login(self.diretoria)
@@ -2397,28 +2437,45 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         aditivo_sem_documento = AditivoContratoTerceiro.objects.create(
             contrato=self.contrato_terceiro,
             solicitado_por=self.lider,
-            motivo="Sem documento",
+            motivo="Aguardando minuta",
             novo_valor_total=Decimal("1500.00"),
             nova_data_fim=date(2026, 6, 30),
+            status_gerente="aprovado",
+            status_diretoria="aprovado",
         )
         aditivo_reprovado = AditivoContratoTerceiro.objects.create(
             contrato=self.contrato_terceiro,
             solicitado_por=self.lider,
-            motivo="Reprovado pela diretoria",
+            motivo="Minuta reprovada",
             novo_valor_total=Decimal("1700.00"),
             nova_data_fim=date(2026, 7, 30),
             arquivo_aditivo=SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf"),
-            status_diretoria="reprovado",
+            status_gerente="aprovado",
+            status_diretoria="aprovado",
+            status_lider="reprovado",
         )
-        AditivoContratoTerceiro.objects.create(
+        aditivo_assinatura_pendente = AditivoContratoTerceiro.objects.create(
             contrato=self.contrato_terceiro,
             solicitado_por=self.lider,
-            motivo="Ja aprovado",
+            motivo="Aguardando documento assinado",
             novo_valor_total=Decimal("1800.00"),
             nova_data_fim=date(2026, 8, 30),
             arquivo_aditivo=SimpleUploadedFile("aditivo_ok.pdf", b"conteudo", content_type="application/pdf"),
             status_lider="aprovado",
             status_diretoria="aprovado",
+            status_gerente="aprovado",
+        )
+        AditivoContratoTerceiro.objects.create(
+            contrato=self.contrato_terceiro,
+            solicitado_por=self.lider,
+            motivo="Ja concluido",
+            novo_valor_total=Decimal("1900.00"),
+            nova_data_fim=date(2026, 9, 30),
+            arquivo_aditivo=SimpleUploadedFile("minuta.pdf", b"conteudo", content_type="application/pdf"),
+            arquivo_aditivo_assinado=SimpleUploadedFile("aditivo_assinado.pdf", b"conteudo", content_type="application/pdf"),
+            status_lider="aprovado",
+            status_diretoria="aprovado",
+            status_gerente="aprovado",
         )
 
         self.client.force_login(self.suprimento)
@@ -2427,10 +2484,11 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertCountEqual(
             [a.id for a in response.context["aditivos_pendentes"]],
-            [aditivo_sem_documento.id, aditivo_reprovado.id],
+            [aditivo_sem_documento.id, aditivo_reprovado.id, aditivo_assinatura_pendente.id],
         )
         self.assertContains(response, f"Aditivo #{aditivo_sem_documento.id}")
         self.assertContains(response, f"Aditivo #{aditivo_reprovado.id}")
+        self.assertContains(response, f"Aditivo #{aditivo_assinatura_pendente.id}")
 
     def test_home_suprimento_lista_solicitacoes_aguardando_arquivos_assinados(self):
         solicitacao_prospeccao = SolicitacaoProspeccao.objects.create(
@@ -2454,8 +2512,8 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(solicitacao_prospeccao, response.context["solicitacoes_prospeccao"])
         self.assertIn(solicitacao_contrato, response.context["solicitacoes_contrato"])
-        self.assertContains(response, f"Prospecção #{solicitacao_prospeccao.id}")
-        self.assertContains(response, f"Contrato #{solicitacao_contrato.id}")
+        self.assertContains(response, reverse("detalhes_solicitacao", args=[solicitacao_prospeccao.id]))
+        self.assertContains(response, reverse("detalhes_solicitacao_contrato", args=[solicitacao_contrato.id]))
 
     def test_home_suprimento_lista_eventos_para_entrega_ate_proxima_data_pagamento(self):
         data_corte = timezone.localdate() + timedelta(days=5)
@@ -2501,6 +2559,99 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         )
         self.assertContains(response, "BMs para entrega ate a proxima data de pagamento")
         self.assertContains(response, evento_para_entrega.empresa_terceira.nome)
+
+
+class GerenteContratoHomeDashboardTests(BaseUserTestCase):
+    def setUp(self):
+        self.gerente_contrato = self.create_user("gc_home_aditivo", "gerente_contrato")
+        self.coordenador = self.create_user("coord_home_gc", "coordenador")
+        self.lider = self.create_user("lider_home_gc", "lider_contrato")
+        self.centro = self.create_center()
+        self.coordenador.centros.add(self.centro)
+
+        self.contrato_base = self.create_contract(
+            codigo="PRJ-HOME-GC",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+        self.contrato_terceiro = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            num_contrato="CT-HOME-GC",
+        )
+
+    def test_home_gerente_contrato_lista_aditivos_aguardando_sua_acao(self):
+        aditivo_aprovacao_solicitacao = AditivoContratoTerceiro.objects.create(
+            contrato=self.contrato_terceiro,
+            solicitado_por=self.lider,
+            motivo="Aguardando aprovacao da solicitacao",
+            novo_valor_total=Decimal("2100.00"),
+            nova_data_fim=date(2026, 7, 31),
+            status_gerente="pendente",
+        )
+        aditivo_aprovacao_minuta = AditivoContratoTerceiro.objects.create(
+            contrato=self.contrato_terceiro,
+            solicitado_por=self.lider,
+            motivo="Aguardando aprovacao da minuta",
+            novo_valor_total=Decimal("2200.00"),
+            nova_data_fim=date(2026, 8, 31),
+            status_gerente="aprovado",
+            status_diretoria="aprovado",
+            status_lider="pendente",
+            arquivo_aditivo=SimpleUploadedFile("minuta_aditivo.pdf", b"conteudo", content_type="application/pdf"),
+        )
+        AditivoContratoTerceiro.objects.create(
+            contrato=self.contrato_terceiro,
+            solicitado_por=self.lider,
+            motivo="Aguardando suprimento",
+            novo_valor_total=Decimal("2300.00"),
+            nova_data_fim=date(2026, 9, 30),
+            status_gerente="aprovado",
+            status_diretoria="aprovado",
+        )
+
+        self.client.force_login(self.gerente_contrato)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertCountEqual(
+            [a.id for a in response.context["aditivos_pendentes"]],
+            [aditivo_aprovacao_solicitacao.id, aditivo_aprovacao_minuta.id],
+        )
+        self.assertContains(response, f"Aditivo #{aditivo_aprovacao_solicitacao.id}")
+        self.assertContains(response, f"Aditivo #{aditivo_aprovacao_minuta.id}")
+        self.assertNotContains(response, "Aditivos Pendentes")
+
+    def test_home_gerente_contrato_lista_solicitacao_com_minuta_de_contrato_pendente_de_avaliacao(self):
+        solicitacao = SolicitacaoContrato.objects.create(
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            fornecedor_escolhido=self.contrato_terceiro.empresa_terceira,
+            descricao="Solicitação aguardando avaliação da minuta de contrato",
+            status="Planejamento do Contrato",
+            aprovacao_fornecedor_gerente="aprovado",
+            aprovacao_fornecedor_diretor="aprovado",
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=solicitacao,
+            objeto="Minuta de contrato",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 12, 31),
+            valor_total=Decimal("2500.00"),
+            arquivo_contrato=SimpleUploadedFile(
+                "minuta_contrato.pdf",
+                b"conteudo",
+                content_type="application/pdf",
+            ),
+        )
+
+        self.client.force_login(self.gerente_contrato)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(solicitacao, response.context["solicitacoes_contrato"])
+        self.assertContains(response, reverse("detalhes_solicitacao_contrato", args=[solicitacao.id]))
 
 
 class PrevisaoPagamentosTests(BaseUserTestCase):
@@ -3408,6 +3559,7 @@ class SolicitarOSViewTests(BaseUserTestCase):
         self.assertEqual(os_request.lider_contrato, self.lider)
         self.assertEqual(os_request.status, "pendente_lider")
         self.assertEqual(os_request.contrato, self.contrato_terceiro)
+        self.assertEqual(os_request.coordenador, self.coordenador)
         self.assertEqual(os_request.valor_previsto, Decimal("1234.56"))
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.lider.email])
@@ -3430,9 +3582,51 @@ class SolicitarOSViewTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         contratos = list(response.context["form"].fields["contrato"].queryset)
-        coordenadores = list(response.context["form"].fields["coordenador"].queryset)
         self.assertEqual(contratos, [self.contrato_terceiro])
-        self.assertEqual(coordenadores, [self.coordenador])
+        self.assertNotIn("coordenador", response.context["form"].fields)
+
+    def test_gerente_lider_ve_codigo_projeto_quando_coordenador_adicional_compartilha_centro(self):
+        centro_fora = self.create_center("CT3", "Centro 3")
+        coordenador_principal = self.create_user("coordprincipalos", "coordenador")
+        coordenador_principal.centros.add(centro_fora)
+        coordenador_adicional = self.create_user("coordadicionalos", "coordenador")
+        coordenador_adicional.centros.add(self.centro)
+        contrato_base = self.create_contract(
+            codigo="PRJ-ADICIONAL",
+            coordenador=coordenador_principal,
+            lider_contrato=self.lider,
+        )
+        contrato_base.coordenadores.add(coordenador_adicional)
+        contrato_terceiro = self.create_supplier_contract(
+            cod_projeto=contrato_base,
+            coordenador=coordenador_principal,
+            lider_contrato=self.lider,
+            guarda_chuva=True,
+            num_contrato="CT-OS-003",
+        )
+        contrato_terceiro.coordenadores.add(coordenador_adicional)
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("solicitar_os_com_contrato"))
+
+        self.assertEqual(response.status_code, 200)
+        projetos = list(response.context["form"].fields["cod_projeto"].queryset.order_by("pk"))
+        self.assertIn(contrato_base, projetos)
+
+    def test_gerente_lider_ve_todos_os_projetos_dos_coordenadores_do_mesmo_centro(self):
+        projeto_mesmo_centro_sem_contrato = self.create_contract(
+            codigo="PRJ-CENTRO",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("solicitar_os_com_contrato"))
+
+        self.assertEqual(response.status_code, 200)
+        projetos = list(response.context["form"].fields["cod_projeto"].queryset.order_by("pk"))
+        self.assertIn(self.contrato_base, projetos)
+        self.assertIn(projeto_mesmo_centro_sem_contrato, projetos)
 
 
 class CenterScopedViewTests(BaseUserTestCase):
@@ -4108,6 +4302,22 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertNotEqual(self.solicitacao_contrato.aprovacao_fornecedor_gerente, "aprovado")
         self.assertContains(response, "Cadastre ao menos um evento antes de avançar esta solicitação.")
 
+    def test_detalhes_solicitacao_contrato_guarda_chuva_permite_aprovacao_sem_evento(self):
+        self.solicitacao_contrato.guarda_chuva = True
+        self.solicitacao_contrato.save(update_fields=["guarda_chuva"])
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.post(
+            reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk]),
+            {"acao": "aprovar"},
+            follow=True,
+        )
+
+        self.assertRedirects(response, reverse("detalhes_solicitacao_contrato", kwargs={"pk": self.solicitacao_contrato.pk}))
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertEqual(self.solicitacao_contrato.aprovacao_fornecedor_gerente, "aprovado")
+        self.assertNotContains(response, "Cadastre ao menos um evento antes de avançar esta solicitação.")
+
     def test_detalhes_solicitacao_contrato_esconde_botao_aprovar_sem_evento(self):
         self.client.force_login(self.gerente_contrato)
 
@@ -4118,6 +4328,18 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertNotContains(response, 'name="acao" value="aprovar"', html=False)
         self.assertContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitacao.")
         self.assertContains(response, 'name="acao" value="reprovar"', html=False)
+
+    def test_detalhes_solicitacao_contrato_guarda_chuva_exibe_botao_aprovar_sem_evento(self):
+        self.solicitacao_contrato.guarda_chuva = True
+        self.solicitacao_contrato.save(update_fields=["guarda_chuva"])
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.get(
+            reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk])
+        )
+
+        self.assertContains(response, 'name="acao" value="aprovar"', html=False)
+        self.assertNotContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitacao.")
 
     def test_aprovar_solicitacao_prospeccao_exige_evento(self):
         self.solicitacao_prospeccao.status = "Solicitação de prospecção"
@@ -4134,6 +4356,24 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.solicitacao_prospeccao.refresh_from_db()
         self.assertIsNone(self.solicitacao_prospeccao.aprovado)
         self.assertContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitação.")
+
+    def test_aprovar_solicitacao_prospeccao_guarda_chuva_permite_sem_evento(self):
+        self.solicitacao_prospeccao.status = "Solicitação de prospecção"
+        self.solicitacao_prospeccao.aprovado = None
+        self.solicitacao_prospeccao.guarda_chuva = True
+        self.solicitacao_prospeccao.save(update_fields=["status", "aprovado", "guarda_chuva"])
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(
+            reverse("aprovar_solicitacao", args=[self.solicitacao_prospeccao.pk, "aprovar"]),
+            follow=True,
+        )
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"))
+        self.solicitacao_prospeccao.refresh_from_db()
+        self.assertTrue(self.solicitacao_prospeccao.aprovado)
+        self.assertEqual(self.solicitacao_prospeccao.status, "Aprovada pelo suprimento")
+        self.assertNotContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitação.")
 
     def test_detalhes_solicitacao_prospeccao_esconde_botao_aprovar_sem_evento(self):
         self.solicitacao_prospeccao.status = "Solicitação de prospecção"
@@ -4156,6 +4396,24 @@ class ContratacaoFlowTests(BaseUserTestCase):
             reverse("aprovar_solicitacao", args=[self.solicitacao_prospeccao.pk, "reprovar"]),
             html=False,
         )
+
+    def test_detalhes_solicitacao_prospeccao_guarda_chuva_exibe_botao_aprovar_sem_evento(self):
+        self.solicitacao_prospeccao.status = "Solicitação de prospecção"
+        self.solicitacao_prospeccao.aprovado = None
+        self.solicitacao_prospeccao.guarda_chuva = True
+        self.solicitacao_prospeccao.save(update_fields=["status", "aprovado", "guarda_chuva"])
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(
+            reverse("detalhes_solicitacao", kwargs={"pk": self.solicitacao_prospeccao.pk})
+        )
+
+        self.assertContains(
+            response,
+            reverse("aprovar_solicitacao", args=[self.solicitacao_prospeccao.pk, "aprovar"]),
+            html=False,
+        )
+        self.assertNotContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitacao.")
 
     def test_detalhes_solicitacao_contrato_reprovacao_sem_justificativa_redireciona_para_mesma_tela(self):
         self.client.force_login(self.diretoria)
@@ -4315,9 +4573,22 @@ class ContratacaoFlowTests(BaseUserTestCase):
             "Foi anexado uma nova minuta de contrato",
             [email.subject for email in mail.outbox],
         )
-        self.solicitacao_contrato.refresh_from_db()
-        self.assertTrue(self.solicitacao_contrato.aprovacao_gerencia)
-        self.assertEqual(self.solicitacao_contrato.status, "Onboarding")
+
+    def test_cadastrar_minuta_bm_contrato_guarda_chuva_redireciona_sem_permitir_upload(self):
+        self.solicitacao_contrato.guarda_chuva = True
+        self.solicitacao_contrato.save(update_fields=["guarda_chuva"])
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(
+            reverse("inserir_minuta_bm_contrato", args=[self.solicitacao_contrato.pk]),
+            follow=True,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("detalhes_solicitacao_contrato", kwargs={"pk": self.solicitacao_contrato.pk}),
+        )
+        self.assertContains(response, "Solicitações guarda-chuva não exigem minuta de BM.")
 
     def test_detalhes_solicitacao_contratacao_exibe_botoes_de_avaliacao_de_minutas_para_gerente_contrato(self):
         documento_bm = DocumentoBM.objects.create(
@@ -4461,6 +4732,10 @@ class AutomaticContractCreationTests(BaseUserTestCase):
         evento.refresh_from_db()
         self.assertEqual(evento.contrato_terceiro, contrato)
         self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            mail.outbox[0].subject,
+            f"Processo concluido - Contrato gerado para {self.contrato_base.cod_projeto}",
+        )
         self.assertCountEqual(
             mail.outbox[0].to,
             [
@@ -4484,10 +4759,6 @@ class AutomaticContractCreationTests(BaseUserTestCase):
             aprovacao_gerencia=True,
             guarda_chuva=True,
             valor_provisionado=Decimal("4567.00"),
-        )
-        DocumentoBM.objects.create(
-            solicitacao_contrato=solicitacao,
-            status_gerente="aprovado",
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao_contrato=solicitacao,
@@ -4539,6 +4810,46 @@ class AutomaticContractCreationTests(BaseUserTestCase):
                 self.coordenador.email,
                 self.lider.email,
             ],
+        )
+
+    def test_aprovacao_minuta_guarda_chuva_sem_contrato_assinado_envia_para_arquivos_assinados(self):
+        solicitacao = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            fornecedor_escolhido=self.fornecedor,
+            descricao="Guarda-chuva aguardando assinatura",
+            status="Planejamento do Contrato",
+            guarda_chuva=True,
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=solicitacao,
+            numero_contrato="AUTO-CONTR-PEND-001",
+            objeto="Objeto contratação",
+            prazo_inicio=date(2026, 7, 1),
+            prazo_fim=date(2026, 8, 1),
+            valor_total=Decimal("4567.00"),
+            arquivo_contrato=SimpleUploadedFile(
+                "minuta-contrato.pdf",
+                b"%PDF-1.4 contract draft",
+                content_type="application/pdf",
+            ),
+        )
+        mail.outbox = []
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.post(
+            reverse("detalhes_minuta_contrato", args=[solicitacao.pk]),
+            {"acao": "aprovar"},
+            follow=True,
+        )
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"))
+        solicitacao.refresh_from_db()
+        self.assertTrue(solicitacao.aprovacao_gerencia)
+        self.assertEqual(solicitacao.status, "Aguardando Arquivos Assinados")
+        self.assertTrue(
+            any("Inserir arquivos assinados" in email.subject for email in mail.outbox)
         )
 
     def test_criar_contrato_se_aprovado_aguarda_arquivos_assinados(self):
@@ -4759,21 +5070,28 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("solicitar_aditivo_contrato", args=[self.contrato_terceiro.pk]))
 
-    def test_gerente_lider_do_mesmo_centro_pode_aprovar_como_lideranca(self):
-        aditivo = self.create_aditivo()
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
-        aditivo.save()
-        self.client.force_login(self.gerente_lider)
-
-        response = self.client.post(
-            reverse("avaliar_aditivo_contrato", args=[aditivo.pk]),
-            {"acao": "aprovar_lider"},
-            follow=False,
+    def test_detalhe_contrato_guarda_chuva_oculta_eventos_e_exibe_solicitar_os(self):
+        contrato_guarda_chuva = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            empresa_terceira=self.contrato_terceiro.empresa_terceira,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            guarda_chuva=True,
+            num_contrato="CT-GC-DETALHE",
+        )
+        self.create_event(
+            contrato=contrato_guarda_chuva,
+            empresa_terceira=contrato_guarda_chuva.empresa_terceira,
+            data_prevista=date(2026, 5, 20),
         )
 
-        self.assertEqual(response.status_code, 302)
-        aditivo.refresh_from_db()
-        self.assertEqual(aditivo.status_lider, "aprovado")
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": contrato_guarda_chuva.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Eventos do Contrato")
+        self.assertNotContains(response, "Cadastrar Evento")
+        self.assertContains(response, "Solicitar Nova OS")
 
     def test_gerente_lider_fora_do_centro_nao_pode_solicitar_aditivo(self):
         gerente_lider_fora = self.create_user("gl_aditivo_fora", "gerente_lider")
@@ -4792,7 +5110,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
             reverse("contrato_fornecedor_detalhe", args=[self.contrato_terceiro.pk]),
         )
 
-    def test_solicitar_aditivo_notifica_suprimento(self):
+    def test_solicitar_aditivo_notifica_gerencia_e_diretoria(self):
         self.client.force_login(self.lider)
         response = self.client.post(
             reverse("solicitar_aditivo_contrato", args=[self.contrato_terceiro.pk]),
@@ -4808,13 +5126,41 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         aditivo = AditivoContratoTerceiro.objects.get(contrato=self.contrato_terceiro)
         self.assertEqual(aditivo.solicitado_por, self.lider)
         self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
+        self.assertIn(self.diretoria.email, mail.outbox[0].to)
+
+    def test_aprovacao_da_solicitacao_notifica_suprimento_para_inserir_minuta(self):
+        aditivo = self.create_aditivo()
+        self.client.force_login(self.gerente_contrato)
+        response = self.client.post(
+            reverse("avaliar_solicitacao_aditivo_contrato", args=[aditivo.pk]),
+            {"acao": "aprovar_gerente"},
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        aditivo.refresh_from_db()
+        self.assertEqual(aditivo.status_gerente, "aprovado")
+        self.assertEqual(len(mail.outbox), 0)
+
+        self.client.force_login(self.diretoria)
+        response = self.client.post(
+            reverse("avaliar_solicitacao_aditivo_contrato", args=[aditivo.pk]),
+            {"acao": "aprovar_diretoria"},
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        aditivo.refresh_from_db()
+        self.assertEqual(aditivo.status_diretoria, "aprovado")
+        self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.suprimento.email, mail.outbox[0].to)
 
-    def test_suprimento_envia_documento_e_reseta_fluxo(self):
+    def test_suprimento_envia_minuta_apos_dupla_aprovacao_da_solicitacao(self):
         aditivo = self.create_aditivo()
-        aditivo.status_lider = "reprovado"
-        aditivo.justificativa_reprovacao_lider = "Arquivo ilegivel"
-        aditivo.save(update_fields=["status_lider", "justificativa_reprovacao_lider"])
+        aditivo.status_gerente = "aprovado"
+        aditivo.status_diretoria = "aprovado"
+        aditivo.save(update_fields=["status_gerente", "status_diretoria"])
 
         self.client.force_login(self.suprimento)
         response = self.client.post(
@@ -4829,18 +5175,22 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         aditivo.refresh_from_db()
         self.assertTrue(bool(aditivo.arquivo_aditivo))
         self.assertEqual(aditivo.status_lider, "pendente")
-        self.assertEqual(aditivo.status_gerente, "pendente")
-        self.assertEqual(aditivo.status_diretoria, "pendente")
+        self.assertEqual(aditivo.status_gerente, "aprovado")
+        self.assertEqual(aditivo.status_diretoria, "aprovado")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
 
-    def test_reprovacao_como_lider_exige_justificativa(self):
+    def test_reprovacao_da_minuta_exige_justificativa(self):
         aditivo = self.create_aditivo()
+        aditivo.status_gerente = "aprovado"
+        aditivo.status_diretoria = "aprovado"
         aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
-        aditivo.save()
-        self.client.force_login(self.lider)
+        aditivo.save(update_fields=["status_gerente", "status_diretoria", "arquivo_aditivo"])
+        self.client.force_login(self.gerente_contrato)
 
         response = self.client.post(
-            reverse("avaliar_aditivo_contrato", args=[aditivo.pk]),
-            {"acao": "reprovar_lider", "justificativa": ""},
+            reverse("avaliar_minuta_aditivo_contrato", args=[aditivo.pk]),
+            {"acao": "reprovar_minuta", "justificativa": ""},
             follow=True,
         )
 
@@ -4849,84 +5199,83 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertEqual(aditivo.status_lider, "pendente")
         self.assertContains(response, "justificativa")
 
-    def test_aprovacao_do_lider_dispensa_gerente(self):
+    def test_aprovacao_da_minuta_notifica_suprimento_para_inserir_documento_assinado(self):
         aditivo = self.create_aditivo()
+        aditivo.status_gerente = "aprovado"
+        aditivo.status_diretoria = "aprovado"
         aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
-        aditivo.save()
+        aditivo.save(update_fields=["status_gerente", "status_diretoria", "arquivo_aditivo"])
+        self.client.force_login(self.gerente_contrato)
 
-        self.client.force_login(self.lider)
         response = self.client.post(
-            reverse("avaliar_aditivo_contrato", args=[aditivo.pk]),
-            {"acao": "aprovar_lider"},
+            reverse("avaliar_minuta_aditivo_contrato", args=[aditivo.pk]),
+            {"acao": "aprovar_minuta"},
             follow=False,
         )
 
         self.assertEqual(response.status_code, 302)
         aditivo.refresh_from_db()
         self.assertEqual(aditivo.status_lider, "aprovado")
-        self.assertEqual(aditivo.status_gerente, "pendente")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.suprimento.email, mail.outbox[0].to)
 
-        self.client.force_login(self.gerente_contrato)
-        response = self.client.post(
-            reverse("avaliar_aditivo_contrato", args=[aditivo.pk]),
-            {"acao": "aprovar_gerente"},
-            follow=True,
-        )
-        self.assertEqual(response.status_code, 200)
-        aditivo.refresh_from_db()
-        self.assertEqual(aditivo.status_gerente, "pendente")
-
-    def test_aprovacao_do_gerente_dispensa_lider(self):
+    def test_inserir_documento_assinado_atualiza_contrato(self):
         aditivo = self.create_aditivo()
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
-        aditivo.save()
-        self.client.force_login(self.gerente_contrato)
-
-        response = self.client.post(
-            reverse("avaliar_aditivo_contrato", args=[aditivo.pk]),
-            {"acao": "aprovar_gerente"},
-            follow=False,
-        )
-
-        self.assertEqual(response.status_code, 302)
-        aditivo.refresh_from_db()
-        self.assertEqual(aditivo.status_lider, "pendente")
-        self.assertEqual(aditivo.status_gerente, "aprovado")
-
-    def test_diretoria_aprova_e_atualiza_contrato(self):
-        aditivo = self.create_aditivo()
+        aditivo.status_gerente = "aprovado"
+        aditivo.status_diretoria = "aprovado"
         aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
         aditivo.status_lider = "aprovado"
-        aditivo.save()
-        self.client.force_login(self.diretoria)
+        aditivo.save(update_fields=["status_gerente", "status_diretoria", "arquivo_aditivo", "status_lider"])
+        self.client.force_login(self.suprimento)
 
         response = self.client.post(
-            reverse("avaliar_aditivo_contrato", args=[aditivo.pk]),
-            {"acao": "aprovar_diretoria"},
+            reverse("enviar_aditivo_assinado_contrato", args=[aditivo.pk]),
+            {"arquivo_aditivo_assinado": SimpleUploadedFile("aditivo_assinado.pdf", b"conteudo", content_type="application/pdf")},
             follow=False,
         )
 
         self.assertEqual(response.status_code, 302)
         aditivo.refresh_from_db()
         self.contrato_terceiro.refresh_from_db()
-        self.assertEqual(aditivo.status_diretoria, "aprovado")
+        self.assertTrue(bool(aditivo.arquivo_aditivo_assinado))
         self.assertEqual(self.contrato_terceiro.valor_total, Decimal("1500.00"))
         self.assertEqual(self.contrato_terceiro.data_fim, date(2026, 6, 30))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Aditivo concluido", mail.outbox[0].subject)
+        self.assertIn(self.suprimento.email, mail.outbox[0].to)
+        self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
+        self.assertIn(self.diretoria.email, mail.outbox[0].to)
 
     def test_detalhe_contrato_exibe_download_do_aditivo_aprovado(self):
         aditivo = self.create_aditivo()
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
-        aditivo.status_lider = "aprovado"
-        aditivo.status_diretoria = "aprovado"
-        aditivo.documento_enviado_em = timezone.now()
-        aditivo.save()
+        aditivo.arquivo_aditivo_assinado = SimpleUploadedFile("aditivo_assinado.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.documento_assinado_enviado_em = timezone.now()
+        aditivo.save(update_fields=["arquivo_aditivo_assinado", "documento_assinado_enviado_em"])
 
         self.client.force_login(self.suprimento)
         response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": self.contrato_terceiro.pk}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Documento do aditivo")
-        self.assertContains(response, aditivo.arquivo_aditivo.url)
+        self.assertContains(response, "Documento do aditivo assinado")
+        self.assertContains(response, aditivo.arquivo_aditivo_assinado.url)
+
+    def test_detalhes_aditivo_exibe_timeline(self):
+        aditivo = self.create_aditivo()
+        self.client.force_login(self.gerente_contrato)
+        response = self.client.get(reverse("detalhes_aditivo_contrato", args=[aditivo.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="timeline-progress"')
+        self.assertContains(response, "data-target-width=")
+        self.assertContains(response, "Aprovacao da Solicitacao")
+
+    def test_lista_solicitacoes_exibe_aditivo_para_usuario_relacionado(self):
+        aditivo = self.create_aditivo()
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("detalhes_aditivo_contrato", args=[aditivo.pk]))
 
     def test_detalhe_contrato_formata_datas_do_grafico_sem_hora(self):
         evento = self.create_event(contrato=self.contrato_terceiro, realizado=True)
@@ -4968,10 +5317,9 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
 
     def test_detalhe_contrato_considera_valor_do_aditivo_aprovado_no_warning(self):
         aditivo = self.create_aditivo()
-        aditivo.status_lider = "aprovado"
-        aditivo.status_diretoria = "aprovado"
-        aditivo.data_aprovacao_diretoria = timezone.now()
-        aditivo.save(update_fields=["status_lider", "status_diretoria", "data_aprovacao_diretoria"])
+        aditivo.arquivo_aditivo_assinado = SimpleUploadedFile("aditivo_assinado.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.documento_assinado_enviado_em = timezone.now()
+        aditivo.save(update_fields=["arquivo_aditivo_assinado", "documento_assinado_enviado_em"])
 
         evento = self.create_event(contrato=self.contrato_terceiro, empresa_terceira=self.contrato_terceiro.empresa_terceira)
         evento.valor_previsto = Decimal("1000.00")
@@ -5233,4 +5581,50 @@ class DocmGenerationTests(BaseUserTestCase):
         self.assertIn("61 dias", document_xml)
         self.assertIn("FORNECEDOR DOCM", document_xml)
         self.assertIn("CT-DOCM-01", header_xml)
+
+    def test_geradores_docm_cobrem_cpf_cnpj_e_campos_endereco_faltantes(self):
+        contract_template_path = self.create_docm_template(
+            "__cpf_cnpj__ __nome_empresa_terceira__",
+            "",
+        )
+        addendum_template_path = self.create_docm_template(
+            "__cpf_cnpj__ __complemento__ __bairro__ __municipio__ __estado__ __cep__ __telefone__ __email__ __ponto_focal__ __telefone_focal__ __email_focal__",
+            "☒ ESPECÍFICO    ☐ GUARDA-CHUVA",
+        )
+        self.client.force_login(self.suprimento)
+
+        with patch("gestao_contratos.views.CONTRACT_TEMPLATE_DOCM_PATH", Path(contract_template_path)):
+            contract_response = self.client.post(
+                reverse("gerar_minuta_contrato_docm", args=[self.solicitacao_prospeccao.id]),
+                {
+                    "numero_contrato": "CONT-DOCM-003",
+                    "objeto": "Servico contratado",
+                    "valor_total": "2.500,00",
+                    "observacao": "Observacao teste",
+                },
+            )
+
+        with patch("gestao_contratos.views.ADDENDUM_TEMPLATE_DOCM_PATH", Path(addendum_template_path)):
+            addendum_response = self.client.get(reverse("gerar_aditivo_contrato_docm", args=[self.aditivo.id]))
+
+        self.assertEqual(contract_response.status_code, 200)
+        self.assertEqual(addendum_response.status_code, 200)
+
+        contract_document_xml = self.read_docm_xml(contract_response, "word/document.xml")
+        addendum_document_xml = self.read_docm_xml(addendum_response, "word/document.xml")
+        addendum_header_xml = self.read_docm_xml(addendum_response, "word/header1.xml")
+
+        self.assertIn("11.111.111/0001-55", contract_document_xml)
+        self.assertIn("11.111.111/0001-55", addendum_document_xml)
+        self.assertIn("-", addendum_document_xml)
+        self.assertIn("CENTRO", addendum_document_xml)
+        self.assertIn("BELO HORIZONTE", addendum_document_xml)
+        self.assertIn("MG", addendum_document_xml)
+        self.assertIn("30000-000", addendum_document_xml)
+        self.assertIn("31 99999-9999", addendum_document_xml)
+        self.assertIn("fornecedor.docm@example.com", addendum_document_xml)
+        self.assertIn("MARIA SILVA", addendum_document_xml)
+        self.assertIn("31 98888-8888", addendum_document_xml)
+        self.assertIn("maria.silva@example.com", addendum_document_xml)
+        self.assertIn("☒ ESPECÍFICO    ☐ GUARDA-CHUVA", addendum_header_xml)
 

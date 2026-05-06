@@ -21,7 +21,6 @@ Aplicação web em Django voltada para gestão de contratos, fornecedores, clien
 
 O sistema trabalha com grupos de acesso para definir responsabilidades e permissões, incluindo:
 
-- Coordenador de Contrato
 - Líder de Contrato
 - Gerente
 - Gerente e Líder de Contratos
