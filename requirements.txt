@@ -11,4 +11,4 @@ python-dateutil==2.9.0post0
 pytz==2025.2
 six==1.17.0
 sqlparse==0.5.2
-tzdata==2025b
+tzdata==2025.2
