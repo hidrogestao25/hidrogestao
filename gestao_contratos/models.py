@@ -66,6 +66,7 @@ class Cliente(models.Model):
     razao_social = models.CharField(max_length=200, blank=True, null=True)
     cpf_cnpj = models.CharField(max_length=18, unique=True)
     endereco = models.TextField(blank=True, null=True)
+    complemento = models.TextField(blank=True, null=True)
     telefone = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
 
@@ -107,6 +108,7 @@ class EmpresaTerceira(models.Model):
     setor_de_atuacao = models.TextField(blank=True, null=True)
     cpf_cnpj = models.CharField(max_length=18, unique=True)
     endereco = models.TextField(blank=True, null=True)
+    complemento = models.TextField(blank=True, null=True)
     numero = models.TextField(blank=True, null=True)
     bairro = models.TextField(blank=True, null=True)
     municipio = models.TextField(blank=True, null=True)

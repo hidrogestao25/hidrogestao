@@ -143,7 +143,7 @@
   <hr>
 
   {# Bloco de eventos vinculados ao contrato #}
-  {% if not contrato.guarda_chuva %}
+  {# if not contrato.guarda_chuva #}
   <h5>Eventos do Contrato</h5>
   {% if eventos %}
     <table class="table table-sm table-bordered align-middle">
@@ -299,7 +299,7 @@
   {% if request.user.grupo == 'suprimento' %}
       <a href="{% url 'cadastrar_evento_contrato' contrato.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
   {% endif %}
-  {% endif %}
+  {# endif #}
 
   {% if contrato.guarda_chuva %}
     <hr>

@@ -2181,7 +2181,7 @@ class DiretoriaPagamentoBMTests(BaseUserTestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(
             mail.outbox[0].subject,
-            f"Processo concluido - Contrato gerado para {self.contrato_base.cod_projeto}",
+            f"Pagamento Aprovado pela Diretoria – BM {self.bm.pk}",
         )
         self.assertCountEqual(
             mail.outbox[0].to,

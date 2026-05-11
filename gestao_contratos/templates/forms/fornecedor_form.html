@@ -28,8 +28,8 @@
           </div>
 
           <div class="col-md-6 mb-3">
-              <label class="form-label" for="{{ form.telefone.id_for_label }}">Telefone</label>
-              {{ form.telefone }}
+            <label class="form-label" for="{{ form.telefone.id_for_label }}">Telefone</label>
+            {{ form.telefone }}
           </div>
 
           <div class="col-md-6 mb-3">
@@ -38,8 +38,13 @@
           </div>
 
           <div class="col-md-6 mb-3">
-              <label class="form-label" for="{{ form.endereco.id_for_label }}">Endereço</label>
-              {{ form.endereco }}
+            <label class="form-label" for="{{ form.endereco.id_for_label }}">Endereço</label>
+            {{ form.endereco }}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.complemento.id_for_label }}">Complemento</label>
+            {{ form.complemento }}
           </div>
 
           <div class="col-md-6 mb-3">
@@ -74,7 +79,6 @@
           </div>
         </div>
 
-
         <div class="col-md-6 mb-3">
           <label class="form-label" for="{{ form.ponto_focal.id_for_label }}">Ponto Focal</label>
           {{ form.ponto_focal }}
@@ -86,8 +90,8 @@
         </div>
 
         <div class="col-md-6 mb-3">
-            <label class="form-label" for="{{ form.telefone_focal.id_for_label }}">Telefone do Ponto Focal</label>
-            {{ form.telefone_focal }}
+          <label class="form-label" for="{{ form.telefone_focal.id_for_label }}">Telefone do Ponto Focal</label>
+          {{ form.telefone_focal }}
         </div>
 
         <div class="col-md-6 mb-3">
@@ -101,8 +105,8 @@
         </div>
 
         <div class="col-md-6 mb-3">
-            <label class="form-label" for="{{ form.telefone_focal2.id_for_label }}">Telefone do Ponto Focal 2</label>
-            {{ form.telefone_focal2 }}
+          <label class="form-label" for="{{ form.telefone_focal2.id_for_label }}">Telefone do Ponto Focal 2</label>
+          {{ form.telefone_focal2 }}
         </div>
 
         <div class="text-end">
@@ -113,10 +117,7 @@
   </div>
 </div>
 
-<!-- jQuery -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-
-<!-- Inputmask -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
 
 <script>

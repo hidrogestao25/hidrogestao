@@ -66,6 +66,7 @@ class CustomUserAdmin(UserAdmin):
 # ==============================
 class DefaultAdmin(admin.ModelAdmin):
     ordering = ("id",)
+    search_help_text = "Pesquise pelos principais campos de texto e relacionamentos."
 
     def get_list_display(self, request):
         """
@@ -90,6 +91,42 @@ class DefaultAdmin(admin.ModelAdmin):
 
         fields.append("__str__")
         return fields
+
+    def get_search_fields(self, request):
+        field_names = {field.name for field in self.model._meta.get_fields()}
+        search_fields = []
+
+        for field_name in [
+            "nome",
+            "titulo",
+            "codigo",
+            "numero",
+            "cpf_cnpj",
+            "cod_projeto",
+            "descricao",
+            "status",
+            "email",
+            "username",
+        ]:
+            if field_name in field_names:
+                search_fields.append(field_name)
+
+        related_candidates = {
+            "cliente": ["cliente__nome", "cliente__cpf_cnpj"],
+            "empresa_terceira": ["empresa_terceira__nome", "empresa_terceira__cpf_cnpj"],
+            "contrato": ["contrato__cod_projeto"],
+            "contrato_terceiro": ["contrato_terceiro__num_contrato", "contrato_terceiro__cod_projeto"],
+            "coordenador": ["coordenador__username", "coordenador__first_name", "coordenador__last_name"],
+            "lider_contrato": ["lider_contrato__username", "lider_contrato__first_name", "lider_contrato__last_name"],
+            "fornecedor_escolhido": ["fornecedor_escolhido__nome"],
+            "evento": ["evento__descricao"],
+        }
+
+        for relation_name, lookups in related_candidates.items():
+            if relation_name in field_names:
+                search_fields.extend(lookups)
+
+        return tuple(dict.fromkeys(search_fields))
 
 
 # ==============================

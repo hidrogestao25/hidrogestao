@@ -4007,7 +4007,7 @@ def nova_solicitacao_contrato(request):
                     assunto = "Nova solicitação de Contratação"
                     mensagem = (
                         f"O usuário {request.user.get_full_name() or request.user.username} "
-                        f"deu iní­cio a uma solicitação de contratação. \n\n"
+                        f"deu início a uma solicitação de contratação.\n\n"
                         f"Detalhes da solicitação:\n"
                         f"- ID: {solicitacao.id}\n"
                         f"- Valor Disponível: {solicitacao.valor_disponivel}\n"
@@ -4739,8 +4739,6 @@ def aprovar_os_gerente_contrato(request, pk, acao):
             prazo_execucao=os.prazo_execucao if os.prazo_execucao else None,
             arquivo_os=os.arquivo_os if os.arquivo_os else None,
         )
-        print(f"Ordem de Serviço criada: {ordem_servico.id}")
-
         assunto = f"Aprovação da OS {os.id}"
         mensagem = (
             f"O gerente de contrato, {request.user.get_full_name() or request.user.username}, "
@@ -8157,11 +8155,11 @@ def cadastrar_bm(request, contrato_id, evento_id):
                     mensagem = (
                         f"Olá,\n\n"
                         f"Um novo Boletim de Medição foi cadastrado e está aguardando avaliação.\n\n"
-                        f"ðŸ“Œ Projeto: {contrato.cod_projeto}\n"
-                        f"ðŸ“Œ Contrato: {contrato.num_contrato} - {contrato.empresa_terceira}\n"
-                        f"ðŸ“Œ Evento: {evento.descricao}\n"
-                        f"ðŸ“Œ Valor Previsto: R$ {evento.valor_previsto}\n"
-                        f"ðŸ“Œ Valor Informado no BM: R$ {bm.valor_pago}\n\n"
+                        f"Projeto: {contrato.cod_projeto}\n"
+                        f"Contrato: {contrato.num_contrato} - {contrato.empresa_terceira}\n"
+                        f"Evento: {evento.descricao}\n"
+                        f"Valor previsto: R$ {evento.valor_previsto}\n"
+                        f"Valor informado no BM: R$ {bm.valor_pago}\n\n"
                         f"Acesse o sistema para aprovar ou reprovar o BM.\n\n"
                         f"Atenciosamente,\n"
                         f"Sistema HIDROGestão"
