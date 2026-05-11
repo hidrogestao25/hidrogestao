@@ -7457,7 +7457,8 @@ def previsao_pagamentos(request):
                 mode='lines+markers',
                 name='Previsto',
                 line=dict(color='blue', width=3),
-                marker=dict(size=6)
+                marker=dict(size=6),
+                hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
             ))
             fig.add_trace(go.Scatter(
                 x=datas_pago,
@@ -7465,11 +7466,16 @@ def previsao_pagamentos(request):
                 mode='lines+markers',
                 name='Pago',
                 line=dict(color='green', width=3),
-                marker=dict(size=6)
+                marker=dict(size=6),
+                hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
             ))
             fig.update_layout(
                 title='Previsão x Pagamentos Acumulados (Eventos + OS)',
-                xaxis_title='Data',
+                xaxis=dict(
+                    title='Data',
+                    tickformat='%d/%m/%Y',
+                    hoverformat='%d/%m/%Y',
+                ),
                 yaxis_title='Valor Acumulado (R$)',
                 hovermode='x unified'
             )
