@@ -259,8 +259,15 @@
 
 {% if grafico_barras %}
   <div class="mt-5">
-    <h4>Pagamentos Previstos por Coordenadores</h4>
+    <h4>Pagamentos Previstos por Líder Técnico</h4>
     {{ grafico_barras|safe }}
+  </div>
+{% endif %}
+
+{% if grafico_barras_lider_contrato %}
+  <div class="mt-5">
+    <h4>Pagamentos Previstos por Líder de Contrato</h4>
+    {{ grafico_barras_lider_contrato|safe }}
   </div>
 {% endif %}
 

@@ -113,8 +113,8 @@ for contrato in contratos_hoje:
 
 
 # --- 6. REPORT SEMANAL AUTOMATICO (SEGUNDA-FEIRA) ---
-if hoje.weekday() == 1:
-    email_report = "adelson.santos@hidrobr.com"
+if hoje.weekday() == 0:
+    email_report = "frederico.viana@hidrobr.com"
     usuario_report = (
         User.objects.filter(grupo="suprimento", is_active=True)
         .exclude(email__isnull=True)

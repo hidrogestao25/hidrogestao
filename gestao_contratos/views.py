@@ -7319,6 +7319,7 @@ def previsao_pagamentos(request):
     grafico_html = None
     grafico_barra = None
     grafico_barras = None
+    grafico_barras_lider_contrato = None
     grafico_barras_projeto = None
     bms = []
     total_bm_pago = None
@@ -7538,6 +7539,51 @@ def previsao_pagamentos(request):
 
         grafico_barras = plot(fig_barra, output_type='div')
 
+        # ==== GRÁFICO 2.1: POR LÍDER DE CONTRATO ====
+        lideres_contrato = list(set(
+            eventos.values_list('contrato_terceiro__lider_contrato__username', flat=True)
+        ))
+
+        fig_barra_lider = go.Figure()
+        for lider in lideres_contrato:
+            y_previstos = []
+            data_inicio = None
+
+            for data_fim in calendario:
+                filtro_periodo = Q(data_prevista_pagamento__lte=data_fim)
+                if data_inicio:
+                    filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
+
+                eventos_previsto = eventos.filter(
+                    filtro_periodo,
+                    contrato_terceiro__lider_contrato__username=lider,
+                )
+
+                total_previsto_periodo = eventos_previsto.aggregate(
+                    total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
+                )['total']
+
+                y_previstos.append(total_previsto_periodo)
+                data_inicio = data_fim
+
+            fig_barra_lider.add_trace(go.Bar(
+                name=f"{lider or 'Sem Líder de Contrato'}",
+                x=calendario,
+                y=y_previstos
+            ))
+
+        fig_barra_lider.update_layout(
+            barmode='stack',
+            title="Pagamentos Previsto (por Líder de Contrato, conforme calendário de pagamento)",
+            xaxis_title="Data do Calendário",
+            yaxis_title="Valor Previsto (R$)",
+            template="plotly_white",
+            height=500,
+            legend_title="Líder de Contrato"
+        )
+
+        grafico_barras_lider_contrato = plot(fig_barra_lider, output_type='div')
+
         # ==== GRÁFICO 2.2: POR PROJETO ====
         calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
                           .values_list('data_pagamento', flat=True))
@@ -7736,6 +7782,7 @@ def previsao_pagamentos(request):
         "total_pago": total_pago,
         "grafico_html": grafico_html,
         "grafico_barras": grafico_barras,
+        "grafico_barras_lider_contrato": grafico_barras_lider_contrato,
         "grafico_barras_projeto": grafico_barras_projeto,
         "grafico_barra": grafico_barra,
         "bms": bms,
