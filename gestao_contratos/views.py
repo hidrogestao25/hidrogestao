@@ -605,6 +605,55 @@ def build_latest_audit_map(model_class, object_ids):
     return latest_audits
 
 
+def build_bm_approval_audit_map(bms):
+    if not bms:
+        return {}
+
+    content_type = ContentType.objects.get_for_model(BM)
+    bm_ids = [bm.id for bm in bms]
+    audits = (
+        RegistroAuditoria.objects.filter(
+            content_type=content_type,
+            object_id__in=bm_ids,
+            usuario__isnull=False,
+        )
+        .select_related("usuario")
+        .order_by("object_id", "data_hora")
+    )
+
+    audits_by_bm = {}
+    for audit in audits:
+        audits_by_bm.setdefault(audit.object_id, []).append(audit)
+
+    approval_map = {}
+
+    def resolve_nearest_audit(audit_list, approval_datetime):
+        if not audit_list or not approval_datetime:
+            return None
+
+        matching_audits = [
+            audit
+            for audit in audit_list
+            if abs((audit.data_hora - approval_datetime).total_seconds()) <= 300
+        ]
+        if not matching_audits:
+            return None
+
+        return min(
+            matching_audits,
+            key=lambda audit: abs((audit.data_hora - approval_datetime).total_seconds()),
+        )
+
+    for bm in bms:
+        audit_list = audits_by_bm.get(bm.id, [])
+        approval_map[bm.id] = {
+            "coordenador": resolve_nearest_audit(audit_list, bm.data_aprovacao_coordenador),
+            "gerente": resolve_nearest_audit(audit_list, bm.data_aprovacao_gerente),
+        }
+
+    return approval_map
+
+
 def average_days_from_pairs(pairs):
     valid_deltas = []
     for start, end in pairs:
@@ -7768,6 +7817,13 @@ def previsao_pagamentos(request):
                 if bm.status_gerente != 'aprovado':
                     faltando.append('Gerente de Contrato')
                 bm.falta_aprovar = ', '.join(faltando)
+
+        bm_approval_audit_map = build_bm_approval_audit_map(bms)
+
+        for bm in bms:
+            approval_info = bm_approval_audit_map.get(bm.id, {})
+            bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
+            bm.aprovacao_gerente_audit = approval_info.get("gerente")
 
         total_bm_pago = sum(bm.valor_pago or 0 for bm in bms)
         total_bm_previsto = sum(

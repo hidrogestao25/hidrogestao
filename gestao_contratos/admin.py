@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm
+from django.db import models
 from .models import (
     User, Cliente, EmpresaTerceira, Proposta, Contrato, PropostaFornecedor,
     ContratoTerceiros, Evento,
@@ -93,8 +94,15 @@ class DefaultAdmin(admin.ModelAdmin):
         return fields
 
     def get_search_fields(self, request):
-        field_names = {field.name for field in self.model._meta.get_fields()}
+        fields_by_name = {field.name: field for field in self.model._meta.get_fields()}
         search_fields = []
+
+        searchable_field_types = (
+            models.CharField,
+            models.TextField,
+            models.EmailField,
+            models.SlugField,
+        )
 
         for field_name in [
             "nome",
@@ -108,14 +116,15 @@ class DefaultAdmin(admin.ModelAdmin):
             "email",
             "username",
         ]:
-            if field_name in field_names:
+            field = fields_by_name.get(field_name)
+            if field and not field.is_relation and isinstance(field, searchable_field_types):
                 search_fields.append(field_name)
 
         related_candidates = {
             "cliente": ["cliente__nome", "cliente__cpf_cnpj"],
             "empresa_terceira": ["empresa_terceira__nome", "empresa_terceira__cpf_cnpj"],
-            "contrato": ["contrato__cod_projeto"],
-            "contrato_terceiro": ["contrato_terceiro__num_contrato", "contrato_terceiro__cod_projeto"],
+            "contrato": ["contrato__num_contrato", "contrato__cod_projeto__cod_projeto"],
+            "contrato_terceiro": ["contrato_terceiro__num_contrato", "contrato_terceiro__cod_projeto__cod_projeto"],
             "coordenador": ["coordenador__username", "coordenador__first_name", "coordenador__last_name"],
             "lider_contrato": ["lider_contrato__username", "lider_contrato__first_name", "lider_contrato__last_name"],
             "fornecedor_escolhido": ["fornecedor_escolhido__nome"],
@@ -123,7 +132,7 @@ class DefaultAdmin(admin.ModelAdmin):
         }
 
         for relation_name, lookups in related_candidates.items():
-            if relation_name in field_names:
+            if relation_name in fields_by_name:
                 search_fields.extend(lookups)
 
         return tuple(dict.fromkeys(search_fields))

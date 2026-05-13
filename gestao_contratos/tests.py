@@ -2764,6 +2764,16 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
 
     def test_previsao_pagamentos_lista_bm_aprovado_pelo_lider_sem_aprovacao_do_gerente(self):
         bm = self.create_bm_for_previsao()
+        RegistroAuditoria.objects.create(
+            usuario=self.coordenador,
+            content_type=ContentType.objects.get_for_model(BM),
+            object_id=bm.pk,
+            acao="atualizado",
+            modelo="BM",
+            representacao_objeto=str(bm),
+            detalhes="Aprovação operacional do BM",
+            data_hora=bm.data_aprovacao_coordenador,
+        )
         self.client.force_login(self.suprimento)
 
         response = self.client.get(
@@ -2778,6 +2788,56 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertContains(response, "Boletins de Medição")
         self.assertContains(response, str(bm.numero_bm))
         self.assertContains(response, "Líder / Gerente-Líder")
+        self.assertNotContains(response, "Pendente")
+
+    def test_previsao_pagamentos_exibe_aprovacoes_com_usuario_grupo_data_e_hora(self):
+        horario_lider = timezone.now().replace(second=0, microsecond=0)
+        horario_gerente = horario_lider + timedelta(minutes=3)
+        bm = self.create_bm_for_previsao(
+            status_coordenador="aprovado",
+            data_aprovacao_coordenador=horario_lider,
+            status_gerente="aprovado",
+            data_aprovacao_gerente=horario_gerente,
+        )
+        content_type = ContentType.objects.get_for_model(BM)
+        RegistroAuditoria.objects.create(
+            usuario=self.coordenador,
+            content_type=content_type,
+            object_id=bm.pk,
+            acao="atualizado",
+            modelo="BM",
+            representacao_objeto=str(bm),
+            detalhes="Aprovação operacional do BM",
+            data_hora=horario_lider,
+        )
+        RegistroAuditoria.objects.create(
+            usuario=self.gerente_contrato,
+            content_type=content_type,
+            object_id=bm.pk,
+            acao="atualizado",
+            modelo="BM",
+            representacao_objeto=str(bm),
+            detalhes="Aprovação gerencial do BM",
+            data_hora=horario_gerente,
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(
+            reverse("previsao_pagamentos"),
+            {
+                "data_inicial": timezone.localdate().strftime("%Y-%m-%d"),
+                "data_limite": timezone.localdate().strftime("%Y-%m-%d"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.coordenador.get_full_name() or self.coordenador.username)
+        self.assertContains(response, self.coordenador.get_grupo_display())
+        self.assertContains(response, timezone.localtime(horario_lider).strftime("%d/%m/%Y %H:%M"))
+        self.assertContains(response, self.gerente_contrato.get_full_name() or self.gerente_contrato.username)
+        self.assertContains(response, self.gerente_contrato.get_grupo_display())
+        self.assertContains(response, timezone.localtime(horario_gerente).strftime("%d/%m/%Y %H:%M"))
+        self.assertNotContains(response, "Pendente")
 
     def test_download_bms_aprovados_inclui_bm_aprovado_pelo_lider(self):
         bm = self.create_bm_for_previsao(

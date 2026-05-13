@@ -79,7 +79,7 @@
           <tr>
             <th>Projeto</th>
             <th>Fornecedor</th>
-            <th>Líder Técnico</th>
+            <th>Líder de Contrato</th>
             <th>Nº BM</th>
             <th>Período de Medição</th>
             <th>Valor Previsto</th>
@@ -94,7 +94,7 @@
             <tr>
               <td>{{ bm.contrato.cod_projeto.cod_projeto }}</td>
               <td>{{ bm.contrato.empresa_terceira.nome }}</td>
-              <td>{{ bm.contrato.coordenador.get_full_name }}</td>
+              <td>{{ bm.contrato.lider_contrato.get_full_name }}</td>
               <td>{{ bm.numero_bm }}</td>
               <td>
                 {% if bm.data_inicial_medicao and bm.data_final_medicao %}
@@ -113,16 +113,24 @@
               <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
               <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
               <td>
-                {% if bm.data_aprovacao_coordenador %}
-                  <strong>Líder / Gerente-Líder:</strong> {{ bm.data_aprovacao_coordenador|date:"d/m/Y H:i" }}<br>
-                {% else %}
-                  <strong>Líder / Gerente-Líder:</strong> <span class="text-warning">Pendente</span><br>
+                {% if bm.aprovacao_coordenador_audit %}
+                  <div>
+                    {{ bm.aprovacao_coordenador_audit.usuario.get_full_name|default:bm.aprovacao_coordenador_audit.usuario.username }}
+                    ({{ bm.aprovacao_coordenador_audit.usuario.get_grupo_display|default:bm.aprovacao_coordenador_audit.usuario.grupo }})
+                    - {{ bm.data_aprovacao_coordenador|date:"d/m/Y H:i" }}
+                  </div>
                 {% endif %}
 
-                {% if bm.data_aprovacao_gerente %}
-                  <strong>Gerente de Contrato:</strong> {{ bm.data_aprovacao_gerente|date:"d/m/Y H:i" }}
-                {% else %}
-                  <strong>Gerente de Contrato:</strong> <span class="text-warning">Pendente</span>
+                {% if bm.aprovacao_gerente_audit %}
+                  <div>
+                    {{ bm.aprovacao_gerente_audit.usuario.get_full_name|default:bm.aprovacao_gerente_audit.usuario.username }}
+                    ({{ bm.aprovacao_gerente_audit.usuario.get_grupo_display|default:bm.aprovacao_gerente_audit.usuario.grupo }})
+                    - {{ bm.data_aprovacao_gerente|date:"d/m/Y H:i" }}
+                  </div>
+                {% endif %}
+
+                {% if not bm.aprovacao_coordenador_audit and not bm.aprovacao_gerente_audit %}
+                  <span class="text-muted">-</span>
                 {% endif %}
               </td>
               <td>
