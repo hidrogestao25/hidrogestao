@@ -2244,6 +2244,19 @@ def home(request):
             status="pendente_lider"
         ).distinct()
 
+        bms_pendentes = BM.objects.filter(
+            contrato__lider_contrato=user
+        ).filter(
+            Q(status_coordenador="pendente", status_gerente="pendente")
+            | (Q(aprovacao_pagamento="pendente") & bm_operational_approval_query())
+        ).exclude(
+            Q(status_coordenador="reprovado") | Q(status_gerente="reprovado")
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira",
+            "evento",
+        ).order_by("-data_pagamento").distinct()
+
         eventos_proximos = Evento.objects.filter(
             data_prevista__gte=hoje,
             data_prevista__lte=limite,
@@ -2288,6 +2301,7 @@ def home(request):
             "solicitacoes_prospeccao": solicitacoes_prospeccao,
             "solicitacoes_contrato": solicitacoes_contrato,
             "solicitacoes_os": solicitacoes_os,
+            "bms_pendentes": bms_pendentes,
             "eventos_proximos": eventos_proximos,
             "entregas_atrasadas": entregas_atrasadas,
             "contratos_vencendo": contratos_vencendo,

@@ -2586,6 +2586,83 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         self.assertContains(response, evento_para_entrega.empresa_terceira.nome)
 
 
+class LiderHomeDashboardTests(BaseUserTestCase):
+    def setUp(self):
+        self.lider = self.create_user("lider_home_bm", "lider_contrato")
+        self.coordenador = self.create_user("coord_home_bm", "coordenador")
+        self.centro = self.create_center()
+        self.coordenador.centros.add(self.centro)
+        self.contrato_base = self.create_contract(
+            codigo="PRJ-HOME-LIDER",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+        self.contrato_terceiro = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            num_contrato="CT-HOME-LIDER",
+        )
+        self.evento = self.create_event(contrato=self.contrato_terceiro)
+
+    def test_home_lider_exibe_card_de_bms_pendentes(self):
+        bm_pendente = BM.objects.create(
+            contrato=self.contrato_terceiro,
+            evento=self.evento,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("100.00"),
+            status_coordenador="pendente",
+            status_gerente="pendente",
+        )
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Boletins Pendentes de Aprovação")
+        self.assertIn(bm_pendente, list(response.context["bms_pendentes"]))
+        self.assertContains(response, self.contrato_terceiro.empresa_terceira.nome)
+
+
+class GerenteLiderHomeDashboardTests(BaseUserTestCase):
+    def setUp(self):
+        self.gerente_lider = self.create_user("gl_home_sem_bm", "gerente_lider")
+        self.coordenador = self.create_user("coord_home_sem_bm", "coordenador")
+        self.centro = self.create_center()
+        self.gerente_lider.centros.add(self.centro)
+        self.coordenador.centros.add(self.centro)
+        self.contrato_base = self.create_contract(
+            codigo="PRJ-HOME-GL",
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_lider,
+        )
+        self.contrato_terceiro = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_lider,
+            num_contrato="CT-HOME-GL",
+        )
+        self.evento = self.create_event(contrato=self.contrato_terceiro)
+
+    def test_home_gerente_lider_nao_exibe_card_de_bms_pendentes(self):
+        BM.objects.create(
+            contrato=self.contrato_terceiro,
+            evento=self.evento,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("100.00"),
+            status_coordenador="pendente",
+            status_gerente="pendente",
+        )
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Boletins Pendentes de Aprovação")
+
+
 class GerenteContratoHomeDashboardTests(BaseUserTestCase):
     def setUp(self):
         self.gerente_contrato = self.create_user("gc_home_aditivo", "gerente_contrato")
