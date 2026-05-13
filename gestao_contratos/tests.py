@@ -2515,6 +2515,31 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         self.assertContains(response, reverse("detalhes_solicitacao", args=[solicitacao_prospeccao.id]))
         self.assertContains(response, reverse("detalhes_solicitacao_contrato", args=[solicitacao_contrato.id]))
 
+    def test_home_suprimento_nao_lista_solicitacoes_reprovadas_pelo_suprimento(self):
+        solicitacao_prospeccao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Prospecção reprovada pelo suprimento",
+            status="Reprovada pelo suprimento",
+        )
+        solicitacao_contrato = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Contratação reprovada pelo suprimento",
+            status="Reprovada pelo suprimento",
+        )
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(solicitacao_prospeccao, response.context["solicitacoes_prospeccao"])
+        self.assertNotIn(solicitacao_contrato, response.context["solicitacoes_contrato"])
+        self.assertNotContains(response, "Prospecção reprovada pelo suprimento")
+        self.assertNotContains(response, "Contratação reprovada pelo suprimento")
+
     def test_home_suprimento_lista_eventos_para_entrega_ate_proxima_data_pagamento(self):
         data_corte = timezone.localdate() + timedelta(days=5)
         evento_para_entrega = self.create_event(

@@ -1994,6 +1994,7 @@ def home(request):
     hoje = timezone.now().date()
     limite = hoje + timedelta(days=10)
     limite_contrato = hoje + timedelta(days=30)
+    excluded_pending_request_statuses = ["Onboarding", "Reprovada pelo suprimento"]
 
     grupo = getattr(user, "grupo", None)
     is_suprimento = grupo == "suprimento"
@@ -2024,13 +2025,13 @@ def home(request):
             | (Q(aprovado=True) & Q(triagem_realizada=True) & Q(fornecedor_escolhido__isnull=True))
             | (Q(aprovacao_fornecedor_gerente="aprovado") & Q(aprovacao_gerencia=False))
             | Q(status__in=["Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS])
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_contratos = SolicitacaoContrato.objects.filter(
             Q(aprovacao_fornecedor_gerente="aprovado")
             | Q(aprovacao_fornecedor_diretor="aprovado")
             | Q(status__in=["Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS])
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             Q(aprovacao_lider="aprovado")
@@ -2157,11 +2158,11 @@ def home(request):
     elif is_coordenador:
         solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
             coordenador=user
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_contrato = SolicitacaoContrato.objects.filter(
             coordenador=user
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             coordenador=user
@@ -2301,11 +2302,11 @@ def home(request):
 
         solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
             coordenador__centros__in=centros_ids
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_contratos = SolicitacaoContrato.objects.filter(
             coordenador__centros__in=centros_ids
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             coordenador__centros__in=centros_ids
@@ -2382,11 +2383,11 @@ def home(request):
 
         solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
             coordenador__centros__in=centros_ids
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_contratos = SolicitacaoContrato.objects.filter(
             coordenador__centros__in=centros_ids
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             coordenador__centros__in=centros_ids
@@ -2472,7 +2473,7 @@ def home(request):
             Q(status="Solicitação de prospecção") |
             Q(triagem_realizada=True, status="Triagem realizada") |
             Q(status__in=["Aprovação Final", "Fornecedor selecionado"])
-        ).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
         solicitacoes_contrato = SolicitacaoContrato.objects.filter(
             lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"]
         ).filter(
@@ -2482,7 +2483,7 @@ def home(request):
                 Q(status="Planejamento do Contrato")
                 & Q(minuta_contrato__arquivo_contrato__isnull=False)
             )
-        ).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
             status__in=["pendente_lider", "pendente_gerente"]
@@ -2567,11 +2568,11 @@ def home(request):
 
         solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
             Q(aprovacao_fornecedor_diretor="pendente")
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_contratos = SolicitacaoContrato.objects.filter(
             Q(aprovacao_fornecedor_diretor="pendente")
-        ).exclude(status__in=["Onboarding"]).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             Q(aprovacao_diretor="pendente")
