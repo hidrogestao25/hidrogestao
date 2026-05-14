@@ -143,7 +143,6 @@
   <hr>
 
   {# Bloco de eventos vinculados ao contrato #}
-  {# if not contrato.guarda_chuva #}
   <h5>Eventos do Contrato</h5>
   {% if eventos %}
     <table class="table table-sm table-bordered align-middle">
@@ -296,10 +295,9 @@
   {% else %}
     <p><em>Nenhum evento cadastrado para este contrato.</em></p>
   {% endif %}
-  {% if request.user.grupo == 'suprimento' %}
+  {% if request.user.grupo == 'suprimento' and not contrato.guarda_chuva %}
       <a href="{% url 'cadastrar_evento_contrato' contrato.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
   {% endif %}
-  {# endif #}
 
   {% if contrato.guarda_chuva %}
     <hr>
@@ -349,11 +347,17 @@
     {% else %}
       <p><em>Nenhuma Ordem de Serviço cadastrada para este contrato.</em></p>
     {% endif %}
-     {% if user.grupo == "gerente_lider" or user.grupo == "gerente_contrato" or user.grupo == "lider_contrato" %}
+    {% if user.grupo == "gerente_lider" or user.grupo == "gerente_contrato" or user.grupo == "lider_contrato" or user.grupo == "suprimento" %}
       <div class="text-end">
-        <a href="{% url 'solicitar_os' contrato.pk %}" class="btn btn-custom">
-            + Solicitar Nova OS
-        </a>
+        {% if user.grupo == "suprimento" %}
+          <a href="{% url 'cadastrar_os_contrato_guarda_chuwa' contrato.pk %}" class="btn btn-custom">
+              + Cadastrar OS
+          </a>
+        {% else %}
+          <a href="{% url 'solicitar_os' contrato.pk %}" class="btn btn-custom">
+              + Solicitar Nova OS
+          </a>
+        {% endif %}
       </div>
     {% endif %}
   {% endif %}

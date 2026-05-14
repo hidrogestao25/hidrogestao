@@ -147,16 +147,19 @@ def get_addendum_completion_notification_emails(aditivo):
             add_email(email)
 
     contrato = aditivo.contrato
-    if contrato.lider_contrato:
-        add_email(contrato.lider_contrato.email)
+    contrato_lider = contrato.referencia_lider_contrato
+    if contrato_lider:
+        add_email(contrato_lider.email)
     if aditivo.solicitado_por:
         add_email(aditivo.solicitado_por.email)
 
     gerente_lider_qs = User.objects.filter(grupo="gerente_lider", is_active=True)
-    if contrato.coordenador_id:
+    contrato_coordenador = contrato.referencia_coordenador
+    contrato_coordenadores = getattr(contrato, "referencia_todos_coordenadores", []) or []
+    if contrato_coordenador:
         gerente_lider_qs = gerente_lider_qs.filter(
-            Q(centros__in=contrato.coordenador.centros.all())
-            | Q(centros__in=contrato.coordenadores.values_list("centros__id", flat=True))
+            Q(centros__in=contrato_coordenador.centros.all())
+            | Q(centros__in=[centro.id for coordenador in contrato_coordenadores for centro in coordenador.centros.all()])
         ).distinct()
     for email in gerente_lider_qs.exclude(email__isnull=True).exclude(email__exact="").values_list("email", flat=True):
         add_email(email)
@@ -552,8 +555,14 @@ def user_shares_center_with_coordinator(user, coordinator):
 def user_is_contract_coordinator(user, contract):
     if not user or not contract:
         return False
+    referencia_coordenador = getattr(contract, "referencia_coordenador", None)
+    if referencia_coordenador and referencia_coordenador.id == user.id:
+        return True
     if getattr(contract, "coordenador_id", None) == user.id:
         return True
+    referencia_todos = getattr(contract, "referencia_todos_coordenadores", None)
+    if referencia_todos is not None:
+        return any(item and item.pk == user.pk for item in referencia_todos)
     coordenadores = getattr(contract, "coordenadores", None)
     if coordenadores is None:
         return False
@@ -563,8 +572,14 @@ def user_is_contract_coordinator(user, contract):
 def user_shares_center_with_contract_coordinators(user, contract):
     if not user or not contract:
         return False
+    referencia_coordenador = getattr(contract, "referencia_coordenador", None)
+    if referencia_coordenador and user_shares_center_with_coordinator(user, referencia_coordenador):
+        return True
     if getattr(contract, "coordenador", None) and user_shares_center_with_coordinator(user, contract.coordenador):
         return True
+    referencia_todos = getattr(contract, "referencia_todos_coordenadores", None)
+    if referencia_todos is not None:
+        return any(user_shares_center_with_coordinator(user, item) for item in referencia_todos if item)
     coordenadores = getattr(contract, "coordenadores", None)
     if coordenadores is None:
         return False
@@ -1690,14 +1705,15 @@ def can_user_manage_supplier_choice(user, solicitacao):
 def can_user_manage_event_delivery(user, contrato):
     if not user or not contrato:
         return False
+    contrato_lider = getattr(contrato, "referencia_lider_contrato", None) or contrato.lider_contrato
     if user.grupo == "lider_contrato":
-        return user == contrato.lider_contrato
+        return user == contrato_lider
     if user.grupo == "gerente_contrato":
         return True
     if user.grupo == "suprimento":
         return True
     if user.grupo == "gerente_lider":
-        return user_shares_center_with_coordinator(user, contrato.coordenador)
+        return user_shares_center_with_contract_coordinators(user, contrato)
     return False
 
 
@@ -1716,10 +1732,11 @@ def can_user_manage_os_delivery(user, os):
 def can_user_request_contract_addendum(user, contrato):
     if not user or not contrato:
         return False
+    contrato_lider = getattr(contrato, "referencia_lider_contrato", None) or contrato.lider_contrato
     if user.grupo == "lider_contrato":
-        return user == contrato.lider_contrato
+        return user == contrato_lider
     if user.grupo == "gerente_lider":
-        return user_shares_center_with_coordinator(user, contrato.coordenador)
+        return user_shares_center_with_contract_coordinators(user, contrato)
     if user.grupo == "gerente_contrato":
         return True
     return False
@@ -1731,7 +1748,7 @@ def can_user_view_addendum(user, aditivo):
     if user.grupo in ["suprimento", "diretoria", "gerente_contrato"]:
         return True
     if user.grupo == "lider_contrato":
-        return user == aditivo.contrato.lider_contrato or user == aditivo.solicitado_por
+        return user == aditivo.contrato.referencia_lider_contrato or user == aditivo.solicitado_por
     if user.grupo == "gerente_lider":
         return user_shares_center_with_contract_coordinators(user, aditivo.contrato)
     return False
@@ -1859,14 +1876,29 @@ def filter_payment_events_for_user(user, filtros_base):
         return Evento.objects.filter(
             filtros_base,
             contrato_terceiro__isnull=False,
-            contrato_terceiro__coordenador__centros__in=user.centros.all(),
+        ).filter(
+            Q(contrato_terceiro__coordenador__centros__in=user.centros.all())
+            | Q(contrato_terceiro__coordenadores__centros__in=user.centros.all())
+            | Q(
+                contrato_terceiro__guarda_chuva=True,
+                contrato_terceiro__cod_projeto__coordenador__centros__in=user.centros.all(),
+            )
+            | Q(
+                contrato_terceiro__guarda_chuva=True,
+                contrato_terceiro__cod_projeto__coordenadores__centros__in=user.centros.all(),
+            )
         ).distinct()
     if user.grupo == "gerente_contrato":
         return Evento.objects.filter(
             filtros_base,
             contrato_terceiro__isnull=False,
-            contrato_terceiro__lider_contrato=user,
-        )
+        ).filter(
+            Q(contrato_terceiro__lider_contrato=user)
+            | Q(
+                contrato_terceiro__guarda_chuva=True,
+                contrato_terceiro__cod_projeto__lider_contrato=user,
+            )
+        ).distinct()
     return Evento.objects.none()
 
 
@@ -1881,8 +1913,13 @@ def filter_payment_os_for_user(user, filtros_os):
     if user.grupo == "gerente_contrato":
         return OS.objects.filter(
             filtros_os,
-            lider_contrato=user,
-        )
+        ).filter(
+            Q(lider_contrato=user)
+            | Q(
+                contrato__guarda_chuva=True,
+                contrato__cod_projeto__lider_contrato=user,
+            )
+        ).distinct()
     return OS.objects.none()
 
 
@@ -1891,10 +1928,25 @@ def filter_payment_bms_for_user(user, queryset):
         return queryset
     if user.grupo in ["gerente", "gerente_lider"]:
         return queryset.filter(
-            contrato__coordenador__centros__in=user.centros.all(),
+            Q(contrato__coordenador__centros__in=user.centros.all())
+            | Q(contrato__coordenadores__centros__in=user.centros.all())
+            | Q(
+                contrato__guarda_chuva=True,
+                contrato__cod_projeto__coordenador__centros__in=user.centros.all(),
+            )
+            | Q(
+                contrato__guarda_chuva=True,
+                contrato__cod_projeto__coordenadores__centros__in=user.centros.all(),
+            )
         ).distinct()
     if user.grupo == "gerente_contrato":
-        return queryset.filter(contrato__lider_contrato=user)
+        return queryset.filter(
+            Q(contrato__lider_contrato=user)
+            | Q(
+                contrato__guarda_chuva=True,
+                contrato__cod_projeto__lider_contrato=user,
+            )
+        ).distinct()
     return queryset.none()
 
 
@@ -4485,12 +4537,16 @@ def solicitar_os(request, contrato_id):
 
     contrato = get_object_or_404(ContratoTerceiros, pk=contrato_id)
 
+    if not contrato.guarda_chuva:
+        messages.error(request, "A solicitação de OS está disponível apenas para contratos guarda-chuva.")
+        return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
+
     if request.method == 'POST':
         form = SolicitacaoOrdemServicoForm(request.POST, user=request.user, contrato_fixo=contrato)
         if form.is_valid():
             os = form.save(commit=False)
             os.solicitante = request.user
-            os.lider_contrato = request.user
+            os.lider_contrato = contrato.lider_contrato if request.user.grupo == "suprimento" else request.user
             os.status = 'pendente_lider'
             os.contrato = contrato
             os.save()
@@ -4518,22 +4574,76 @@ def solicitar_os(request, contrato_id):
             except Exception as e:
                 messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
 
-            try:
-                send_mail(
-                    assunto, mensagem,
-                    FROM_EMAIL,
-                    list(os.lider_contrato.email),
-                    fail_silently=False,
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para o líder de contrato: {e}")
+            if os.lider_contrato and os.lider_contrato.email:
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        FROM_EMAIL,
+                        [os.lider_contrato.email],
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para o líder de contrato: {e}")
 
             messages.success(request, "Ordem de Serviço enviada para aprovação.")
             return redirect("home")
     else:
-        form = SolicitacaoOrdemServicoForm(user=request.user)
+        form = SolicitacaoOrdemServicoForm(user=request.user, contrato_fixo=contrato)
 
     return render(request, 'fornecedores/solicitar_os.html', {'form': form, "contrato": contrato, "seleciona_contrato": False})
+
+
+def _prepare_direct_os_form(form, contrato):
+    form.initial["contrato"] = contrato
+    form.initial["cod_projeto"] = contrato.cod_projeto
+    form.initial["coordenador"] = contrato.cod_projeto.coordenador if contrato.cod_projeto else None
+    form.initial["lider_contrato"] = contrato.cod_projeto.lider_contrato if contrato.cod_projeto else None
+    form.initial["status"] = "em_execucao"
+
+    for field_name in ["contrato", "solicitacao", "cod_projeto", "status"]:
+        form.fields.pop(field_name, None)
+
+    return form
+
+
+@login_required
+def cadastrar_os_contrato_guarda_chuva(request, contrato_id):
+    if request.user.grupo != "suprimento":
+        messages.error(request, "Você não tem permissão para isso.")
+        return redirect("home")
+
+    contrato = get_object_or_404(ContratoTerceiros, pk=contrato_id, guarda_chuva=True)
+
+    if request.method == "POST":
+        form = OrdemServicoForm(request.POST, request.FILES, user=request.user)
+        form = _prepare_direct_os_form(form, contrato)
+        if form.is_valid():
+            ordem_servico = form.save(commit=False)
+            ordem_servico.contrato = contrato
+            ordem_servico.solicitacao = None
+            ordem_servico.cod_projeto = contrato.cod_projeto
+            if not ordem_servico.lider_contrato and contrato.cod_projeto:
+                ordem_servico.lider_contrato = contrato.cod_projeto.lider_contrato
+            if not ordem_servico.coordenador and contrato.cod_projeto:
+                ordem_servico.coordenador = contrato.cod_projeto.coordenador
+            ordem_servico.status = "em_execucao"
+            ordem_servico.save()
+
+            messages.success(request, "Ordem de Serviço cadastrada com sucesso!")
+            return redirect("detalhes_os", pk=ordem_servico.pk)
+    else:
+        form = OrdemServicoForm(user=request.user)
+        form = _prepare_direct_os_form(form, contrato)
+
+    return render(
+        request,
+        "forms/os_form.html",
+        {
+            "form": form,
+            "direct_guarda_chuva": True,
+            "contrato_referencia": contrato,
+        },
+    )
 
 
 @login_required
@@ -6289,10 +6399,10 @@ def criar_contrato_se_aprovado(solicitacao):
         contrato = ContratoTerceiros.objects.create(
             cod_projeto=solicitacao.contrato,
             prospeccao=solicitacao,
-            lider_contrato=solicitacao.lider_contrato,
+            lider_contrato=None if solicitacao.guarda_chuva else solicitacao.lider_contrato,
             num_contrato=documento.numero_contrato if documento else None,
             empresa_terceira=solicitacao.fornecedor_escolhido,
-            coordenador=solicitacao.coordenador,
+            coordenador=None if solicitacao.guarda_chuva else solicitacao.coordenador,
             data_inicio=documento.prazo_inicio if documento else None,
             data_fim=documento.prazo_fim if documento else None,
             valor_total=documento.valor_total if documento else 0,
@@ -6345,11 +6455,11 @@ def criar_contrato_se_aprovado_minuta(solicitacao):
         contrato = ContratoTerceiros.objects.create(
             cod_projeto=solicitacao.contrato if solicitacao.contrato else None,
             solicitacao=solicitacao,
-            lider_contrato=solicitacao.lider_contrato,
+            lider_contrato=None if solicitacao.guarda_chuva else solicitacao.lider_contrato,
             guarda_chuva=solicitacao.guarda_chuva,
             num_contrato=documento.numero_contrato if documento else None,
             empresa_terceira=solicitacao.fornecedor_escolhido,
-            coordenador=solicitacao.coordenador,
+            coordenador=None if solicitacao.guarda_chuva else solicitacao.coordenador,
             data_inicio=documento.prazo_inicio if documento else None,
             data_fim=documento.prazo_fim if documento else None,
             valor_total=documento.valor_total if documento else 0,
@@ -7160,7 +7270,7 @@ def registrar_entrega(request, pk):
         "evento": evento,
         "contrato": contrato,
         "can_manage_delivery": can_manage_delivery,
-        "can_approve_bm_as_lider": request.user.grupo == "lider_contrato" and request.user == contrato.lider_contrato or request.user.grupo == "gerente_lider" and user_shares_center_with_coordinator(request.user, contrato.coordenador),
+        "can_approve_bm_as_lider": request.user.grupo == "lider_contrato" and request.user == contrato.referencia_lider_contrato or request.user.grupo == "gerente_lider" and user_shares_center_with_contract_coordinators(request.user, contrato),
         "can_approve_bm_as_gerente": request.user.grupo == "gerente_contrato",
         "boletins_detalhados": boletins_detalhados,
         "has_reprovacao_coordenador": has_reprovacao_coordenador,
@@ -8256,7 +8366,7 @@ def cadastrar_bm(request, contrato_id, evento_id):
                 emails = set()
 
                 # COORDENADOR
-                coordenador = contrato.coordenador
+                coordenador = contrato.referencia_coordenador
                 if coordenador and coordenador.email:
                     emails.add(coordenador.email)
 
@@ -8364,7 +8474,7 @@ def cadastrar_nf(request, evento_id):
                 emails_suprimento = list(User.objects.filter(grupo='suprimento', is_active=True).values_list("email", flat=True))
 
                 # Coordenador do contrato
-                coordenador = contrato.coordenador
+                coordenador = contrato.referencia_coordenador
                 email_coordenador = [coordenador.email] if coordenador and coordenador.email else []
 
                 assunto = f"NF cadastrada para o evento #{evento.id}"
@@ -8544,7 +8654,7 @@ def detalhes_entrega(request, evento_id):
     return render(request, 'contratos/detalhes_entrega.html', {
         'evento': evento,
         'fornecedor': fornecedor,
-        'can_approve_bm_as_lider': request.user.grupo == 'lider_contrato' and request.user == contrato.lider_contrato or request.user.grupo == 'gerente_lider' and user_shares_center_with_coordinator(request.user, contrato.coordenador),
+        'can_approve_bm_as_lider': request.user.grupo == 'lider_contrato' and request.user == contrato.referencia_lider_contrato or request.user.grupo == 'gerente_lider' and user_shares_center_with_contract_coordinators(request.user, contrato),
         'can_approve_bm_as_gerente': request.user.grupo == 'gerente_contrato',
         'bms': bms,
         'tem_reprovacao_coordenador': tem_reprovacao_coordenador,

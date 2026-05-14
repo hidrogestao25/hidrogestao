@@ -106,6 +106,7 @@ path('aditivos_fornecedor/<int:pk>/gerar-documento/', views.gerar_aditivo_contra
     path('fornecedores/solicitar_guarda_chuva/', views.nova_solicitacao_guarda_chuva, name='nova_solicitacao_guarda_chuva'),
     path('solicitar-os/', views.solicitar_os_com_contrato, name='solicitar_os_com_contrato'),
     path("solicitar-os/<int:contrato_id>/", views.solicitar_os, name="solicitar_os"),
+    path("contratos-guarda-chuva/<int:contrato_id>/cadastrar-os/", views.cadastrar_os_contrato_guarda_chuva, name="cadastrar_os_contrato_guarda_chuwa"),
     path('ordem-servico/<int:pk>/', views.detalhe_os, name='detalhe_ordem_servico'),
     path('ordem-servico/<int:pk>/editar/', views.editar_ordem_servico, name='editar_ordem_servico'),
     path('ordem-servico/<int:pk>/lider/<str:acao>/', views.aprovar_os_lider, name='aprovar_os_lider'),

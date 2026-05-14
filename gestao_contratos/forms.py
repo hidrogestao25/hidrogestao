@@ -270,12 +270,22 @@ class ContratoFornecedorForm(forms.ModelForm):
             User.objects.filter(grupo='coordenador', is_active=True)
         )
         self.fields['coordenadores'].required = False
+        self.fields['coordenador'].required = False
+        self.fields['lider_contrato'].required = False
         self.fields['lider_contrato'].queryset = (
             User.objects.filter(grupo__in=['lider_contrato','gerente_contrato', 'gerente_lider'], is_active=True)
         )
         self.fields['prospeccao'].queryset = (
             SolicitacaoProspeccao.objects.all().exclude(status='Finalizada')
         )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("guarda_chuva"):
+            cleaned_data["coordenador"] = None
+            cleaned_data["lider_contrato"] = None
+            cleaned_data["coordenadores"] = User.objects.none()
+        return cleaned_data
 
 
     def clean_valor_total(self):
@@ -638,10 +648,17 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
         self.fields['cod_projeto'].queryset = Contrato.objects.none()
         self.fields['contrato'].queryset = ContratoTerceiros.objects.none()
 
-        if user and user.grupo in ['lider_contrato', 'gerente_contrato']:
+        if user and user.grupo == 'lider_contrato':
             contratos_terceiros = ContratoTerceiros.objects.filter(
                 guarda_chuva=True,
-                lider_contrato=user,
+                cod_projeto__lider_contrato=user,
+            )
+            self.fields['cod_projeto'].queryset = Contrato.objects.filter(
+                contratoterceiros__in=contratos_terceiros
+            ).distinct()
+        elif user and user.grupo == 'gerente_contrato':
+            contratos_terceiros = ContratoTerceiros.objects.filter(
+                guarda_chuva=True,
             )
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(
                 contratoterceiros__in=contratos_terceiros
@@ -649,7 +666,9 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
         elif user and user.grupo == 'gerente_lider':
             contratos_terceiros = ContratoTerceiros.objects.filter(
                 guarda_chuva=True,
-                coordenador__centros__in=user.centros.all(),
+            ).filter(
+                Q(cod_projeto__coordenador__centros__in=user.centros.all())
+                | Q(cod_projeto__coordenadores__centros__in=user.centros.all())
             ).distinct()
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(
                 Q(coordenador__centros__in=user.centros.all())
@@ -1072,9 +1091,11 @@ class OrdemServicoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.fields['coordenador'].queryset = User.objects.filter(grupo__in=['gerente', 'coordenador'], is_active=True)
+        self.fields['coordenador'].required = False
         self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(guarda_chuva=True)
         self.fields['solicitacao'].queryset = SolicitacaoOrdemServico.objects.filter(status__in=['solicitacao_os', 'pendente_lider', 'pendente_gerente', 'pendente_suprimento', 'aprovada'])
         self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato', 'gerente_lider'], is_active=True)
+        self.fields['lider_contrato'].required = False
         self.fields['cod_projeto'].queryset = Contrato.objects.filter(status='ativo')
         if self.instance and self.instance.valor is not None:
             self.initial["valor"] = format_decimal_for_br_input(self.instance.valor)

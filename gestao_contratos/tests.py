@@ -154,7 +154,7 @@ class BaseUserTestCase(TestCase):
             cod_projeto=contrato.cod_projeto,
             solicitante=solicitante or lider_contrato or self.create_user("solicitante_os", "lider_contrato"),
             lider_contrato=lider_contrato,
-            coordenador=coordenador or contrato.coordenador,
+            coordenador=coordenador or contrato.referencia_coordenador or contrato.coordenador,
             titulo=titulo,
             descricao="Descrição da solicitação de OS",
             valor_previsto=Decimal("250.00"),
@@ -177,8 +177,8 @@ class BaseUserTestCase(TestCase):
             contrato=contrato,
             solicitacao=solicitacao,
             cod_projeto=contrato.cod_projeto,
-            coordenador=coordenador or contrato.coordenador,
-            lider_contrato=lider_contrato or contrato.lider_contrato,
+            coordenador=coordenador or contrato.referencia_coordenador or contrato.coordenador,
+            lider_contrato=lider_contrato or contrato.referencia_lider_contrato or contrato.lider_contrato,
             titulo=titulo,
             descricao="Descrição da OS",
             valor=Decimal("350.00"),
@@ -2889,7 +2889,14 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Boletins de Medição")
         self.assertContains(response, str(bm.numero_bm))
-        self.assertContains(response, "Líder / Gerente-Líder")
+        self.assertContains(
+            response,
+            self.coordenador.get_full_name() or self.coordenador.username,
+        )
+        self.assertContains(
+            response,
+            self.coordenador.get_grupo_display() or self.coordenador.grupo,
+        )
         self.assertNotContains(response, "Pendente")
 
     def test_previsao_pagamentos_exibe_aprovacoes_com_usuario_grupo_data_e_hora(self):
@@ -3697,6 +3704,59 @@ class SolicitarOSViewTests(BaseUserTestCase):
 
         self.assertRedirects(response, reverse("home"))
         self.assertEqual(SolicitacaoOrdemServico.objects.count(), 0)
+
+    def test_suprimento_nao_pode_solicitar_os_a_partir_do_contrato_guarda_chuwa(self):
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(reverse("solicitar_os", args=[self.contrato_terceiro.pk]), follow=True)
+
+        self.assertRedirects(response, reverse("home"))
+        self.assertEqual(SolicitacaoOrdemServico.objects.count(), 0)
+        self.assertEqual(OS.objects.count(), 0)
+
+    def test_suprimento_pode_cadastrar_os_direta_no_contrato_guarda_chuwa(self):
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("cadastrar_os_contrato_guarda_chuwa", args=[self.contrato_terceiro.pk]),
+            {
+                "titulo": "Nova OS do suprimento",
+                "descricao": "OS cadastrada diretamente pelo suprimento",
+                "valor": "2.345,67",
+                "prazo_execucao": "2026-05-02",
+            },
+            follow=False,
+        )
+
+        os_cadastrada = OS.objects.get(titulo="Nova OS do suprimento")
+        self.assertRedirects(
+            response,
+            reverse("detalhes_os", kwargs={"pk": os_cadastrada.pk}),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(os_cadastrada.contrato, self.contrato_terceiro)
+        self.assertIsNone(os_cadastrada.solicitacao)
+        self.assertEqual(os_cadastrada.cod_projeto, self.contrato_base)
+        self.assertEqual(os_cadastrada.coordenador, self.contrato_base.coordenador)
+        self.assertEqual(os_cadastrada.lider_contrato, self.contrato_base.lider_contrato)
+        self.assertEqual(os_cadastrada.status, "em_execucao")
+        self.assertEqual(os_cadastrada.valor, Decimal("2345.67"))
+
+    def test_contrato_guarda_chuwa_nao_mantem_lider_ou_coordenador_no_contrato(self):
+        contrato = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            guarda_chuva=True,
+            num_contrato="CT-OS-SEM-RESP",
+        )
+
+        contrato.refresh_from_db()
+
+        self.assertIsNone(contrato.coordenador)
+        self.assertIsNone(contrato.lider_contrato)
+        self.assertEqual(contrato.referencia_coordenador, self.coordenador)
+        self.assertEqual(contrato.referencia_lider_contrato, self.lider)
 
     def test_lider_contrato_pode_criar_solicitacao_os_com_contrato(self):
         self.client.force_login(self.lider)
@@ -5247,7 +5307,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("solicitar_aditivo_contrato", args=[self.contrato_terceiro.pk]))
 
-    def test_detalhe_contrato_guarda_chuva_oculta_eventos_e_exibe_solicitar_os(self):
+    def test_detalhe_contrato_guarda_chuwa_exibe_eventos_e_solicitar_os(self):
         contrato_guarda_chuva = self.create_supplier_contract(
             cod_projeto=self.contrato_base,
             empresa_terceira=self.contrato_terceiro.empresa_terceira,
@@ -5266,9 +5326,26 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": contrato_guarda_chuva.pk}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Eventos do Contrato")
+        self.assertContains(response, "Eventos do Contrato")
+        self.assertContains(response, "Registrar Entrega")
         self.assertNotContains(response, "Cadastrar Evento")
         self.assertContains(response, "Solicitar Nova OS")
+
+    def test_detalhe_contrato_guarda_chuva_exibe_solicitar_os_para_suprimento(self):
+        contrato_guarda_chuva = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            empresa_terceira=self.contrato_terceiro.empresa_terceira,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            guarda_chuva=True,
+            num_contrato="CT-GC-SUPR",
+        )
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": contrato_guarda_chuva.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cadastrar OS")
 
     def test_gerente_lider_fora_do_centro_nao_pode_solicitar_aditivo(self):
         gerente_lider_fora = self.create_user("gl_aditivo_fora", "gerente_lider")

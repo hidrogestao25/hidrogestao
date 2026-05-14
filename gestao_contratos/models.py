@@ -527,14 +527,50 @@ class ContratoTerceiros(models.Model):
     )
 
     @property
+    def referencia_coordenador(self):
+        if self.guarda_chuva and self.cod_projeto:
+            return self.cod_projeto.coordenador
+        return self.coordenador
+
+    @property
+    def referencia_lider_contrato(self):
+        if self.guarda_chuva and self.cod_projeto:
+            return self.cod_projeto.lider_contrato
+        return self.lider_contrato
+
+    @property
+    def referencia_todos_coordenadores(self):
+        if self.guarda_chuva and self.cod_projeto:
+            if hasattr(self.cod_projeto, "todos_coordenadores"):
+                return self.cod_projeto.todos_coordenadores
+            coordenadores = []
+            if self.cod_projeto.coordenador:
+                coordenadores.append(self.cod_projeto.coordenador)
+            return coordenadores
+        return self.todos_coordenadores
+
+    @property
+    def referencia_coordenadores_display(self):
+        nomes = [
+            coordenador.get_full_name() or coordenador.username
+            for coordenador in self.referencia_todos_coordenadores
+        ]
+        return ", ".join(nomes)
+
+    @property
     def dias_para_vencer(self):
         if self.data_fim:
             return (self.data_fim - date.today()).days
         return None
 
     def save(self, *args, **kwargs):
+        if self.guarda_chuva:
+            self.coordenador = None
+            self.lider_contrato = None
         super().save(*args, **kwargs)
-        if self.coordenador_id:
+        if self.guarda_chuva:
+            self.coordenadores.clear()
+        elif self.coordenador_id:
             self.coordenadores.add(self.coordenador_id)
 
     @property
@@ -725,7 +761,13 @@ class OS(models.Model):
     )
     solicitacao = models.ForeignKey(SolicitacaoOrdemServico, on_delete=models.CASCADE, null=True, blank=True)
     cod_projeto = models.ForeignKey(Contrato, on_delete=models.CASCADE)
-    coordenador = models.ForeignKey(User, on_delete=models.CASCADE, related_name="ordens_coordenador")
+    coordenador = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ordens_coordenador",
+    )
     lider_contrato = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
