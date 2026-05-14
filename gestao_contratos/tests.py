@@ -3943,6 +3943,17 @@ class DeliveryRegistrationTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["evento"], self.evento)
+        self.assertContains(response, 'id="id_valor_pago"')
+        self.assertContains(response, 'id="id_data_pagamento"')
+
+    def test_registrar_entrega_evento_sem_campos_de_pagamento_para_gerente_contrato(self):
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.get(reverse("registrar_entrega", args=[self.evento.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'id="id_valor_pago"')
+        self.assertNotContains(response, 'id="id_data_pagamento"')
 
     def test_registrar_entrega_evento_expoe_reprovacao_diretor_no_contexto(self):
         BM.objects.create(
@@ -4002,6 +4013,8 @@ class DeliveryRegistrationTests(BaseUserTestCase):
                 "avaliacao": "Aprovado",
                 "data_entrega": "2026-04-21",
                 "realizado": "on",
+                "valor_pago": "900,00",
+                "data_pagamento": "2026-04-22",
             },
             follow=False,
         )
@@ -4029,6 +4042,8 @@ class DeliveryRegistrationTests(BaseUserTestCase):
                 "avaliacao": "Aprovado",
                 "data_entrega": "2026-04-19",
                 "realizado": "on",
+                "valor_pago": "1.250,50",
+                "data_pagamento": "2026-04-20",
             },
             follow=False,
         )
@@ -4042,8 +4057,8 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         self.assertTrue(self.evento.realizado)
         self.assertEqual(self.evento.observacao, "Entrega registrada pelo suprimento")
         self.assertEqual(self.evento.data_entrega, date(2026, 4, 19))
-        self.assertIsNone(self.evento.valor_pago)
-        self.assertIsNone(self.evento.data_pagamento)
+        self.assertEqual(self.evento.valor_pago, Decimal("1250.50"))
+        self.assertEqual(self.evento.data_pagamento, date(2026, 4, 20))
 
     def test_registrar_entrega_os_como_gerente_lider_finaliza_com_atraso(self):
         self.client.force_login(self.gerente_lider)

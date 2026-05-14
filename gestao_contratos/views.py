@@ -7144,7 +7144,7 @@ def registrar_entrega(request, pk):
             messages.error(request, "Você não tem permissão para registrar a entrega deste evento.")
             return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
 
-        form = EventoEntregaForm(request.POST, request.FILES, instance=evento)
+        form = EventoEntregaForm(request.POST, request.FILES, instance=evento, user=request.user)
 
         if form.is_valid():
             form.save()
@@ -7153,7 +7153,7 @@ def registrar_entrega(request, pk):
         else:
             messages.error(request, "Erro ao registrar a entrega!")
     else:
-        form = EventoEntregaForm(instance=evento)
+        form = EventoEntregaForm(instance=evento, user=request.user)
 
     return render(request, "eventos/registrar_entrega.html", {
         "form": form,

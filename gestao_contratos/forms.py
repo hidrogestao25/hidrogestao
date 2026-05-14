@@ -811,11 +811,20 @@ class EventoPrevisaoForm(forms.ModelForm):
 
 
 class EventoEntregaForm(forms.ModelForm):
+    valor_pago = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"})
+    )
+    data_pagamento = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"})
+    )
+
     class Meta:
         model = Evento
         fields = [
             "observacao", "caminho_evidencia", "avaliacao",
-            "data_entrega", "realizado", "com_atraso",
+            "data_entrega", "realizado", "com_atraso", "valor_pago", "data_pagamento",
         ]
         widgets = {
             "caminho_evidencia": forms.Textarea(attrs={"class": "form-control", "rows": 1}),
@@ -823,6 +832,23 @@ class EventoEntregaForm(forms.ModelForm):
             "data_entrega": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop("user", None)
+        super().__init__(*args, **kwargs)
+
+        if self.instance and self.instance.pk:
+            self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+            self.initial["data_pagamento"] = self.instance.data_pagamento
+
+        if not user or user.grupo != "suprimento":
+            self.fields.pop("valor_pago", None)
+            self.fields.pop("data_pagamento", None)
+
+    def clean_valor_pago(self):
+        if "valor_pago" not in self.fields:
+            return self.instance.valor_pago
+        return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
 

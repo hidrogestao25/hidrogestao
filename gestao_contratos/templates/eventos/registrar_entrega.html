@@ -63,6 +63,26 @@
           <input type="text" class="form-control" value="{{ evento.valor_previsto }}" readonly>
         </div>
 
+        {% if request.user.grupo == "suprimento" %}
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label fw-bold" for="id_valor_pago">Valor Pago</label>
+            {{ form.valor_pago }}
+            {% if form.valor_pago.errors %}
+              <div class="text-danger small">{{ form.valor_pago.errors }}</div>
+            {% endif %}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label fw-bold" for="id_data_pagamento">Data do Pagamento</label>
+            {{ form.data_pagamento }}
+            {% if form.data_pagamento.errors %}
+              <div class="text-danger small">{{ form.data_pagamento.errors }}</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
         {% comment %}
         <div class="form-check mb-3">
         <!--  <input class="form-check-input" type="checkbox" id="check_valor_igual" name="valor_igual" checked> -->
