@@ -6146,7 +6146,16 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
                 contrato.arquivo_contrato_assinado = contrato_existente.arquivo_contrato_assinado
 
             contrato.save()
-            criar_contrato_se_aprovado_minuta(solicitacao)
+            contrato_criado = criar_contrato_se_aprovado_minuta(solicitacao)
+            if (
+                is_signed_file_upload_only
+                and solicitacao.guarda_chuva
+                and (contrato_criado or ContratoTerceiros.objects.filter(solicitacao=solicitacao).exists())
+            ):
+                solicitacao.refresh_from_db()
+                if solicitacao.status != "Onboarding":
+                    solicitacao.status = "Onboarding"
+                    solicitacao.save(update_fields=["status"])
 
             gerente = User.objects.filter(grupo="gerente_contrato").values_list("email", flat=True).distinct()
 

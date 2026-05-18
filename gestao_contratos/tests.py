@@ -4957,6 +4957,50 @@ class ContratacaoFlowTests(BaseUserTestCase):
         )
         self.assertContains(response, "Solicitações guarda-chuva não exigem minuta de BM.")
 
+    def test_upload_contrato_assinado_guarda_chuva_finaliza_solicitacao_sem_nova_aprovacao(self):
+        self.solicitacao_contrato.guarda_chuva = True
+        self.solicitacao_contrato.aprovacao_gerencia = True
+        self.solicitacao_contrato.status = "Aguardando Arquivos Assinados"
+        self.solicitacao_contrato.save(update_fields=["guarda_chuva", "aprovacao_gerencia", "status"])
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="GC-FINAL-001",
+            objeto="Objeto guarda-chuva final",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+            arquivo_contrato=SimpleUploadedFile("minuta-gc.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
+        PropostaFornecedor.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            fornecedor=self.fornecedor,
+            condicao_pagamento="30",
+        )
+
+        self.client.force_login(self.suprimento)
+        response = self.client.post(
+            reverse("cadastrar_minuta_contrato", args=[self.solicitacao_contrato.pk]),
+            {
+                "numero_contrato": "GC-FINAL-001",
+                "objeto": "Objeto guarda-chuva final",
+                "valor_total": "1.500,00",
+                "observacao": "Contrato assinado final",
+                "arquivo_contrato_assinado": SimpleUploadedFile(
+                    "contrato-guarda-chuva-final.pdf",
+                    b"%PDF-1.4 signed",
+                    content_type="application/pdf",
+                ),
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertEqual(self.solicitacao_contrato.status, "Onboarding")
+        self.assertTrue(self.solicitacao_contrato.aprovacao_gerencia)
+        contrato = ContratoTerceiros.objects.get(solicitacao=self.solicitacao_contrato)
+        self.assertTrue(contrato.guarda_chuva)
+
     def test_detalhes_solicitacao_contratacao_exibe_botoes_de_avaliacao_de_minutas_para_gerente_contrato(self):
         documento_bm = DocumentoBM.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
