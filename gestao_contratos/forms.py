@@ -652,14 +652,14 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
             contratos_terceiros = ContratoTerceiros.objects.filter(
                 guarda_chuva=True,
                 cod_projeto__lider_contrato=user,
-            )
+            ).distinct()
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(
                 lider_contrato=user
             ).distinct()
         elif user and user.grupo == 'gerente_contrato':
             contratos_terceiros = ContratoTerceiros.objects.filter(
                 guarda_chuva=True,
-            )
+            ).distinct()
             self.fields['cod_projeto'].queryset = Contrato.objects.all().distinct()
         elif user and user.grupo == 'gerente_lider':
             contratos_terceiros = ContratoTerceiros.objects.filter(
@@ -685,9 +685,6 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
 
         if contrato_fixo:
             self.initial['contrato'] = contrato_fixo
-            self.fields['cod_projeto'].queryset = Contrato.objects.filter(
-                pk=contrato_fixo.cod_projeto_id
-            )
 
     def clean_valor_previsto(self):
         valor = self.cleaned_data.get('valor_previsto')
@@ -710,6 +707,9 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
         contrato = self.cleaned_data.get("contrato") or getattr(instance, "contrato", None)
         cod_projeto = self.cleaned_data.get("cod_projeto") or getattr(instance, "cod_projeto", None)
 
+        if contrato is not None:
+            instance.contrato = contrato
+
         if cod_projeto is not None:
             instance.coordenador = cod_projeto.coordenador
         elif contrato is not None and contrato.cod_projeto_id:
@@ -725,6 +725,102 @@ class UploadContratoOSForm(forms.ModelForm):
     class Meta:
         model = SolicitacaoOrdemServico
         fields = ['arquivo_os']
+
+
+class SolicitacaoOrdemServicoSemContratoForm(forms.ModelForm):
+    valor_previsto = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Previsto",
+        required=True
+    )
+    contrato = forms.ModelChoiceField(
+        queryset=ContratoTerceiros.objects.none(),
+        required=True,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label="Contrato",
+    )
+
+    class Meta:
+        model = SolicitacaoOrdemServico
+        fields = [
+            'contrato',
+            'cod_projeto',
+            'titulo',
+            'descricao',
+            'valor_previsto',
+            'prazo_execucao',
+        ]
+        widgets = {
+            'cod_projeto': forms.Select(attrs={'class': 'form-select'}),
+            'titulo': forms.TextInput(attrs={'class': 'form-control'}),
+            'descricao': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
+            'prazo_execucao': ISODateInput(attrs={'class': 'form-control'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        self.fields['cod_projeto'].queryset = Contrato.objects.none()
+        self.fields['contrato'].queryset = ContratoTerceiros.objects.none()
+
+        if user and user.grupo == 'lider_contrato':
+            self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(
+                guarda_chuva=True,
+            ).distinct()
+            self.fields['cod_projeto'].queryset = Contrato.objects.filter(
+                lider_contrato=user
+            ).distinct()
+        elif user and user.grupo == 'gerente_contrato':
+            self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(
+                guarda_chuva=True,
+            ).distinct()
+            self.fields['cod_projeto'].queryset = Contrato.objects.all().distinct()
+        elif user and user.grupo == 'gerente_lider':
+            self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(
+                guarda_chuva=True,
+            ).filter(
+                Q(cod_projeto__coordenador__centros__in=user.centros.all())
+                | Q(cod_projeto__coordenadores__centros__in=user.centros.all())
+            ).distinct()
+            self.fields['cod_projeto'].queryset = Contrato.objects.filter(
+                Q(coordenador__centros__in=user.centros.all())
+                | Q(coordenadores__centros__in=user.centros.all())
+            ).distinct()
+
+    def clean_valor_previsto(self):
+        valor = self.cleaned_data.get('valor_previsto')
+        if not valor:
+            return Decimal("0.00")
+
+        valor = (
+            valor.replace('R$', '')
+                 .replace('.', '')
+                 .replace(',', '.')
+                 .strip()
+        )
+        try:
+            return Decimal(valor)
+        except InvalidOperation:
+            raise forms.ValidationError("Informe um valor monetÃ¡rio vÃ¡lido.")
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        contrato = self.cleaned_data.get("contrato")
+        cod_projeto = self.cleaned_data.get("cod_projeto")
+
+        if cod_projeto is not None:
+            instance.coordenador = cod_projeto.coordenador
+        elif contrato is not None and contrato.cod_projeto_id:
+            instance.coordenador = contrato.cod_projeto.coordenador
+
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 
 class DocumentoContratoTerceiroForm(forms.ModelForm):

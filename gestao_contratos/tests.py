@@ -3862,6 +3862,57 @@ class SolicitarOSViewTests(BaseUserTestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.lider.email])
 
+    def test_lider_contrato_ve_todos_os_proprios_projetos_no_campo_cod_projeto_com_contrato_fixo(self):
+        projeto_sem_contrato_guarda_chuva = self.create_contract(
+            codigo="PRJ-OS-LIDER-FIXO",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+        outro_lider = self.create_user("outroliderfixo", "lider_contrato")
+        projeto_outro_lider = self.create_contract(
+            codigo="PRJ-OS-FORA-FIXO",
+            coordenador=self.coordenador,
+            lider_contrato=outro_lider,
+        )
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("solicitar_os", args=[self.contrato_terceiro.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        projetos = list(response.context["form"].fields["cod_projeto"].queryset.order_by("pk"))
+        self.assertIn(self.contrato_base, projetos)
+        self.assertIn(projeto_sem_contrato_guarda_chuva, projetos)
+        self.assertNotIn(projeto_outro_lider, projetos)
+
+    def test_lider_contrato_com_contrato_fixo_nao_herda_projeto_base_de_outro_lider(self):
+        outro_lider = self.create_user("outroliderbasefixa", "lider_contrato")
+        projeto_base_outro_lider = self.create_contract(
+            codigo="PRJ-BASE-FORA",
+            coordenador=self.coordenador,
+            lider_contrato=outro_lider,
+        )
+        contrato_fixo = self.create_supplier_contract(
+            cod_projeto=projeto_base_outro_lider,
+            coordenador=self.coordenador,
+            lider_contrato=outro_lider,
+            guarda_chuva=True,
+            num_contrato="CT-OS-BASE-FORA",
+        )
+        projeto_do_lider = self.create_contract(
+            codigo="PRJ-LIDER-VALIDO",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("solicitar_os", args=[contrato_fixo.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        projetos = list(response.context["form"].fields["cod_projeto"].queryset.order_by("pk"))
+        self.assertIn(self.contrato_base, projetos)
+        self.assertIn(projeto_do_lider, projetos)
+        self.assertNotIn(projeto_base_outro_lider, projetos)
+
     def test_lider_contrato_ve_todos_os_proprios_projetos_no_campo_cod_projeto(self):
         projeto_sem_contrato_guarda_chuva = self.create_contract(
             codigo="PRJ-OS-LIDER-EXTRA",
@@ -3880,6 +3931,38 @@ class SolicitarOSViewTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         projetos = list(response.context["form"].fields["cod_projeto"].queryset.order_by("pk"))
+        self.assertIn(self.contrato_base, projetos)
+        self.assertIn(projeto_sem_contrato_guarda_chuva, projetos)
+        self.assertNotIn(projeto_outro_lider, projetos)
+
+    def test_lider_contrato_ve_contratos_guarda_chuva_e_todos_os_proprios_projetos_sem_contrato_fixo(self):
+        projeto_sem_contrato_guarda_chuva = self.create_contract(
+            codigo="PRJ-OS-LIDER-LISTA",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+        outro_lider = self.create_user("outroliderlista", "lider_contrato")
+        projeto_outro_lider = self.create_contract(
+            codigo="PRJ-OS-LISTA-FORA",
+            coordenador=self.coordenador,
+            lider_contrato=outro_lider,
+        )
+        contrato_outro_lider = self.create_supplier_contract(
+            cod_projeto=projeto_outro_lider,
+            coordenador=self.coordenador,
+            lider_contrato=outro_lider,
+            guarda_chuva=True,
+            num_contrato="CT-OS-FORA-LISTA",
+        )
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("solicitar_os_com_contrato"))
+
+        self.assertEqual(response.status_code, 200)
+        contratos = list(response.context["form"].fields["contrato"].queryset.order_by("pk"))
+        projetos = list(response.context["form"].fields["cod_projeto"].queryset.order_by("pk"))
+        self.assertIn(self.contrato_terceiro, contratos)
+        self.assertIn(contrato_outro_lider, contratos)
         self.assertIn(self.contrato_base, projetos)
         self.assertIn(projeto_sem_contrato_guarda_chuva, projetos)
         self.assertNotIn(projeto_outro_lider, projetos)

@@ -16,7 +16,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.html import escape, strip_tags
 from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato, AditivoContratoTerceiro, RegistroAuditoria
-from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm, SolicitacaoGuardaChuvaForm, SolicitacaoAditivoContratoTerceiroForm, DocumentoAditivoContratoTerceiroForm, DocumentoAditivoAssinadoContratoTerceiroForm
+from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, SolicitacaoOrdemServicoSemContratoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm, SolicitacaoGuardaChuvaForm, SolicitacaoAditivoContratoTerceiroForm, DocumentoAditivoContratoTerceiroForm, DocumentoAditivoAssinadoContratoTerceiroForm
 
 import plotly.graph_objs as go
 import plotly.express as px
@@ -4557,6 +4557,9 @@ def solicitar_os(request, contrato_id):
 
     if request.method == 'POST':
         form = SolicitacaoOrdemServicoForm(request.POST, user=request.user, contrato_fixo=contrato)
+        form.fields['cod_projeto'].queryset = Contrato.objects.filter(
+            lider_contrato=request.user
+        ).distinct()
         if form.is_valid():
             os = form.save(commit=False)
             os.solicitante = request.user
@@ -4603,6 +4606,9 @@ def solicitar_os(request, contrato_id):
             return redirect("home")
     else:
         form = SolicitacaoOrdemServicoForm(user=request.user, contrato_fixo=contrato)
+        form.fields['cod_projeto'].queryset = Contrato.objects.filter(
+            lider_contrato=request.user
+        ).distinct()
 
     return render(request, 'fornecedores/solicitar_os.html', {'form': form, "contrato": contrato, "seleciona_contrato": False})
 
@@ -4667,7 +4673,7 @@ def solicitar_os_com_contrato(request):
         return redirect("home")
 
     if request.method == 'POST':
-        form = SolicitacaoOrdemServicoForm(request.POST, user=request.user, include_contrato=True)
+        form = SolicitacaoOrdemServicoSemContratoForm(request.POST, user=request.user)
         if form.is_valid():
             os = form.save(commit=False)
             os.solicitante = request.user
@@ -4703,7 +4709,7 @@ def solicitar_os_com_contrato(request):
             messages.success(request, "Ordem de Serviço solicitada com sucesso!")
             return redirect("detalhe_ordem_servico", pk=os.pk)
     else:
-        form = SolicitacaoOrdemServicoForm(user=request.user, include_contrato=True)
+        form = SolicitacaoOrdemServicoSemContratoForm(user=request.user)
 
     return render(
         request,
