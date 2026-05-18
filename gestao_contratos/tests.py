@@ -3862,6 +3862,28 @@ class SolicitarOSViewTests(BaseUserTestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.lider.email])
 
+    def test_lider_contrato_ve_todos_os_proprios_projetos_no_campo_cod_projeto(self):
+        projeto_sem_contrato_guarda_chuva = self.create_contract(
+            codigo="PRJ-OS-LIDER-EXTRA",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+        outro_lider = self.create_user("outrolideros", "lider_contrato")
+        projeto_outro_lider = self.create_contract(
+            codigo="PRJ-OS-FORA",
+            coordenador=self.coordenador,
+            lider_contrato=outro_lider,
+        )
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("solicitar_os_com_contrato"))
+
+        self.assertEqual(response.status_code, 200)
+        projetos = list(response.context["form"].fields["cod_projeto"].queryset.order_by("pk"))
+        self.assertIn(self.contrato_base, projetos)
+        self.assertIn(projeto_sem_contrato_guarda_chuva, projetos)
+        self.assertNotIn(projeto_outro_lider, projetos)
+
     def test_gerente_lider_ve_apenas_contratos_do_mesmo_centro_no_form(self):
         outro_centro = self.create_center("CT2", "Centro 2")
         outro_coord = self.create_user("coordfora", "coordenador")

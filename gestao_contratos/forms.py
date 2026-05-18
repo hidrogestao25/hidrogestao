@@ -654,15 +654,13 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
                 cod_projeto__lider_contrato=user,
             )
             self.fields['cod_projeto'].queryset = Contrato.objects.filter(
-                contratoterceiros__in=contratos_terceiros
+                lider_contrato=user
             ).distinct()
         elif user and user.grupo == 'gerente_contrato':
             contratos_terceiros = ContratoTerceiros.objects.filter(
                 guarda_chuva=True,
             )
-            self.fields['cod_projeto'].queryset = Contrato.objects.filter(
-                contratoterceiros__in=contratos_terceiros
-            ).distinct()
+            self.fields['cod_projeto'].queryset = Contrato.objects.all().distinct()
         elif user and user.grupo == 'gerente_lider':
             contratos_terceiros = ContratoTerceiros.objects.filter(
                 guarda_chuva=True,
