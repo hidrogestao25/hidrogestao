@@ -27,11 +27,11 @@
       <p><strong>Data Início:</strong> {{ contrato.data_inicio|date:"d/m/Y" }}</p>
       {% now "Y-m-d" as hoje %}
       <p class="
-        {% if contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
+        {% if contrato.status != 'encerrado' and contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
           linha-atrasada
         {% endif %}">
         <strong>Data Fim:</strong> {{ contrato.data_fim|date:"d/m/Y" }}
-        {% if contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
+        {% if contrato.status != 'encerrado' and contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
              | O contrato com fornecedor ultrapassou a data final
         {% endif %}
       </p>
@@ -65,7 +65,7 @@
           </a>
         </p>
       {% endif %}
-      {% if can_request_addendum %}
+      {% if can_request_addendum and contrato.status != 'encerrado' %}
         <p>
           <a href="{% url 'solicitar_aditivo_contrato' contrato.id %}" class="btn btn-sm btn-outline-secondary">
             Pedir aditivo
@@ -163,7 +163,13 @@
           {% now "Y-m-d" as hoje %}
           <tr
             class="
-              {% if not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
+              {% if evento.realizado and evento.valor_pago == evento.valor_previsto %}
+                table-success
+
+              {% elif evento.realizado and evento.valor_pago and evento.valor_pago > evento.valor_previsto %}
+                table-success
+
+              {% elif not evento.realizado and evento.data_prevista and evento.data_prevista|date:'Y-m-d' < hoje %}
                 linha-atrasada
 
               {% elif evento.valor_pago and evento.valor_pago != evento.valor_previsto %}
@@ -270,7 +276,7 @@
                      Duplicar Evento
                   </a>
                   <a href="{% url 'editar_evento_contrato' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
-                  <a href="{% url 'excluir_evento_contrato' evento.id %}" class="btn btn-sm btn-danger"
+                  <a href="{% url 'excluir_evento_contrato' evento.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-danger"
                      onclick="return confirm('Tem certeza que deseja excluir este evento?')">
                      Apagar
                   </a>

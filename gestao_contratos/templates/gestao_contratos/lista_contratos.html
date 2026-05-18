@@ -7,10 +7,19 @@
     {% endif %}
 </div>
 
-<form method="get" class="mb-3 d-flex">
-  <input type="text" name="search" value="{{ request.GET.search }}" class="form-control me-2" placeholder="Buscar contratos...">
-  <button type="submit" class="btn btn-primary">Buscar</button>
+<form method="get" class="mb-3">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <input type="text" name="search" value="{{ request.GET.search }}" class="form-control me-2" placeholder="Buscar contratos...">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="show_encerrados" id="show_encerrados_clientes" value="1" {% if show_encerrados %}checked{% endif %}>
+      <label class="form-check-label" for="show_encerrados_clientes">
+        Mostrar encerrados
+      </label>
+    </div>
+    <button type="submit" class="btn btn-primary">Buscar</button>
+  </div>
 </form>
+
 <table id="tabela-contrato" class="table table-striped">
     <thead>
         <tr>
@@ -49,25 +58,23 @@
             {% elif contrato.status == 'encerrado' %}
               <td>Encerrado</td>
             {% endif %}
-
           </tr>
         {% empty %}
         <tr>
-            <td colspan="4">Nenhum contrato cadastrado.</td>
+            <td colspan="5">Nenhum contrato cadastrado.</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 
-<!-- Paginação -->
 <nav aria-label="Navegação de páginas">
   <ul class="pagination">
     {% if page_obj.has_previous %}
       <li class="page-item">
-        <a class="page-link" href="?page=1">&laquo; Primeiro</a>
+        <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if show_encerrados %}&show_encerrados=1{% endif %}">&laquo; Primeiro</a>
       </li>
       <li class="page-item">
-        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Anterior</a>
+        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if show_encerrados %}&show_encerrados=1{% endif %}">Anterior</a>
       </li>
     {% endif %}
 
@@ -79,14 +86,13 @@
 
     {% if page_obj.has_next %}
       <li class="page-item">
-        <a class="page-link" href="?page={{ page_obj.next_page_number }}">Próxima</a>
+        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if show_encerrados %}&show_encerrados=1{% endif %}">Próxima</a>
       </li>
       <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Última &raquo;</a>
+        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}{% if show_encerrados %}&show_encerrados=1{% endif %}">Última &raquo;</a>
       </li>
     {% endif %}
   </ul>
 </nav>
-
 
 {% endblock %}

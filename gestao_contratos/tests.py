@@ -594,6 +594,82 @@ class MultipleCoordenadoresContratoTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, contrato_fornecedor.num_contrato)
 
+
+class ContractListVisibilityTests(BaseUserTestCase):
+    def setUp(self):
+        self.suprimento = self.create_user("suprimento_lista_contratos", "suprimento")
+        self.coordenador = self.create_user("coord_lista_contratos", "coordenador")
+        self.lider = self.create_user("lider_lista_contratos", "lider_contrato")
+        self.cliente = self.create_client("Cliente Lista Contratos")
+        self.contrato_ativo = Contrato.objects.create(
+            cod_projeto="PRJ-LISTA-ATIVO",
+            cliente=self.cliente,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            objeto="Contrato ativo",
+            status="ativo",
+        )
+        self.contrato_encerrado = Contrato.objects.create(
+            cod_projeto="PRJ-LISTA-ENC",
+            cliente=self.cliente,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            objeto="Contrato encerrado",
+            status="encerrado",
+        )
+        self.fornecedor = self.create_supplier("Fornecedor Lista Contratos")
+        self.contrato_fornecedor_ativo = ContratoTerceiros.objects.create(
+            cod_projeto=self.contrato_ativo,
+            empresa_terceira=self.fornecedor,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            objeto="Contrato fornecedor ativo",
+            status="ativo",
+            num_contrato="CF-LISTA-ATIVO",
+        )
+        self.contrato_fornecedor_encerrado = ContratoTerceiros.objects.create(
+            cod_projeto=self.contrato_encerrado,
+            empresa_terceira=self.fornecedor,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            objeto="Contrato fornecedor encerrado",
+            status="encerrado",
+            num_contrato="CF-LISTA-ENC",
+        )
+
+    def test_lista_contratos_omite_encerrados_por_padrao(self):
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("lista_contratos"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.contrato_ativo.cod_projeto)
+        self.assertNotContains(response, self.contrato_encerrado.cod_projeto)
+
+    def test_lista_contratos_exibe_encerrados_quando_filtro_marcado(self):
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("lista_contratos"), {"show_encerrados": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.contrato_ativo.cod_projeto)
+        self.assertContains(response, self.contrato_encerrado.cod_projeto)
+
+    def test_lista_contratos_fornecedores_omite_encerrados_por_padrao(self):
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("lista_contratos_fornecedores"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.contrato_fornecedor_ativo.num_contrato)
+        self.assertNotContains(response, self.contrato_fornecedor_encerrado.num_contrato)
+
+    def test_lista_contratos_fornecedores_exibe_encerrados_quando_filtro_marcado(self):
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("lista_contratos_fornecedores"), {"show_encerrados": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.contrato_fornecedor_ativo.num_contrato)
+        self.assertContains(response, self.contrato_fornecedor_encerrado.num_contrato)
+
+
 class GuiaPermissoesTests(BaseUserTestCase):
     def test_guia_permissoes_exige_login(self):
         response = self.client.get(reverse("guia_permissoes"))
@@ -4144,6 +4220,60 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         )
 
 
+class EventDeletionNavigationTests(BaseUserTestCase):
+    def setUp(self):
+        self.suprimento = self.create_user("suprimento_delete_event", "suprimento")
+        self.coordenador = self.create_user("coord_delete_event", "coordenador")
+        self.lider = self.create_user("lider_delete_event", "lider_contrato")
+        self.contrato_base = self.create_contract(
+            codigo="PRJ-DEL-EVT",
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+        )
+        self.contrato_terceiro = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            num_contrato="CT-DEL-EVT",
+        )
+
+    def test_excluir_evento_contrato_redireciona_para_next_se_item_ja_foi_removido(self):
+        evento = self.create_event(contrato=self.contrato_terceiro)
+        next_url = reverse("contrato_fornecedor_detalhe", args=[self.contrato_terceiro.pk])
+        excluir_url = f"{reverse('excluir_evento_contrato', args=[evento.pk])}?next={next_url}"
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(excluir_url, {"next": next_url})
+        self.assertRedirects(response, next_url)
+        self.assertFalse(Evento.objects.filter(pk=evento.pk).exists())
+
+        response = self.client.get(excluir_url)
+        self.assertRedirects(response, next_url)
+
+    def test_excluir_evento_redireciona_para_next_se_item_ja_foi_removido(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Solicitação para exclusão de evento",
+            status="Em análise",
+        )
+        evento = self.create_event(
+            contrato=self.contrato_terceiro,
+            prospeccao=solicitacao,
+        )
+        next_url = reverse("detalhes_solicitacao", args=[solicitacao.pk])
+        excluir_url = f"{reverse('excluir_evento', args=[evento.pk])}?next={next_url}"
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(excluir_url, {"next": next_url})
+        self.assertRedirects(response, next_url)
+        self.assertFalse(Evento.objects.filter(pk=evento.pk).exists())
+
+        response = self.client.get(excluir_url)
+        self.assertRedirects(response, next_url)
+
+
 class OrdemServicoApprovalFlowTests(BaseUserTestCase):
     def setUp(self):
         self.centro = self.create_center()
@@ -5306,6 +5436,35 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("solicitar_aditivo_contrato", args=[self.contrato_terceiro.pk]))
+
+    def test_detalhe_contrato_encerrado_nao_exibe_pedir_aditivo_nem_aviso_de_data_fim(self):
+        self.contrato_terceiro.status = "encerrado"
+        self.contrato_terceiro.data_fim = date(2026, 5, 1)
+        self.contrato_terceiro.save(update_fields=["status", "data_fim"])
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": self.contrato_terceiro.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, reverse("solicitar_aditivo_contrato", args=[self.contrato_terceiro.pk]))
+        self.assertNotContains(response, "ultrapassou a data final")
+
+    def test_detalhe_contrato_destaca_evento_finalizado_em_verde(self):
+        evento = self.create_event(
+            contrato=self.contrato_terceiro,
+            empresa_terceira=self.contrato_terceiro.empresa_terceira,
+        )
+        evento.realizado = True
+        evento.valor_previsto = Decimal("500.00")
+        evento.valor_pago = Decimal("500.00")
+        evento.save(update_fields=["realizado", "valor_previsto", "valor_pago"])
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": self.contrato_terceiro.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "table-success")
+        self.assertContains(response, "Finalizado")
 
     def test_detalhe_contrato_guarda_chuwa_exibe_eventos_e_solicitar_os(self):
         contrato_guarda_chuva = self.create_supplier_contract(

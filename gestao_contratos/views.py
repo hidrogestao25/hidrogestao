@@ -12,6 +12,7 @@ from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.html import escape, strip_tags
 from django.views.generic.edit import CreateView
 from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato, AditivoContratoTerceiro, RegistroAuditoria
@@ -2787,6 +2788,7 @@ def logout(request):
 
 @login_required
 def lista_contratos(request):
+    show_encerrados = request.GET.get("show_encerrados") in {"1", "true", "on"}
     if request.user.grupo in ['suprimento', 'financeiro', 'diretoria']:
         contratos = Contrato.objects.all()
     elif request.user.grupo == 'coordenador':
@@ -2821,13 +2823,20 @@ def lista_contratos(request):
             Q(status__icontains=search_query)
         ).distinct()
 
+    if not show_encerrados:
+        contratos = contratos.exclude(status='encerrado')
+
     contratos = contratos.order_by('-data_inicio')
 
     paginator = Paginator(contratos, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
-    context = {'page_obj': page_obj, 'search_query': search_query}
+    context = {
+        'page_obj': page_obj,
+        'search_query': search_query,
+        'show_encerrados': show_encerrados,
+    }
     return render(request, 'gestao_contratos/lista_contratos.html', context)
 
 
@@ -2877,6 +2886,7 @@ def lista_clientes(request):
 
 @login_required
 def lista_contratos_fornecedor(request):
+    show_encerrados = request.GET.get("show_encerrados") in {"1", "true", "on"}
     # Filtragem base por grupo de usuário
     if request.user.grupo in ['suprimento', 'financeiro', 'diretoria']:
         contratos = ContratoTerceiros.objects.all()
@@ -2918,6 +2928,9 @@ def lista_contratos_fornecedor(request):
             Q(valor_total__icontains=search_query)
         ).distinct()
 
+    if not show_encerrados:
+        contratos = contratos.exclude(status='encerrado')
+
     # Ordenar e paginar
     contratos = contratos.order_by('-data_inicio')
     paginator = Paginator(contratos, 10)
@@ -2927,6 +2940,7 @@ def lista_contratos_fornecedor(request):
     context = {
         'page_obj': page_obj,
         'search_query': search_query,
+        'show_encerrados': show_encerrados,
     }
 
     return render(request, 'gestao_contratos/lista_contratos_fornecedores.html', context)
@@ -7164,7 +7178,18 @@ def excluir_evento(request, pk):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
-    evento = get_object_or_404(Evento, pk=pk)
+    next_url = request.GET.get("next") or request.POST.get("next")
+    if next_url and not url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = None
+
+    evento = Evento.objects.filter(pk=pk).first()
+    if not evento:
+        messages.info(request, "Este evento já foi removido.")
+        return redirect(next_url or "home")
 
     if evento.prospeccao:
         pk_origem = evento.prospeccao.id
@@ -7176,6 +7201,8 @@ def excluir_evento(request, pk):
     if request.method == "POST":
         evento.delete()
 
+        if next_url:
+            return redirect(next_url)
         if evento.prospeccao:
             return redirect("detalhes_solicitacao", pk=pk_origem)
         elif evento.solicitacao_contrato:
@@ -7186,7 +7213,8 @@ def excluir_evento(request, pk):
 
     return render(request, "gestao_contratos/excluir_evento.html", {
         "evento": evento,
-        "pk_origem": pk_origem
+        "pk_origem": pk_origem,
+        "next_url": next_url,
     })
 
 
@@ -7196,12 +7224,30 @@ def excluir_evento_contrato(request, pk):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
-    evento = get_object_or_404(Evento, pk=pk)
+    next_url = request.GET.get("next") or request.POST.get("next")
+    if next_url and not url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = None
+
+    evento = Evento.objects.filter(pk=pk).first()
+    if not evento:
+        messages.info(request, "Este evento já foi removido.")
+        return redirect(next_url or "home")
+
     if request.method == "POST":
         contrato_id = evento.contrato_terceiro.pk
         evento.delete()
+        if next_url:
+            return redirect(next_url)
         return redirect("contrato_fornecedor_detalhe", pk=contrato_id)
-    return render(request, "gestao_contratos/excluir_evento_contrato.html", {"evento": evento})
+    return render(
+        request,
+        "gestao_contratos/excluir_evento_contrato.html",
+        {"evento": evento, "next_url": next_url},
+    )
 
 
 @login_required

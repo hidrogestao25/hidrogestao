@@ -12,8 +12,15 @@
 
 <form method="post">
     {% csrf_token %}
+    {% if next_url %}
+        <input type="hidden" name="next" value="{{ next_url }}">
+    {% endif %}
     <button type="submit" class="btn btn-danger">Sim, excluir</button>
-    <a href="{% url 'detalhes_solicitacao' evento.contrato_terceiro.id %}" class="btn btn-secondary">Cancelar</a>
+    {% if next_url %}
+        <a href="{{ next_url }}" class="btn btn-secondary">Cancelar</a>
+    {% else %}
+        <a href="{% url 'contrato_fornecedor_detalhe' evento.contrato_terceiro.id %}" class="btn btn-secondary">Cancelar</a>
+    {% endif %}
 </form>
 
 
