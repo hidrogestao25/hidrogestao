@@ -156,7 +156,7 @@
                                         {% else %}
                                             <!-- Já houve aprovação ou reprovação -->
                                             <a href="{% url 'detalhes_contrato' solicitacao.id %}" class="d-none btn btn-warning btn-sm">
-                                                
+
                                             </a>
                                         {% endif %}
                                     {% endif %}
@@ -362,7 +362,7 @@
                                   {% else %}
                                       <!-- Já houve aprovação ou reprovação -->
                                       <a href="{% url 'detalhes_minuta_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">
-                                          
+
                                       </a>
                                   {% endif %}
                               {% endif %}
@@ -440,7 +440,7 @@
                 <th>ID</th>
                 <th>Projeto</th>
                 <th>Título</th>
-                {% if request.user.grupo != "coordenador" %}
+                {% if request.user.grupo != "lider_contrato" %}
                   <th>Solicitante</th>
                 {% endif %}
                 <th>Líder do Contrato</th>
@@ -456,8 +456,8 @@
                 <td>#{{ os.id }}</td>
                 <td>{{ os.contrato }}</td>
                 <td>{{ os.titulo }}</td>
-                {% if request.user.grupo != "coordenador" %}
-                  <td>{{ os.coordenador.get_full_name|default:os.coordenador.username }}</td>
+                {% if request.user.grupo != "lider_contrato" %}
+                  <td>{{ os.solicitante.get_full_name|default:os.coordenador.username }}</td>
                 {% endif %}
                 <td>
                     {% if os.lider_contrato %}
