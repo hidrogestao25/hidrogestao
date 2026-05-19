@@ -22,11 +22,7 @@
       <p><strong>Fornecedor:</strong> {{ os.contrato.empresa_terceira }}</p>
 
       <p><strong>Líder de Contrato:</strong>
-        {{ os.contrato.lider_contrato.get_full_name|default:os.contrato.lider_contrato }}
-      </p>
-
-      <p><strong>Solicitante:</strong>
-        {{ os.coordenador.get_full_name|default:os.coordenador }}
+        {{ os.lider_contrato.get_full_name|default:os.contrato.lider_contrato }}
       </p>
 
       <p><strong>Data de Abertura:</strong>
@@ -197,7 +193,7 @@
     <!-- FOOTER -->
     <div class="card-footer text-end">
       <div class="d-flex justify-content-end gap-2">
-        {% if request.user.grupo == "lider_contrato" and request.user == os.lider_contrato or request.user.grupo == "gerente_contrato" or request.user.grupo == "gerente_lider" %}
+        {% if request.user.grupo == "lider_contrato" and request.user == os.lider_contrato or request.user.grupo == "gerente_contrato" or request.user.grupo == "gerente_lider" or request.user.grupo == "suprimento" %}
         <a href="{% url 'registrar_entrega_os' os.id %}" class="btn btn-success">
           {% if os.realizado or os.avaliacao %}
             Editar Entrega
@@ -215,7 +211,3 @@
   </div>
 </div>
 {% endblock %}
-
-
-
-

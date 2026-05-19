@@ -632,9 +632,11 @@ class SolicitacaoOrdemServicoForm(forms.ModelForm):
             'titulo',
             'descricao',
             'valor_previsto',
+            'data_prevista_pagamento',
             'prazo_execucao',
         ]
         widgets = {
+            "data_prevista_pagamento": ISODateInput(attrs={"class": "form-control"}),
             "prazo_execucao": ISODateInput(attrs={ "class": "form-control"}),
             'descricao': forms.Textarea(attrs={'rows': 4}),
         }
@@ -751,12 +753,14 @@ class SolicitacaoOrdemServicoSemContratoForm(forms.ModelForm):
             'titulo',
             'descricao',
             'valor_previsto',
+            'data_prevista_pagamento',
             'prazo_execucao',
         ]
         widgets = {
             'cod_projeto': forms.Select(attrs={'class': 'form-select'}),
             'titulo': forms.TextInput(attrs={'class': 'form-control'}),
             'descricao': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
+            'data_prevista_pagamento': ISODateInput(attrs={'class': 'form-control'}),
             'prazo_execucao': ISODateInput(attrs={'class': 'form-control'}),
         }
 
@@ -1066,12 +1070,14 @@ class NFForm(forms.ModelForm):
 
     # 🔥 FILTRANDO OS BMs PELO EVENTO
     def __init__(self, *args, **kwargs):
-        evento = kwargs.pop("evento", None)   # recebe o evento da view
+        evento = kwargs.pop("evento", None)
+        os_obj = kwargs.pop("os", None)
         super().__init__(*args, **kwargs)
 
-        # Se veio um evento, filtra os BMs desse evento
         if evento:
             self.fields["bm"].queryset = BM.objects.filter(evento=evento)
+        elif os_obj:
+            self.fields["bm"].queryset = BM.objects.filter(os=os_obj)
         else:
             self.fields["bm"].queryset = BM.objects.none()
         if self.instance and self.instance.valor_pago is not None:
@@ -1108,11 +1114,17 @@ class NFClienteForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.valor_pago is not None:
             self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+        if user and user.grupo != "suprimento":
+            self.fields.pop("valor_pago", None)
+            self.fields.pop("data_pagamento", None)
 
     def clean_valor_pago(self):
+        if "valor_pago" not in self.fields:
+            return self.instance.valor_pago
         return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
@@ -1143,11 +1155,17 @@ class RegistroEntregaOSForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.valor_pago is not None:
             self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
+        if user and user.grupo != "suprimento":
+            self.fields.pop("valor_pago", None)
+            self.fields.pop("data_pagamento", None)
 
     def clean_valor_pago(self):
+        if "valor_pago" not in self.fields:
+            return self.instance.valor_pago
         return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
 
 
@@ -1168,11 +1186,13 @@ class OrdemServicoForm(forms.ModelForm):
             'titulo',
             'descricao',
             'valor',
+            'data_prevista_pagamento',
             'prazo_execucao',
             'status',
             'arquivo_os'
         ]
         widgets = {
+            "data_prevista_pagamento": ISODateInput(attrs={"class": "form-control"}),
             "prazo_execucao": ISODateInput(attrs={ "class": "form-control"}),
             'descricao': forms.Textarea(attrs={"class": "form-control", 'rows': 4}),
             'titulo': forms.Textarea(attrs={"class": "form-control", "rows": 1}),

@@ -1,104 +1,698 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container mt-4">
-
-    <div class="card shadow-sm">
-        <div class="card-header bg-success text-white">
-            <h5 class="mb-0">
-                Registrar Entrega - OS #{{ os.id }}
-            </h5>
-        </div>
-
-        <div class="card-body">
-            <p class="text-muted">
-                <strong>Fornecedor:</strong> {{ os.contrato.empresa_terceira }}<br>
-                <strong>Título:</strong> {{ os.titulo }}<br>
-                <strong>Prazo:</strong> {{ os.prazo_execucao|default:"Não definido" }}
-            </p>
-
-            <hr>
-
-            <form method="post">
-                {% csrf_token %}
-
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Caminho da Evidência</label>
-                        {{ form.caminho_evidencia }}
-                    </div>
-
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Avaliação</label>
-                        {{ form.avaliacao }}
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label">Data da Entrega</label>
-                        {{ form.data_entrega }}
-                    </div>
-
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label">Valor Pago</label>
-                        {{ form.valor_pago }}
-                    </div>
-
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label">Data do Pagamento</label>
-                        {{ form.data_pagamento }}
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-3 mb-3 form-check">
-                        {{ form.realizado }}
-                        <label class="form-check-label">Serviço Realizado</label>
-                    </div>
-
-                    <div class="col-md-3 mb-3 form-check">
-                        {{ form.com_atraso }}
-                        <label class="form-check-label">Executado com atraso</label>
-                    </div>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Observações</label>
-                    {{ form.observacao }}
-                </div>
-
-                <div class="d-flex justify-content-end gap-2">
-                    <a href="{% url 'detalhes_os' os.id %}" class="btn btn-secondary">
-                        Cancelar
-                    </a>
-                    <button type="submit" class="btn btn-success">
-                        Salvar Entrega
-                    </button>
-                </div>
-            </form>
-        </div>
+  <div class="card shadow-sm">
+    <div class="card-header bg-success text-white">
+      <h5>Registrar Entrega - OS {{ os.id }}</h5>
+      <p class="text-muted mb-0">
+        Fornecedor: <strong>{{ os.contrato.empresa_terceira }}</strong>
+      </p>
     </div>
 
+    <div class="card-body">
+      <form method="post" enctype="multipart/form-data" id="entregaOsForm">
+        {% csrf_token %}
+
+        <div class="mb-3">
+          <label class="form-label fw-bold" for="id_caminho_evidencia">Caminho da Evidencia</label>
+          {{ form.caminho_evidencia }}
+          {% if form.caminho_evidencia.errors %}
+            <div class="text-danger small">{{ form.caminho_evidencia.errors }}</div>
+          {% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-bold" for="id_avaliacao">Avaliacao</label>
+          {{ form.avaliacao }}
+          {% if form.avaliacao.errors %}
+            <div class="text-danger small">{{ form.avaliacao.errors }}</div>
+          {% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-bold" for="id_data_entrega">Data de Entrega</label>
+          {{ form.data_entrega }}
+          {% if form.data_entrega.errors %}
+            <div class="text-danger small">{{ form.data_entrega.errors }}</div>
+          {% endif %}
+        </div>
+
+        <div class="mb-3 form-check">
+          {{ form.realizado }}
+          <label class="form-check-label fw-bold" for="id_realizado">Servico Realizado</label>
+          {% if form.realizado.errors %}
+            <div class="text-danger small">{{ form.realizado.errors }}</div>
+          {% endif %}
+        </div>
+
+        <div class="mb-3 form-check">
+          {{ form.com_atraso }}
+          <label class="form-check-label fw-bold" for="id_com_atraso">Servico com Atraso</label>
+          {% if form.com_atraso.errors %}
+            <div class="text-danger small">{{ form.com_atraso.errors }}</div>
+          {% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-bold">Valor Previsto</label>
+          <input type="text" class="form-control" value="{{ os.valor }}" readonly>
+        </div>
+
+        {% if request.user.grupo == "suprimento" %}
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label fw-bold" for="id_valor_pago">Valor Pago</label>
+            {{ form.valor_pago }}
+            {% if form.valor_pago.errors %}
+              <div class="text-danger small">{{ form.valor_pago.errors }}</div>
+            {% endif %}
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <label class="form-label fw-bold" for="id_data_pagamento">Data do Pagamento</label>
+            {{ form.data_pagamento }}
+            {% if form.data_pagamento.errors %}
+              <div class="text-danger small">{{ form.data_pagamento.errors }}</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="mb-3">
+          <label class="form-label fw-bold" for="id_observacao">Observacao</label>
+          {{ form.observacao }}
+          {% if form.observacao.errors %}
+            <div class="text-danger small">{{ form.observacao.errors }}</div>
+          {% endif %}
+        </div>
+
+        <div class="d-flex justify-content-end gap-2">
+          <a href="{% url 'detalhes_os' os.pk %}" class="btn btn-secondary">Cancelar</a>
+          {% if can_manage_delivery %}
+          <button type="submit" class="btn btn-success">Salvar</button>
+          {% endif %}
+        </div>
+      </form>
+
+      <hr>
+      <div class="mb-4">
+        <h5>Boletins de Medicao Cadastrados</h5>
+
+        {% if boletins_detalhados %}
+        <table class="table table-bordered table-striped align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>No BM</th>
+              <th>Parcela</th>
+              <th>Valor Pago</th>
+              <th>Data Pagamento</th>
+              <th>Status Lider de Contrato</th>
+              {% if has_reprovacao_coordenador %}
+              <th>Justificativa Lider de Contrato</th>
+              {% endif %}
+              <th>Status Gerente</th>
+              {% if has_reprovacao_gerente %}
+              <th>Justificativa Gerente</th>
+              {% endif %}
+              <th>Autorizacao Pagamento</th>
+              {% if tem_reprovacao_diretor %}
+              <th>Justificativa Diretor</th>
+              {% endif %}
+              <th>Observacao</th>
+              <th>Arquivo</th>
+              {% if can_approve_bm_as_lider or can_approve_bm_as_gerente or request.user.grupo == "suprimento" %}
+              <th>Acoes</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody id="lista-bms-os">
+            {% for item in boletins_detalhados %}
+            <tr id="bm-row-{{ item.bm.id }}" class="{{ item.row_class }}">
+              <td>{{ item.bm.numero_bm }}</td>
+              <td>{{ item.bm.parcela_paga }}</td>
+              <td>R$ {{ item.bm.valor_pago|floatformat:2 }}</td>
+              <td>{{ item.bm.data_pagamento|date:"d/m/Y" }}</td>
+
+              {% if item.bm.status_coordenador == "aprovado" %}
+              <td><span class="badge bg-success">Aprovado</span></td>
+              {% elif item.bm.status_coordenador == "reprovado" %}
+              <td><span class="badge bg-danger">Reprovado</span></td>
+              {% else %}
+              <td><span class="badge bg-secondary">Pendente</span></td>
+              {% endif %}
+
+              {% if has_reprovacao_coordenador %}
+              <td>
+                {% if item.bm.status_coordenador == "reprovado" %}
+                {{ item.bm.justificativa_reprovacao_coordenador }}
+                {% else %}
+                -
+                {% endif %}
+              </td>
+              {% endif %}
+
+              {% if item.bm.status_gerente == "aprovado" %}
+              <td><span class="badge bg-success">Aprovado</span></td>
+              {% elif item.bm.status_gerente == "reprovado" %}
+              <td><span class="badge bg-danger">Reprovado</span></td>
+              {% else %}
+              <td><span class="badge bg-secondary">Pendente</span></td>
+              {% endif %}
+
+              {% if has_reprovacao_gerente %}
+              <td>
+                {% if item.bm.status_gerente == "reprovado" %}
+                {{ item.bm.justificativa_reprovacao_gerente }}
+                {% else %}
+                -
+                {% endif %}
+              </td>
+              {% endif %}
+
+              {% if item.bm.aprovacao_pagamento == "aprovado" %}
+              <td><span class="badge bg-success">Aprovado</span></td>
+              {% elif item.bm.aprovacao_pagamento == "reprovado" %}
+              <td><span class="badge bg-danger">Reprovado</span></td>
+              {% else %}
+              <td><span class="badge bg-secondary">Pendente</span></td>
+              {% endif %}
+
+              {% if tem_reprovacao_diretor %}
+              <td>
+                {% if item.bm.aprovacao_pagamento == "reprovado" %}
+                {{ item.bm.justificativa_reprovacao_diretor|default:"-" }}
+                {% else %}
+                -
+                {% endif %}
+              </td>
+              {% endif %}
+
+              <td>{{ item.bm.observacao|default:"-" }}</td>
+              <td>
+                {% if item.bm.arquivo_bm %}
+                <a href="{{ item.bm.arquivo_bm.url }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                  Abrir/Download
+                </a>
+                {% else %}
+                <span class="text-muted">Sem arquivo</span>
+                {% endif %}
+              </td>
+
+              {% if can_approve_bm_as_lider %}
+              <td>
+                <small class="text-muted d-block mb-2">Basta uma aprovacao do lider ou do gerente.</small>
+                <div class="d-flex gap-1">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-success btn-aprovar"
+                    data-bm-id="{{ item.bm.id }}"
+                    {% if not item.operational_pending %}disabled{% endif %}
+                  >
+                    Aprovar
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-danger btn-reprovar"
+                    data-bm-id="{{ item.bm.id }}"
+                    {% if not item.operational_pending %}disabled{% endif %}
+                  >
+                    Reprovar
+                  </button>
+                </div>
+              </td>
+              {% endif %}
+
+              {% if can_approve_bm_as_gerente %}
+              <td>
+                <small class="text-muted d-block mb-2">Basta uma aprovacao do lider ou do gerente.</small>
+                <div class="d-flex gap-1">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-success btn-aprovar"
+                    data-bm-id="{{ item.bm.id }}"
+                    {% if not item.operational_pending %}disabled{% endif %}
+                  >
+                    Aprovar
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-danger btn-reprovar"
+                    data-bm-id="{{ item.bm.id }}"
+                    {% if not item.operational_pending %}disabled{% endif %}
+                  >
+                    Reprovar
+                  </button>
+                </div>
+              </td>
+              {% endif %}
+
+              {% if request.user.grupo == "suprimento" %}
+              <td>
+                <div class="d-flex gap-1">
+                  <button
+                    class="btn btn-sm btn-warning btn-editar-bm"
+                    data-bm-id="{{ item.bm.id }}"
+                    data-bs-toggle="modal"
+                    data-bs-target="#editarBMModal"
+                  >
+                    Editar
+                  </button>
+                  <form
+                    method="post"
+                    action="{% url 'deletar_bm' item.bm.id %}"
+                    onsubmit="return confirm('Tem certeza que deseja apagar este BM?');"
+                  >
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
+                  </form>
+                </div>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted">Nenhum boletim cadastrado para esta OS.</p>
+        {% endif %}
+      </div>
+
+      <hr>
+      <h5>Notas Fiscais Cadastradas</h5>
+
+      {% if notas_fiscais %}
+      <table class="table table-bordered table-striped align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>ID NF</th>
+            <th>BM</th>
+            <th>Parcela</th>
+            <th>Valor Pago</th>
+            <th>Data Pagamento</th>
+            <th>Observacao</th>
+            <th>Arquivo</th>
+            {% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
+            <th>Acoes</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for nf in notas_fiscais %}
+          <tr>
+            <td>{{ nf.id }}</td>
+            <td>{{ nf.bm.numero_bm|default:"-" }}</td>
+            <td>{{ nf.parcela_paga }}</td>
+            <td>R$ {{ nf.valor_pago|floatformat:2 }}</td>
+            <td>{{ nf.data_pagamento|date:"d/m/Y" }}</td>
+            <td>{{ nf.observacao|default:"-" }}</td>
+            <td>
+              {% if nf.arquivo_nf %}
+              <a href="{{ nf.arquivo_nf.url }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                Abrir/Download
+              </a>
+              {% else %}
+              <span class="text-muted">Sem arquivo</span>
+              {% endif %}
+            </td>
+            {% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
+            <td>
+              <div class="d-flex gap-1">
+                <button
+                  class="btn btn-sm btn-warning btn-editar-nf"
+                  data-nf-id="{{ nf.id }}"
+                  data-bs-toggle="modal"
+                  data-bs-target="#editarNFModal"
+                >
+                  Editar
+                </button>
+                {% if request.user.grupo == "suprimento" %}
+                <form
+                  method="post"
+                  action="{% url 'deletar_nf' nf.id %}"
+                  onsubmit="return confirm('Tem certeza que deseja apagar esta NF?');"
+                >
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted">Nenhuma Nota Fiscal cadastrada para esta OS.</p>
+      {% endif %}
+
+      {% if request.user.grupo == "suprimento" %}
+      <button type="button" class="btn btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#bmModal">
+        Cadastrar BM
+      </button>
+      {% endif %}
+
+      {% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
+      <button type="button" class="btn btn-info mt-3" data-bs-toggle="modal" data-bs-target="#nfModal">
+        Cadastrar NF
+      </button>
+      {% endif %}
+
+      <div class="modal fade" id="bmModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+              <h5 class="modal-title">Cadastrar Boletim de Medicao</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="bmModalBody">
+              <div class="text-center p-4">Carregando...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal fade" id="nfModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+              <h5 class="modal-title">Cadastrar Nota Fiscal</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="nfModalBody">
+              <div class="text-center p-4">Carregando...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal fade" id="editarNFModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+              <h5 class="modal-title">Editar Nota Fiscal</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="editarNFModalBody">
+              <div class="text-center p-4">Carregando...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal fade" id="editarBMModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+              <h5 class="modal-title">Editar BM</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="editarBMModalBody">
+              <div class="text-center p-4">Carregando...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modalJustificativa" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Justificativa da Reprovacao</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Explique o motivo da reprovacao:</label>
+        <textarea id="justificativaTexto" class="form-control" rows="4"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="btnConfirmarReprovar" class="btn btn-danger">Confirmar Reprovacao</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
+  function aplicarMascaraMoeda(root = document) {
     if (typeof jQuery === "undefined" || typeof jQuery.fn.inputmask === "undefined") {
-        return;
+      return;
     }
 
-    jQuery(".money").inputmask("currency", {
-        groupSeparator: ".",
-        radixPoint: ",",
-        digits: 2,
-        digitsOptional: false,
-        autoGroup: true,
-        rightAlign: false,
-        removeMaskOnSubmit: false,
-        placeholder: "0",
+    jQuery(root).find(".money").inputmask("currency", {
+      groupSeparator: ".",
+      radixPoint: ",",
+      digits: 2,
+      digitsOptional: false,
+      autoGroup: true,
+      rightAlign: false,
+      removeMaskOnSubmit: false,
+      placeholder: "0",
     });
+  }
+
+  aplicarMascaraMoeda(document);
+
+  const csrfToken = "{{ csrf_token }}";
+  let bmReprovandoId = null;
+
+  function mostrarLoading() {
+    const overlay = document.getElementById("loadingOverlay");
+    if (overlay) {
+      overlay.style.display = "flex";
+    }
+  }
+
+  function esconderLoading() {
+    const overlay = document.getElementById("loadingOverlay");
+    if (overlay) {
+      overlay.style.display = "none";
+    }
+  }
+
+  const bmModal = document.getElementById("bmModal");
+  if (bmModal) {
+    bmModal.addEventListener("show.bs.modal", function() {
+      fetch("{% url 'cadastrar_bm_os' os.id %}")
+        .then(r => r.text())
+        .then(html => {
+          document.getElementById("bmModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("bmModalBody"));
+
+          const bmForm = document.getElementById("bmForm");
+          if (!bmForm) {
+            return;
+          }
+
+          bmForm.addEventListener("submit", function(e) {
+            e.preventDefault();
+            const fd = new FormData(bmForm);
+
+            fetch("{% url 'cadastrar_bm_os' os.id %}", {
+              method: "POST",
+              body: fd,
+              headers: { "X-Requested-With": "XMLHttpRequest" }
+            })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success) {
+                bootstrap.Modal.getInstance(bmModal).hide();
+                location.reload();
+              } else {
+                alert(Object.values(data.errors).flat().join("\n"));
+              }
+            });
+          });
+        });
+    });
+  }
+
+  const nfModal = document.getElementById("nfModal");
+  if (nfModal) {
+    nfModal.addEventListener("show.bs.modal", function() {
+      fetch("{% url 'cadastrar_nf_os' os.id %}")
+        .then(r => r.text())
+        .then(html => {
+          document.getElementById("nfModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("nfModalBody"));
+
+          const nfForm = document.getElementById("nfForm");
+          if (!nfForm) {
+            return;
+          }
+
+          nfForm.addEventListener("submit", function(e) {
+            e.preventDefault();
+            const fd = new FormData(nfForm);
+
+            fetch("{% url 'cadastrar_nf_os' os.id %}", {
+              method: "POST",
+              body: fd,
+              headers: { "X-Requested-With": "XMLHttpRequest" }
+            })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success) {
+                bootstrap.Modal.getInstance(nfModal).hide();
+                location.reload();
+              } else {
+                alert(Object.values(data.errors).flat().join("\n"));
+              }
+            });
+          });
+        });
+    });
+  }
+
+  const editarBMModal = document.getElementById("editarBMModal");
+  document.querySelectorAll(".btn-editar-bm").forEach(btn => {
+    btn.addEventListener("click", function() {
+      const bmId = this.dataset.bmId;
+
+      fetch(`/bm/${bmId}/editar/`)
+        .then(r => r.text())
+        .then(html => {
+          document.getElementById("editarBMModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("editarBMModalBody"));
+
+          const form = document.getElementById("formEditarBM");
+          document.getElementById("btnSalvarBM")?.addEventListener("click", function() {
+            const fd = new FormData(form);
+
+            fetch(`/bm/${bmId}/editar/`, {
+              method: "POST",
+              body: fd,
+              headers: {
+                "X-CSRFToken": csrfToken
+              }
+            })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success) {
+                bootstrap.Modal.getInstance(editarBMModal).hide();
+                location.reload();
+              } else {
+                alert(Object.values(data.errors || {}).flat().join("\n"));
+              }
+            })
+            .catch(() => {
+              alert("Erro ao salvar.");
+            });
+          });
+        });
+    });
+  });
+
+  const editarNFModal = document.getElementById("editarNFModal");
+  document.querySelectorAll(".btn-editar-nf").forEach(btn => {
+    btn.addEventListener("click", function() {
+      const nfId = this.dataset.nfId;
+
+      fetch(`/evento/${nfId}/editar-nf/`)
+        .then(r => r.text())
+        .then(html => {
+          document.getElementById("editarNFModalBody").innerHTML = html;
+          aplicarMascaraMoeda(document.getElementById("editarNFModalBody"));
+
+          const form = document.getElementById("formEditarNF");
+          document.getElementById("btnSalvarNF")?.addEventListener("click", function() {
+            const fd = new FormData(form);
+
+            fetch(`/evento/${nfId}/editar-nf/`, {
+              method: "POST",
+              body: fd
+            })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success) {
+                bootstrap.Modal.getInstance(editarNFModal).hide();
+                location.reload();
+              } else {
+                alert("Erro: " + JSON.stringify(data.errors));
+              }
+            });
+          });
+        });
+    });
+  });
+
+  document.querySelectorAll(".btn-aprovar, .btn-reprovar").forEach(btn => {
+    btn.addEventListener("click", function() {
+      const bmId = this.dataset.bmId;
+      const acao = this.classList.contains("btn-aprovar") ? "aprovar" : "reprovar";
+
+      if (acao === "reprovar") {
+        bmReprovandoId = bmId;
+        new bootstrap.Modal(document.getElementById("modalJustificativa")).show();
+      } else {
+        enviarAvaliacao(bmId, acao, "");
+      }
+    });
+  });
+
+  function enviarAvaliacao(bmId, acao, justificativa) {
+    mostrarLoading();
+
+    fetch("{% url 'avaliar_bm' bm_id=0 %}".replace("0", bmId), {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrfToken,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({ acao, justificativa })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        location.reload();
+      } else {
+        esconderLoading();
+        alert("Erro: " + data.error);
+      }
+    })
+    .catch(() => {
+      esconderLoading();
+      alert("Erro ao processar a acao.");
+    });
+  }
+
+  document.getElementById("btnConfirmarReprovar")?.addEventListener("click", function() {
+    const just = document.getElementById("justificativaTexto").value.trim();
+    if (!just) {
+      alert("Por favor, insira uma justificativa.");
+      return;
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById("modalJustificativa")).hide();
+    enviarAvaliacao(bmReprovandoId, "reprovar", just);
+  });
 });
 </script>
+
+<div
+  id="loadingOverlay"
+  style="
+    display:none;
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.5);
+    z-index:9999;
+    justify-content:center;
+    align-items:center;
+  "
+>
+  <div class="text-center text-white">
+    <div class="spinner-border" role="status"></div>
+    <div class="mt-2">Processando...</div>
+  </div>
+</div>
 {% endblock %}

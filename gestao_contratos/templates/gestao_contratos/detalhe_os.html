@@ -6,7 +6,6 @@
 <div class="container mt-4">
 
   <div class="timeline">
-      <!-- barra de progresso -->
       <div id="timeline-progress" class="timeline-progress"></div>
 
       {% for status in status_order %}
@@ -50,17 +49,14 @@
             </small>
         </div>
 
-
-
         <div class="card-body">
 
-            <!-- STATUS -->
             <div class="mb-3">
                 <strong>Status:</strong>
                 {% if os.status == 'rascunho' %}
                     <span class="badge bg-secondary">Rascunho</span>
                 {% elif 'pendente' in os.status %}
-                    <span class="badge bg-warning">Pendente</span>
+                    <span class="badge bg-warning text-dark">Pendente</span>
                 {% elif os.status == 'aprovada' %}
                     <span class="badge bg-success">Aprovada</span>
                 {% elif os.status == 'reprovada' %}
@@ -72,7 +68,6 @@
 
             <hr>
 
-            <!-- DADOS GERAIS -->
             <div class="row mb-3">
                 <div class="col-md-6">
                     <p><strong>Contrato:</strong> {{ os.contrato }}</p>
@@ -81,120 +76,152 @@
                 </div>
 
                 <div class="col-md-6">
-                    <p><strong>L&iacute;der do Contrato:</strong>
+                    <p><strong>Líder do Contrato:</strong>
                         {% if os.lider_contrato %}
                             {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
                         {% else %}
                             -
                         {% endif %}
                     </p>
-                    <p><strong>Prazo de Execu&ccedil;&atilde;o:</strong>
+                    <p><strong>Prazo de Execução:</strong>
                         {% if os.prazo_execucao %}
                             {{ os.prazo_execucao|date:"d/m/Y" }}
                         {% else %}
                             -
                         {% endif %}
                     </p>
+
                 </div>
             </div>
 
             <hr>
 
-  <!-- DESCRICAO -->
             <div class="mb-3">
-                <h5>T&iacute;tulo</h5>
+                <h5>Título</h5>
                 <p>{{ os.titulo }}</p>
 
-                <h5>Descri&ccedil;&atilde;o</h5>
+                <h5>Descrição</h5>
                 <p class="text-muted">{{ os.descricao|linebreaks }}</p>
             </div>
 
             <hr>
 
-            <!-- VALORES -->
             <div class="row mb-3">
                 <div class="col-md-4">
-                    <strong>Valor Previsto:</strong><br>
+                    <p><strong>Valor Previsto:</strong>
                     {% if os.valor_previsto %}
                         R$ {{ os.valor_previsto|floatformat:2 }}
                     {% else %}
                         -
                     {% endif %}
+                    </p>
+
+                    <p><strong>Previsão de Pagamento:</strong>
+                        {% if os.data_prevista_pagamento %}
+                            {{ os.data_prevista_pagamento|date:"d/m/Y" }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </p>
                 </div>
 
-            <!-- ARQUIVO OS -->
-            {% if os.arquivo_os %}
+                {% if os.arquivo_os %}
                 <div class="col-md-4">
-                  <p>
-                      <strong>OS anexada:</strong>
-                      <a href="{{ os.arquivo_os.url }}" target="_blank">
-                          Visualizar contrato
-                      </a>
-                  </p>
+                    <p>
+                        <strong>Minuta da OS:</strong>
+                        <a href="{{ os.arquivo_os.url }}" target="_blank">
+                            Visualizar arquivo
+                        </a>
+                    </p>
                 </div>
+                {% endif %}
+            </div>
+
+            {% if os.justificativa_reprovacao_gerente %}
+            <div class="alert alert-warning">
+                <strong>Justificativa da reprovação da minuta:</strong><br>
+                {{ os.justificativa_reprovacao_gerente|linebreaksbr }}
             </div>
             {% endif %}
 
             <hr>
 
-  <!-- AÇÃ•ES -->
             <div class="d-flex gap-2 flex-wrap">
-
                 <a href="{% url 'lista_solicitacoes' %}" class="btn btn-outline-secondary">
                     Voltar
                 </a>
 
                 {% if request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'suprimento' %}
-                    {% if os.status != 'finalizada' %}
-                        <a href="{% url 'editar_ordem_servico' os.id  %}" class="btn btn-warning">
+                    {% if os.status != 'finalizada' and os.status != 'aprovada' %}
+                        <a href="{% url 'editar_ordem_servico' os.id %}" class="btn btn-warning">
                             Editar OS
                         </a>
                     {% endif %}
                 {% endif %}
 
-                {% if request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_lider' and request.user|shares_center_with:os.coordenador %}
-                {% if os.status == 'pendente_lider' and os.lider_contrato == request.user or os.status == 'pendente_lider' and request.user.grupo == 'gerente_lider' %}
-                    <a href="{% url 'aprovar_os_lider' os.id 'aprovar' %}" class="btn btn-success"
-                    onclick="return confirm('Confirmar aprovação da Ordem de Serviço?')">
-                        Aprovar OS
+                {% if request.user.grupo == 'gerente_contrato' and os.status == 'pendente_gerente' %}
+                    <a href="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}" class="btn btn-success"
+                       onclick="return confirm('Confirmar aprovação da solicitação de OS?')">
+                        Aprovar Solicitação
                     </a>
-                    <a href="{% url 'aprovar_os_lider' os.id 'reprovar' %}" class="btn btn-danger"
-                    onclick="return confirm('Confirmar reprovação da Ordem de Serviço?')">
-                        Reprovar OS
+                    <a href="{% url 'aprovar_os_gerente_contrato' os.id 'reprovar' %}" class="btn btn-danger"
+                       onclick="return confirm('Confirmar reprovação da solicitação de OS?')">
+                        Reprovar Solicitação
                     </a>
                 {% endif %}
+
+                {% if request.user.grupo == 'diretoria' and os.status == 'pendente_diretoria' %}
+                    <a href="{% url 'aprovar_os_diretoria' os.id 'aprovar' %}" class="btn btn-success"
+                       onclick="return confirm('Confirmar aprovação da solicitação de OS?')">
+                        Aprovar Solicitação
+                    </a>
+                    <a href="{% url 'aprovar_os_diretoria' os.id 'reprovar' %}" class="btn btn-danger"
+                       onclick="return confirm('Confirmar reprovação da solicitação de OS?')">
+                        Reprovar Solicitação
+                    </a>
                 {% endif %}
 
                 {% if request.user.grupo == 'suprimento' and os.status == 'pendente_suprimento' %}
-                    <a href="{% url 'upload_contrato_os' os.id %}"
-                       class="btn btn-success">
-                        Anexar Contrato da OS
+                    <a href="{% url 'upload_contrato_os' os.id %}" class="btn btn-success">
+                        Inserir Minuta da OS
                     </a>
                 {% endif %}
 
-                {% if request.user.grupo == 'gerente_contrato' and os.status == 'pendente_gerente' %}
-                    <a href="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}"
-                       class="btn btn-success"
-                       onclick="return confirm('Confirmar aprovação da Ordem de Serviço?')">
-                        Aprovar OS
-                    </a>
-
-                    <a href="{% url 'aprovar_os_gerente_contrato' os.id 'reprovar' %}"
-                       class="btn btn-danger"
-                       onclick="return confirm('Confirmar reprovação da Ordem de Serviço?')">
-                        Reprovar OS
-                    </a>
+                {% if request.user.grupo == 'gerente_contrato' and os.status == 'pendente_minuta_gerente' %}
+                    <form method="post" action="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success"
+                                onclick="return confirm('Confirmar aprovação da minuta da OS?')">
+                            Aprovar Minuta
+                        </button>
+                    </form>
                 {% endif %}
-
-
-
             </div>
+
+            {% if request.user.grupo == 'gerente_contrato' and os.status == 'pendente_minuta_gerente' %}
+            <div class="mt-3">
+                <form method="post" action="{% url 'aprovar_os_gerente_contrato' os.id 'reprovar' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="id_justificativa" class="form-label">Justificativa da reprovação da minuta</label>
+                        <textarea
+                            class="form-control"
+                            id="id_justificativa"
+                            name="justificativa"
+                            rows="4"
+                            required
+                        ></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-danger"
+                            onclick="return confirm('Confirmar reprovação da minuta da OS?')">
+                        Reprovar Minuta
+                    </button>
+                </form>
+            </div>
+            {% endif %}
 
         </div>
     </div>
 
 </div>
 {% endblock %}
-
-
-

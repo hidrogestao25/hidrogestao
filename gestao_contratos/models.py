@@ -589,7 +589,10 @@ class ContratoTerceiros(models.Model):
         return ", ".join(nomes)
 
     def __str__(self):
-        return f"{self.cod_projeto} - {self.empresa_terceira}"
+        if self.guarda_chuva:
+            return f"{self.empresa_terceira}"
+        else:
+            return f"{self.cod_projeto} - {self.empresa_terceira}"
 
     @property
     def eventos(self):
@@ -713,6 +716,7 @@ class SolicitacaoOrdemServico(models.Model):
     titulo = models.CharField(max_length=200)
     descricao = models.TextField()
     valor_previsto = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    data_prevista_pagamento = models.DateField(null=True, blank=True)
     prazo_execucao = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='solicitacao_os')
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -779,6 +783,7 @@ class OS(models.Model):
     titulo = models.CharField(max_length=200)
     descricao = models.TextField()
     valor = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    data_prevista_pagamento = models.DateField(null=True, blank=True)
     prazo_execucao = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_execucao')
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -1060,6 +1065,7 @@ class BM(models.Model):
     ]
     contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="boletins_medicao")
     evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='boletins_medicao', null=True, blank=True)
+    os = models.ForeignKey(OS, on_delete=models.CASCADE, related_name='boletins_medicao', null=True, blank=True)
     numero_bm = models.PositiveIntegerField()
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     parcela_paga = models.PositiveIntegerField()
@@ -1125,7 +1131,8 @@ class BM(models.Model):
 #--------------
 class NF(models.Model):
     contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="nota_fiscal")
-    evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='nota_fiscal')
+    evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='nota_fiscal', null=True, blank=True)
+    os = models.ForeignKey(OS, on_delete=models.CASCADE, related_name='nota_fiscal', null=True, blank=True)
     bm = models.ForeignKey(BM, on_delete=models.CASCADE, related_name='nota_fiscal', blank=True, null=True)
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     parcela_paga = models.PositiveIntegerField()
@@ -1140,7 +1147,14 @@ class NF(models.Model):
     nf_dentro_prazo = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"Nota Fiscal {self.id} - {self.evento.descricao} (id - {self.evento.id})"
+        referencia = None
+        if self.evento:
+            referencia = f"{self.evento.descricao} (id - {self.evento.id})"
+        elif self.os:
+            referencia = f"{self.os.titulo} (OS - {self.os.id})"
+        else:
+            referencia = "Sem referência"
+        return f"Nota Fiscal {self.id} - {referencia}"
 
 
 # -------------

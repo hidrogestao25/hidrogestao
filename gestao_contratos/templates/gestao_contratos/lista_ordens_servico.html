@@ -49,7 +49,7 @@
                 style="cursor:pointer;"
             >
                 <td>{{ os.id }}</td>
-                <td>{{ os.contrato.cod_projeto }}</td>
+                <td>{{ os.cod_projeto }}</td>
                 <td>{{ os.titulo|truncatechars:40 }}</td>
                 {% if request.user.grupo != "coordenador" %}
                   <td>
@@ -127,4 +127,3 @@
 </nav>
 
 {% endblock %}
-

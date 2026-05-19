@@ -106,6 +106,8 @@
               <td>
                 {% if bm.evento and bm.evento.valor_previsto %}
                   R$ {{ bm.evento.valor_previsto|floatformat:2 }}
+                {% elif bm.os and bm.os.valor %}
+                  R$ {{ bm.os.valor|floatformat:2 }}
                 {% else %}
                   <span class="text-muted">-</span>
                 {% endif %}
@@ -160,6 +162,10 @@
                   {% else %}
                     <span class="text-muted">-</span>
                   {% endif %}
+                {% elif bm.os %}
+                  <a href="{% url 'detalhes_os' bm.os.id %}" target="_blank" class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-eye"></i> Verificar
+                  </a>
                 {% else %}
                   <span class="text-muted">Sem evento</span>
                 {% endif %}
@@ -227,6 +233,7 @@
           <th>Tipo</th>
           <th>Projeto</th>
           <th>Líder Técnico</th>
+          <th>Líder de Contrato</th>
           <th>Fornecedor</th>
           <th>Data Prevista</th>
           <th>Valor Previsto</th>
@@ -240,6 +247,7 @@
             <td>{{ item.tipo }}</td>
             <td>{{ item.projeto }}</td>
             <td>{{ item.coordenador }}</td>
+            <td>{{ item.lider_contrato }}</td>
             <td>{{ item.fornecedor }}</td>
             <td>{% if item.data_prevista %}{{ item.data_prevista|date:"d/m/Y" }}{% endif %}</td>
             <td>R$ {{ item.valor_previsto|floatformat:2 }}</td>
@@ -248,7 +256,7 @@
           </tr>
         {% endfor %}
         <tr class="fw-bold table-secondary">
-          <td colspan="5">Total Geral</td>
+          <td colspan="6">Total Geral</td>
           <td>R$ {{ total_previsto|floatformat:2 }}</td>
           <td></td>
           <td>R$ {{ total_pago|floatformat:2 }}</td>

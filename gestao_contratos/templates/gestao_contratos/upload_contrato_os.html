@@ -1,26 +1,25 @@
 {% extends "base.html" %}
-
 {% block content %}
 <div class="container mt-4">
 
     <div class="card shadow-sm">
         <div class="card-header bg-success text-white">
-            <h4 class="mb-0">Anexar Contrato da Ordem de Serviço</h4>
-            <small>OS #{{ os.id }}</small>
+            <h4 class="mb-0">Inserir Minuta da Ordem de Serviço</h4>
+            <small>Solicitação #{{ os.id }}</small>
         </div>
 
         <div class="card-body">
 
             <p>
                 <strong>Status atual:</strong>
-                <span class="badge bg-warning">Pendente Suprimento</span>
+                <span class="badge bg-warning text-dark">Pendente Suprimento</span>
             </p>
 
             <form method="post" enctype="multipart/form-data">
                 {% csrf_token %}
 
                 <div class="mb-3">
-                    <label class="form-label">Arquivo do Contrato</label>
+                    <label class="form-label">Arquivo da Minuta</label>
                     {{ form.arquivo_os }}
                 </div>
 
@@ -30,7 +29,7 @@
                     </a>
 
                     <button type="submit" class="btn btn-success">
-                        Anexar Contrato
+                        Salvar Minuta
                     </button>
                 </div>
             </form>

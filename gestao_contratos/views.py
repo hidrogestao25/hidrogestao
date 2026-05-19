@@ -1725,6 +1725,8 @@ def can_user_manage_os_delivery(user, os):
         return user == os.lider_contrato
     if user.grupo == "gerente_contrato":
         return True
+    if user.grupo == "suprimento":
+        return True
     if user.grupo == "gerente_lider":
         return user_shares_center_with_coordinator(user, os.coordenador)
     return False
@@ -2087,9 +2089,7 @@ def home(request):
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
-            Q(aprovacao_lider="aprovado")
-            #| Q(aprovacao_diretor="aprovado")
-            | Q(status__in=["pendente_suprimento"])
+            status="pendente_suprimento"
         ).distinct()
 
         aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
@@ -2275,6 +2275,7 @@ def home(request):
             "eventos_atrasados": eventos_atrasados,
             "eventos_para_avaliar":eventos_para_avaliar,
             "contratos_vencendo": contratos_vencendo,
+            "os_em_aberto": os_em_aberto,
             "today": hoje,
         })
 
@@ -2293,9 +2294,8 @@ def home(request):
             status="Solicitação de contratação"
         ).distinct()
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
-            lider_contrato=user,
-            status="pendente_lider"
-        ).distinct()
+            solicitante=user
+        ).exclude(status__in=["aprovada", "reprovada", "finalizada"]).distinct()
 
         bms_pendentes = BM.objects.filter(
             contrato__lider_contrato=user
@@ -2358,6 +2358,7 @@ def home(request):
             "eventos_proximos": eventos_proximos,
             "entregas_atrasadas": entregas_atrasadas,
             "contratos_vencendo": contratos_vencendo,
+            "os_em_aberto": os_em_aberto,
             "is_lider": is_lider,
             "today": hoje,
         })
@@ -2553,7 +2554,7 @@ def home(request):
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
             lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
-            status__in=["pendente_lider", "pendente_gerente"]
+            status__in=["pendente_gerente", "pendente_diretoria", "pendente_minuta_gerente"]
         ).distinct()
 
         aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
@@ -2642,7 +2643,8 @@ def home(request):
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
-            Q(aprovacao_diretor="pendente")
+            status__in=["pendente_gerente", "pendente_diretoria"],
+            aprovacao_diretor="pendente",
         ).distinct()
 
         aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
@@ -2899,7 +2901,8 @@ def lista_contratos_fornecedor(request):
     elif request.user.grupo == 'gerente':
         contratos = ContratoTerceiros.objects.filter(
             Q(coordenador__centros__in=request.user.centros.all()) |
-            Q(coordenadores__centros__in=request.user.centros.all())
+            Q(coordenadores__centros__in=request.user.centros.all()) |
+            Q(lider_contrato=request.user)
         ).distinct()
     elif request.user.grupo == 'gerente_lider':
         contratos = ContratoTerceiros.objects.filter(
@@ -2924,6 +2927,7 @@ def lista_contratos_fornecedor(request):
             Q(empresa_terceira__nome__icontains=search_query) |
             Q(coordenador__username__icontains=search_query) |
             Q(coordenadores__username__icontains=search_query) |
+            Q(lider_contrato__username__icontains=search_query) |
             Q(status__icontains=search_query) |
             Q(valor_total__icontains=search_query)
         ).distinct()
@@ -4563,8 +4567,10 @@ def solicitar_os(request, contrato_id):
         if form.is_valid():
             os = form.save(commit=False)
             os.solicitante = request.user
-            os.lider_contrato = contrato.lider_contrato if request.user.grupo == "suprimento" else request.user
-            os.status = 'pendente_lider'
+            os.lider_contrato = os.cod_projeto.lider_contrato if os.cod_projeto else request.user
+            os.status = 'pendente_gerente'
+            os.aprovacao_gerente = 'pendente'
+            os.aprovacao_diretor = 'pendente'
             os.contrato = contrato
             os.save()
 
@@ -4580,27 +4586,21 @@ def solicitar_os(request, contrato_id):
                 "Acesse o sistema HIDROGestão para mais informações.\n"
                 "https://hidrogestao.pythonanywhere.com/"
             )
-            suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
+            emails_aprovadores = list(
+                User.objects.filter(grupo__in=["gerente_contrato", "diretoria"])
+                .exclude(email__isnull=True)
+                .exclude(email__exact="")
+                .values_list("email", flat=True)
+            )
             try:
                 send_mail(
                     assunto, mensagem,
                     FROM_EMAIL,
-                    list(suprimentos),
+                    list(set(emails_aprovadores)),
                     fail_silently=False,
                 )
             except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
-
-            if os.lider_contrato and os.lider_contrato.email:
-                try:
-                    send_mail(
-                        assunto, mensagem,
-                        FROM_EMAIL,
-                        [os.lider_contrato.email],
-                        fail_silently=False,
-                    )
-                except Exception as e:
-                    messages.warning(request, f"Erro ao enviar e-mail para o líder de contrato: {e}")
+                messages.warning(request, f"Erro ao enviar e-mail para aprovadores: {e}")
 
             messages.success(request, "Ordem de Serviço enviada para aprovação.")
             return redirect("home")
@@ -4677,8 +4677,10 @@ def solicitar_os_com_contrato(request):
         if form.is_valid():
             os = form.save(commit=False)
             os.solicitante = request.user
-            os.lider_contrato = request.user
-            os.status = 'pendente_lider'
+            os.lider_contrato = os.cod_projeto.lider_contrato if os.cod_projeto else request.user
+            os.status = 'pendente_gerente'
+            os.aprovacao_gerente = 'pendente'
+            os.aprovacao_diretor = 'pendente'
             os.save()
 
             assunto = "Nova Solicitação de O.S."
@@ -4694,17 +4696,22 @@ def solicitar_os_com_contrato(request):
                 "https://hidrogestao.pythonanywhere.com/"
             )
 
-            if os.lider_contrato and os.lider_contrato.email:
-                try:
-                    send_mail(
-                        assunto,
-                        mensagem,
-                        FROM_EMAIL,
-                        [os.lider_contrato.email],
-                        fail_silently=False,
-                    )
-                except Exception as e:
-                    messages.warning(request, f"Erro ao enviar e-mail para o líder de contrato: {e}")
+            emails_aprovadores = list(
+                User.objects.filter(grupo__in=["gerente_contrato", "diretoria"])
+                .exclude(email__isnull=True)
+                .exclude(email__exact="")
+                .values_list("email", flat=True)
+            )
+            try:
+                send_mail(
+                    assunto,
+                    mensagem,
+                    FROM_EMAIL,
+                    list(set(emails_aprovadores)),
+                    fail_silently=False,
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para aprovadores: {e}")
 
             messages.success(request, "Ordem de Serviço solicitada com sucesso!")
             return redirect("detalhe_ordem_servico", pk=os.pk)
@@ -4715,6 +4722,63 @@ def solicitar_os_com_contrato(request):
         request,
         'fornecedores/solicitar_os.html',
         {"form": form, "contrato": None, "seleciona_contrato": True},
+    )
+
+
+def _notify_os_supply_minute_request(os_request):
+    emails_suprimentos = list(
+        User.objects.filter(grupo="suprimento")
+        .exclude(email__isnull=True)
+        .exclude(email__exact="")
+        .values_list("email", flat=True)
+    )
+    if not emails_suprimentos:
+        return
+
+    assunto = f"Solicitacao de OS #{os_request.pk} - Inserir minuta"
+    mensagem = (
+        f"A solicitacao de Ordem de Servico #{os_request.pk} foi aprovada por "
+        f"Gerencia de Contratos e Diretoria.\n\n"
+        f"Titulo: {os_request.titulo}\n"
+        f"Contrato: {os_request.contrato}\n"
+        f"Projeto: {os_request.cod_projeto}\n\n"
+        "A proxima etapa e inserir a minuta da OS no sistema.\n"
+        "https://hidrogestao.pythonanywhere.com/"
+    )
+    send_mail(
+        assunto,
+        mensagem,
+        FROM_EMAIL,
+        list(set(emails_suprimentos)),
+        fail_silently=False,
+    )
+
+
+def _notify_os_minute_ready_for_manager(os_request):
+    emails_gerencia = list(
+        User.objects.filter(grupo="gerente_contrato")
+        .exclude(email__isnull=True)
+        .exclude(email__exact="")
+        .values_list("email", flat=True)
+    )
+    if not emails_gerencia:
+        return
+
+    assunto = f"Solicitacao de OS #{os_request.pk} - Minuta para avaliacao"
+    mensagem = (
+        f"A minuta da Ordem de Servico #{os_request.pk} foi inserida pelo suprimento.\n\n"
+        f"Titulo: {os_request.titulo}\n"
+        f"Contrato: {os_request.contrato}\n"
+        f"Projeto: {os_request.cod_projeto}\n\n"
+        "A proxima etapa e a avaliacao da minuta pela Gerencia de Contratos.\n"
+        "https://hidrogestao.pythonanywhere.com/"
+    )
+    send_mail(
+        assunto,
+        mensagem,
+        FROM_EMAIL,
+        list(set(emails_gerencia)),
+        fail_silently=False,
     )
 
 
@@ -4763,104 +4827,10 @@ def editar_ordem_servico(request, pk):
 @login_required
 def aprovar_os_lider(request, pk, acao):
     os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
-
-    if request.user.grupo not in ['lider_contrato', 'gerente_lider']:
-        messages.error(request, "Você não tem permissão para esta ação.")
-        return redirect('detalhe_ordem_servico', pk=os.pk)
-
-    if request.user.grupo == 'lider_contrato' and os.lider_contrato != request.user:
-        messages.error(request, "Você não é o líder responsável por esta OS.")
-        return redirect('detalhe_ordem_servico', pk=os.pk)
-
-    if request.user.grupo == 'gerente_lider' and not user_shares_center_with_coordinator(request.user, os.coordenador):
-        messages.error(request, "Você não tem permissão para esta ação.")
-        return redirect('detalhe_ordem_servico', pk=os.pk)
-
-    if os.status != 'pendente_lider':
-        messages.warning(request, "Esta OS não está pendente para o líder.")
-        return redirect('detalhe_ordem_servico', pk=os.pk)
-
-    if acao == 'aprovar':
-        os.status = 'pendente_suprimento'
-        os.aprovacao_lider = request.user.username
-        os.aprovado_lider_em = timezone.now()
-        os.save()
-        messages.success(request, "Ordem de Serviço aprovada e enviada para a Gerência.")
-
-        assunto = f"Ciência e Aprovação do Lider de Contrato - OS {os.id}"
-        mensagem = (
-            f"O usuário {request.user.get_full_name() or request.user.username} "
-            f"tomou ciência e aprovou a Ordem de Serviço {os.id}.\n\n"
-            "Acesse o sistema HIDROGestão para mais informações.\n"
-            "https://hidrogestao.pythonanywhere.com/"
-        )
-        try:
-            send_mail(
-                assunto, mensagem,
-                FROM_EMAIL,
-                [os.solicitante.email],
-                fail_silently=False,
-            )
-        except Exception as e:
-            messages.warning(request, f"Erro ao enviar e-mail para líder técnico: {e}")
-
-        emails_suprimentos = list(
-            User.objects.filter(grupo="suprimento")
-            .exclude(email__isnull=True)
-            .exclude(email__exact="")
-            .values_list("email", flat=True)
-        )
-        assunto = f"Necessidade de avaliação de Solicitação da OS {os.id}"
-        mensagem = (
-            f"O usuário {request.user.get_full_name() or request.user.username} "
-            f"tomou ciência e aprovou a Ordem de Serviço {os.id}. "
-            f"Solicitamos o desenvolvimento do contrato da OS.\n\n"
-            f"Detalhes da O.S.:\n"
-            f"- ID: {os.id}\n"
-            f"- líder Técnico: {os.solicitante.username}\n"
-            f"- Título: {os.titulo}\n"
-            f"- Descrição: {os.descricao}\n"
-            f"- Valor Provisionado: {os.valor_previsto or 'Não informado'}\n\n"
-            "Acesse o sistema HIDROGestão para mais informações.\n"
-            "https://hidrogestao.pythonanywhere.com/"
-        )
-        try:
-            send_mail(
-                assunto, mensagem,
-                FROM_EMAIL,
-                list(set(emails_suprimentos)),
-                fail_silently=False,
-            )
-        except Exception as e:
-            messages.warning(request, f"Erro ao enviar e-mail para a equipe de suprimentos: {e}")
-
-    elif acao == 'reprovar':
-        os.status = 'reprovada'
-        os.aprovacao_lider = request.user.username
-        os.aprovado_lider_em = timezone.now()
-        os.save()
-        messages.error(request, "Ordem de Serviço reprovada.")
-
-        assunto = f"Ciência e Reprovação do Lider de Contrato - OS {os.id}"
-        mensagem = (
-            f"O usuário {request.user.get_full_name() or request.user.username} "
-            f"tomou ciência, no entanto, a Ordem de Serviço {os.id} foi reprovada.\n\n"
-            "Acesse o sistema HIDROGestão para mais informações.\n"
-            "https://hidrogestao.pythonanywhere.com/"
-        )
-        try:
-            send_mail(
-                assunto, mensagem,
-                FROM_EMAIL,
-                list(os.solicitante.email),
-                fail_silently=False,
-            )
-        except Exception as e:
-            messages.warning(request, f"Erro ao enviar e-mail para líder técnico: {e}")
-
-    else:
-        messages.error(request, "Ação inválida.")
-
+    messages.warning(
+        request,
+        "Esta etapa nao faz mais parte do fluxo de solicitacao de OS."
+    )
     return redirect('detalhe_ordem_servico', pk=os.pk)
 
 
@@ -4875,7 +4845,7 @@ def upload_contrato_os(request, pk):
     if os.status != 'pendente_suprimento':
         messages.warning(
             request,
-            "O contrato só pode ser anexado quando a OS estiver pendente do suprimento."
+            "A minuta so pode ser inserida quando a OS estiver pendente do suprimento."
         )
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
@@ -4883,11 +4853,15 @@ def upload_contrato_os(request, pk):
         form = UploadContratoOSForm(request.POST, request.FILES, instance=os)
         if form.is_valid():
             form.save()
+            os.status = 'pendente_minuta_gerente'
+            os.save(update_fields=['status', 'arquivo_os'])
 
-            os.status = 'pendente_gerente'
-            os.save()
+            try:
+                _notify_os_minute_ready_for_manager(os)
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para a gerencia de contratos: {e}")
 
-            messages.success(request, "Contrato anexado com sucesso!")
+            messages.success(request, "Minuta da OS inserida com sucesso!")
             return redirect('detalhe_ordem_servico', pk=os.pk)
     else:
         form = UploadContratoOSForm(instance=os)
@@ -4907,109 +4881,114 @@ def aprovar_os_gerente_contrato(request, pk, acao):
         messages.error(request, "Você não tem permissão para esta ação.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
-    if os.status != 'pendente_gerente':
-        messages.warning(request, "Esta OS não está pendente da Gerência de Contrato.")
+    if os.status not in ['pendente_gerente', 'pendente_minuta_gerente']:
+        messages.warning(request, "Esta OS nao esta pendente da Gerencia de Contrato.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
-    if acao == 'aprovar':
-        os.status = 'aprovada'
-        os.aprovacao_lider = request.user.username
-        os.aprovado_lider_em = timezone.now()
-        os.save()
-        messages.success(
-            request,
-            "Ordem de Serviço aprovada."
-        )
-
-        ordem_servico = OS.objects.create(
-            contrato=os.contrato,
-            solicitacao=os,
-            cod_projeto=os.cod_projeto,
-            coordenador=os.solicitante,
-            lider_contrato=os.lider_contrato,
-            titulo=os.titulo,
-            descricao=os.descricao,
-            valor=os.valor_previsto if os.valor_previsto else None,
-            prazo_execucao=os.prazo_execucao if os.prazo_execucao else None,
-            arquivo_os=os.arquivo_os if os.arquivo_os else None,
-        )
-        assunto = f"Aprovação da OS {os.id}"
-        mensagem = (
-            f"O gerente de contrato, {request.user.get_full_name() or request.user.username}, "
-            f"aprovou a Ordem de Serviço {os.id}.\n\n"
-            "Acesse o sistema HIDROGestão para mais informações.\n"
-            "https://hidrogestao.pythonanywhere.com/"
-        )
-        try:
-            send_mail(
-                assunto, mensagem,
-                FROM_EMAIL,
-                [os.solicitante.email],
-                fail_silently=False,
-            )
-        except Exception as e:
-            messages.warning(request, f"Erro ao enviar e-mail para líder técnico: {e}")
-
-        emails_suprimentos = list(
-            User.objects.filter(grupo="suprimento")
-            .exclude(email__isnull=True)
-            .exclude(email__exact="")
-            .values_list("email", flat=True)
-        )
-        try:
-            send_mail(
-                assunto, mensagem,
-                FROM_EMAIL,
-                list(set(emails_suprimentos)),
-                fail_silently=False,
-            )
-        except Exception as e:
-            messages.warning(request, f"Erro ao enviar e-mail para a equipe de suprimentos: {e}")
-
-
-
-    elif acao == 'reprovar':
-        os.status = 'reprovada'
-        os.aprovacao_lider = request.user.username
-        os.aprovado_lider_em = timezone.now()
-        os.save()
-        messages.error(request, "Ordem de Serviço reprovada pela Gerência de Contrato.")
-
-        assunto = f"Reprovação da OS {os.id}"
-        mensagem = (
-            f"O gerente de contrato, {request.user.get_full_name() or request.user.username}, "
-            f"reprovou a Ordem de Serviço {os.id}.\n\n"
-            "Acesse o sistema HIDROGestão para mais informações.\n"
-            "https://hidrogestao.pythonanywhere.com/"
-        )
-        try:
-            send_mail(
-                assunto, mensagem,
-                FROM_EMAIL,
-                [os.solicitante.email],
-                fail_silently=False,
-            )
-        except Exception as e:
-            messages.warning(request, f"Erro ao enviar e-mail para líder técnico: {e}")
-
-        emails_suprimentos = list(
-            User.objects.filter(grupo="suprimento")
-            .exclude(email__isnull=True)
-            .exclude(email__exact="")
-            .values_list("email", flat=True)
-        )
-        try:
-            send_mail(
-                assunto, mensagem,
-                FROM_EMAIL,
-                list(set(emails_suprimentos)),
-                fail_silently=False,
-            )
-        except Exception as e:
-            messages.warning(request, f"Erro ao enviar e-mail para a equipe de suprimentos: {e}")
-
-    else:
+    if acao not in ['aprovar', 'reprovar']:
         messages.error(request, "Ação inválida.")
+        return redirect('detalhe_ordem_servico', pk=os.pk)
+
+    if os.status == 'pendente_gerente':
+        if acao == 'reprovar':
+            os.status = 'reprovada'
+            os.aprovacao_gerente = 'reprovado'
+            os.aprovado_gerente_em = timezone.now()
+            os.justificativa_reprovacao_gerente = None
+            os.save(update_fields=['status', 'aprovacao_gerente', 'aprovado_gerente_em', 'justificativa_reprovacao_gerente'])
+            messages.error(request, "Solicitacao de OS reprovada pela Gerencia de Contrato.")
+            return redirect('detalhe_ordem_servico', pk=os.pk)
+
+        os.aprovacao_gerente = 'aprovado'
+        os.aprovado_gerente_em = timezone.now()
+        os.justificativa_reprovacao_gerente = None
+        os.status = 'pendente_suprimento' if os.aprovacao_diretor == 'aprovado' else 'pendente_diretoria'
+        os.save(update_fields=['status', 'aprovacao_gerente', 'aprovado_gerente_em', 'justificativa_reprovacao_gerente'])
+
+        if os.status == 'pendente_suprimento':
+            try:
+                _notify_os_supply_minute_request(os)
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para o suprimento: {e}")
+            messages.success(request, "Solicitacao de OS aprovada e enviada ao suprimento para inserir a minuta.")
+        else:
+            messages.success(request, "Solicitacao de OS aprovada pela Gerencia de Contrato e enviada para a Diretoria.")
+        return redirect('detalhe_ordem_servico', pk=os.pk)
+
+    if acao == 'reprovar':
+        justificativa = request.POST.get("justificativa", "").strip()
+        if not justificativa:
+            messages.error(request, "A justificativa é obrigatória para reprovar a minuta da OS.")
+            return redirect('detalhe_ordem_servico', pk=os.pk)
+        os.status = 'pendente_suprimento'
+        os.aprovacao_gerente = 'reprovado'
+        os.aprovado_gerente_em = timezone.now()
+        os.justificativa_reprovacao_gerente = justificativa
+        os.save(update_fields=['status', 'aprovacao_gerente', 'aprovado_gerente_em', 'justificativa_reprovacao_gerente'])
+        messages.error(request, "Minuta da OS reprovada pela Gerencia de Contrato.")
+        return redirect('detalhe_ordem_servico', pk=os.pk)
+
+    os.status = 'aprovada'
+    os.aprovacao_gerente = 'aprovado'
+    os.aprovado_gerente_em = timezone.now()
+    os.justificativa_reprovacao_gerente = None
+    os.save(update_fields=['status', 'aprovacao_gerente', 'aprovado_gerente_em', 'justificativa_reprovacao_gerente'])
+
+    OS.objects.create(
+        contrato=os.contrato,
+        solicitacao=os,
+        cod_projeto=os.cod_projeto,
+        coordenador=os.coordenador,
+        lider_contrato=os.lider_contrato,
+        titulo=os.titulo,
+        descricao=os.descricao,
+        valor=os.valor_previsto if os.valor_previsto else None,
+        data_prevista_pagamento=os.data_prevista_pagamento,
+        prazo_execucao=os.prazo_execucao if os.prazo_execucao else None,
+        arquivo_os=os.arquivo_os if os.arquivo_os else None,
+    )
+    messages.success(request, "Minuta aprovada e OS cadastrada com sucesso.")
+
+    return redirect('detalhe_ordem_servico', pk=os.pk)
+
+
+@login_required
+def aprovar_os_diretoria(request, pk, acao):
+    os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
+
+    if request.user.grupo != 'diretoria':
+        messages.error(request, "Você não tem permissão para esta ação.")
+        return redirect('detalhe_ordem_servico', pk=os.pk)
+
+    if os.status not in ['pendente_gerente', 'pendente_diretoria']:
+        messages.warning(request, "Esta OS nao esta pendente da Diretoria.")
+        return redirect('detalhe_ordem_servico', pk=os.pk)
+
+    if acao not in ['aprovar', 'reprovar']:
+        messages.error(request, "Ação inválida.")
+        return redirect('detalhe_ordem_servico', pk=os.pk)
+
+    if acao == 'reprovar':
+        os.status = 'reprovada'
+        os.aprovacao_diretor = 'reprovado'
+        os.aprovado_diretor_em = timezone.now()
+        os.save(update_fields=['status', 'aprovacao_diretor', 'aprovado_diretor_em'])
+        messages.error(request, "Solicitacao de OS reprovada pela Diretoria.")
+        return redirect('detalhe_ordem_servico', pk=os.pk)
+
+    os.aprovacao_diretor = 'aprovado'
+    os.aprovado_diretor_em = timezone.now()
+    os.status = 'pendente_suprimento' if os.aprovacao_gerente == 'aprovado' else 'pendente_gerente'
+    os.save(update_fields=['status', 'aprovacao_diretor', 'aprovado_diretor_em'])
+
+    if os.status == 'pendente_suprimento':
+        try:
+            _notify_os_supply_minute_request(os)
+        except Exception as e:
+            messages.warning(request, f"Erro ao enviar e-mail para o suprimento: {e}")
+        messages.success(request, "Solicitacao de OS aprovada e enviada ao suprimento para inserir a minuta.")
+    else:
+        messages.success(request, "Solicitacao de OS aprovada pela Diretoria e aguardando a Gerencia de Contrato.")
 
     return redirect('detalhe_ordem_servico', pk=os.pk)
 
@@ -5020,15 +4999,15 @@ def lista_solicitacoes(request):
     if request.user.grupo == 'coordenador':
         solicitacoes = SolicitacaoProspeccao.objects.filter(coordenador=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
         solicitacoes_c = SolicitacaoContrato.objects.filter(coordenador=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = OS.objects.filter(coordenador=request.user).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
+        os = SolicitacaoOrdemServico.objects.filter(coordenador=request.user).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
     elif request.user.grupo == 'lider_contrato':
         solicitacoes = SolicitacaoProspeccao.objects.filter(lider_contrato=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
         solicitacoes_c = SolicitacaoContrato.objects.filter(lider_contrato=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = OS.objects.filter(lider_contrato=request.user).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
+        os = SolicitacaoOrdemServico.objects.filter(lider_contrato=request.user).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
     elif request.user.grupo in ['suprimento', 'diretoria']:
         solicitacoes = SolicitacaoProspeccao.objects.all().exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
         solicitacoes_c = SolicitacaoContrato.objects.all().exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = OS.objects.all().exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
+        os = SolicitacaoOrdemServico.objects.exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
     elif request.user.grupo in ['gerente', 'gerente_lider']:
         centros_do_gerente = request.user.centros.all()
         # filtra solicitações cujo solicitante tenha pelo menos um centro em comum
@@ -5036,13 +5015,16 @@ def lista_solicitacoes(request):
             coordenador__centros__in=centros_do_gerente
         ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
         solicitacoes_c = SolicitacaoContrato.objects.filter(coordenador__centros__in=centros_do_gerente).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = OS.objects.filter(coordenador__centros__in=centros_do_gerente).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
+        os = SolicitacaoOrdemServico.objects.filter(coordenador__centros__in=centros_do_gerente).exclude(status__in=["finalizada", "aprovada", "reprovada"]).distinct().order_by('-criado_em')
     elif request.user.grupo == 'gerente_contrato':
         solicitacoes = SolicitacaoProspeccao.objects.filter(
             lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']
         ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
         solicitacoes_c = SolicitacaoContrato.objects.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = OS.objects.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
+        os = SolicitacaoOrdemServico.objects.filter(
+            lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider'],
+            status__in=['pendente_gerente', 'pendente_diretoria', 'pendente_suprimento', 'pendente_minuta_gerente']
+        ).distinct().order_by('-criado_em')
     else:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
@@ -5819,7 +5801,7 @@ def detalhes_solicitacao(request, pk):
 
 @login_required
 def detalhe_os(request, pk):
-    if request.user.grupo not in ['suprimento', 'lider_contrato', 'coordenador', 'gerente', 'gerente_lider', 'gerente_contrato']:
+    if request.user.grupo not in ['suprimento', 'lider_contrato', 'coordenador', 'gerente', 'gerente_lider', 'gerente_contrato', 'diretoria']:
         messages.error(request, "Você não tem permissão para isso.")
         return redirect('home')
 
@@ -5840,18 +5822,20 @@ def detalhe_os(request, pk):
 
     status_order = [
         'Solicitação de OS',
-        'Pendente líder',
-        'Pendente Gerente',
-        'Pendente Suprimento',
-        'Aprovada',
+        'Aprovação da Gerência',
+        'Aprovação da Diretoria',
+        'Minuta da OS',
+        'Avaliação da Minuta',
+        'OS Cadastrada',
     ]
 
     status_map = {
         'solicitacao_os': 0,
-        'pendente_lider': 1,
-        'pendente_gerente': 2,
+        'pendente_gerente': 1,
+        'pendente_diretoria': 2,
         'pendente_suprimento': 3,
-        'aprovada': 4,
+        'pendente_minuta_gerente': 4,
+        'aprovada': 5,
     }
 
     current_index = status_map.get(os.status, 0)
@@ -7347,6 +7331,11 @@ def avaliar_bm(request, bm_id):
     usuario = request.user
     contrato = bm.contrato
     operational_pending = bm_is_operationally_pending(bm)
+    referencia_bm = (
+        f"Evento: {bm.evento.descricao}"
+        if bm.evento
+        else f"OS: {bm.os.titulo}" if bm.os else "Sem referência"
+    )
 
     if usuario.grupo not in ["lider_contrato", "gerente_lider", "gerente_contrato", "diretoria"]:
         messages.error(request, "⚠ Você não tem permissão para isso.")
@@ -7393,15 +7382,15 @@ def avaliar_bm(request, bm_id):
             if lista_emails_gerencia:
                 assunto = f"BM aprovado pela liderança - Contrato {bm.contrato.num_contrato}"
                 mensagem = (
-                    f"Olá,\n\n"
-                    f"O BM {bm.numero_bm} do contrato {bm.contrato.num_contrato} "
-                    f"foi aprovado por {usuario.get_full_name() or usuario.username}.\n\n"
-                    f"Projeto: {bm.contrato.cod_projeto}\n"
-                    f"Evento: {bm.evento.descricao}\n"
-                    f"Valor BM: R$ {bm.valor_pago}\n\n"
-                    f"Seu registro adicional não é obrigatório, mas esta aprovação foi comunicada para acompanhamento.\n\n"
-                    f"Atenciosamente,\n"
-                    f"Sistema HIDROGestão"
+                        f"Olá,\n\n"
+                        f"O BM {bm.numero_bm} do contrato {bm.contrato.num_contrato} "
+                        f"foi aprovado por {usuario.get_full_name() or usuario.username}.\n\n"
+                        f"Projeto: {bm.contrato.cod_projeto}\n"
+                        f"{referencia_bm}\n"
+                        f"Valor BM: R$ {bm.valor_pago}\n\n"
+                        f"Seu registro adicional não é obrigatório, mas esta aprovação foi comunicada para acompanhamento.\n\n"
+                        f"Atenciosamente,\n"
+                        f"Sistema HIDROGestão"
                 )
                 send_mail(
                     assunto,
@@ -7460,7 +7449,7 @@ def avaliar_bm(request, bm_id):
                     f"A diretoria APROVOU o pagamento do BM abaixo:\n\n"
                     f"Projeto: {bm.contrato.cod_projeto}\n"
                     f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
-                    f"Evento: {bm.evento.descricao}\n"
+                    f"{referencia_bm}\n"
                     f"Valor BM: R$ {bm.valor_pago}\n\n"
                     f"Atenciosamente,\n"
                     f"Sistema HIDROGestão"
@@ -7498,7 +7487,7 @@ def avaliar_bm(request, bm_id):
                             f"O Boletim de Medição foi APROVADO pelo gerente de contrato.\n\n"
                             f"Projeto: {bm.contrato.cod_projeto}\n"
                             f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
-                            f"Evento: {bm.evento.descricao}\n"
+                            f"{referencia_bm}\n"
                             f"Valor BM: R$ {bm.valor_pago}\n\n"
                             f"Atenciosamente,\n"
                             f"Sistema HIDROGestão"
@@ -7510,7 +7499,7 @@ def avaliar_bm(request, bm_id):
                             f"O Boletim de Medição foi REPROVADO.\n\n"
                             f"Projeto: {bm.contrato.cod_projeto}\n"
                             f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
-                            f"Evento: {bm.evento.descricao}\n\n"
+                            f"{referencia_bm}\n\n"
                             f"Justificativas:\n"
                             f"- Líder: {bm.justificativa_reprovacao_coordenador or 'Aprovou'}\n"
                             f"- Gerente: {bm.justificativa_reprovacao_gerente or 'Aprovou'}\n\n"
@@ -7575,6 +7564,7 @@ def previsao_pagamentos(request):
         )
 
         filtros_os = Q(
+            Q(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]) |
             Q(data_pagamento__range=[data_inicio_filtro, data_limite])
         )
 
@@ -7590,13 +7580,14 @@ def previsao_pagamentos(request):
             os_queryset = os_queryset.filter(coordenador=coordenador)
 
         eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
-        os_queryset = os_queryset.order_by('data_pagamento')
+        os_queryset = os_queryset.order_by('data_prevista_pagamento', 'data_pagamento')
 
         pagamentos_eventos = [
             {
                 "tipo": "Evento",
                 "projeto": evento.contrato_terceiro.cod_projeto.cod_projeto if evento.contrato_terceiro and evento.contrato_terceiro.cod_projeto else "",
-                "coordenador": evento.contrato_terceiro.coordenador.username if evento.contrato_terceiro and evento.contrato_terceiro.coordenador else "",
+                "coordenador": evento.contrato_terceiro.coordenador.get_full_name() if evento.contrato_terceiro and evento.contrato_terceiro.coordenador else "",
+                "lider_contrato": evento.contrato_terceiro.lider_contrato.get_full_name() if evento.contrato_terceiro and evento.contrato_terceiro.lider_contrato else "",
                 "fornecedor": evento.empresa_terceira.nome if evento.empresa_terceira else "",
                 "data_prevista": evento.data_prevista_pagamento,
                 "valor_previsto": Decimal(evento.valor_previsto or 0),
@@ -7610,9 +7601,10 @@ def previsao_pagamentos(request):
             {
                 "tipo": "OS",
                 "projeto": ordem_servico.cod_projeto.cod_projeto if ordem_servico.cod_projeto else "",
-                "coordenador": ordem_servico.coordenador.username if ordem_servico.coordenador else "",
+                "coordenador": ordem_servico.coordenador.get_full_name() if ordem_servico.coordenador else "",
+                "lider_contrato":ordem_servico.lider_contrato.get_full_name() if ordem_servico.lider_contrato else "",
                 "fornecedor": ordem_servico.contrato.empresa_terceira.nome if ordem_servico.contrato and ordem_servico.contrato.empresa_terceira else "",
-                "data_prevista": ordem_servico.data_pagamento,
+                "data_prevista": ordem_servico.data_prevista_pagamento,
                 "valor_previsto": Decimal(ordem_servico.valor or 0),
                 "data_pagamento": ordem_servico.data_pagamento,
                 "valor_pago": Decimal(ordem_servico.valor_pago or 0),
@@ -7661,8 +7653,9 @@ def previsao_pagamentos(request):
 
         # OS
         for os in os_queryset:
+            if os.data_prevista_pagamento:
+                acumulado_previsto_por_data[os.data_prevista_pagamento] += os.valor or 0
             if os.data_pagamento:
-                acumulado_previsto_por_data[os.data_pagamento] += os.valor or 0
                 acumulado_pago_por_data[os.data_pagamento] += os.valor_pago or 0
 
         datas = sorted(set(acumulado_previsto_por_data.keys()) | set(acumulado_pago_por_data.keys()))
@@ -7722,10 +7715,26 @@ def previsao_pagamentos(request):
         # ==== GRÁFICO 2: POR COORDENADOR ====
         calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
                           .values_list('data_pagamento', flat=True))
+        if not calendario:
+            calendario = sorted(
+                {
+                    data for data in (
+                        list(eventos.values_list('data_prevista_pagamento', flat=True))
+                        + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
+                        + list(os_queryset.values_list('data_pagamento', flat=True))
+                    ) if data
+                }
+            )
 
-        coordenadores = list(set(
-            eventos.values_list('contrato_terceiro__coordenador__username', flat=True)
-        ))
+        coordenadores = sorted(
+            {
+                nome for nome in (
+                    list(eventos.values_list('contrato_terceiro__coordenador__username', flat=True))
+                    + list(eventos.values_list('contrato_terceiro__cod_projeto__coordenador__username', flat=True))
+                    + list(os_queryset.values_list('coordenador__username', flat=True))
+                ) if nome
+            }
+        )
 
         fig_barra = go.Figure()
         for coord in coordenadores:
@@ -7737,23 +7746,25 @@ def previsao_pagamentos(request):
                 if data_inicio:
                     filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
 
-                if request.user.grupo == 'gerente_contrato':
-                    eventos_previsto = Evento.objects.filter(
-                        filtro_periodo,
-                        contrato_terceiro__coordenador__username=coord,
-                        contrato_terceiro__lider_contrato__grupo='lider_contrato'
-                    )
-                else:
-                    eventos_previsto = Evento.objects.filter(
-                        filtro_periodo,
-                        contrato_terceiro__coordenador__username=coord
-                    )
-
-                total_previsto_periodo = eventos_previsto.aggregate(
+                eventos_previsto = eventos.filter(
+                    filtro_periodo
+                ).filter(
+                    Q(contrato_terceiro__coordenador__username=coord)
+                    | Q(contrato_terceiro__cod_projeto__coordenador__username=coord)
+                )
+                total_previsto_eventos = eventos_previsto.aggregate(
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
                 )['total']
+                total_previsto_os = os_queryset.filter(
+                    data_prevista_pagamento__lte=data_fim,
+                    coordenador__username=coord,
+                ).filter(
+                    Q(data_prevista_pagamento__gt=data_inicio) if data_inicio else Q()
+                ).aggregate(
+                    total=Coalesce(Sum('valor'), Decimal('0.00'))
+                )['total']
 
-                y_previstos.append(total_previsto_periodo)
+                y_previstos.append(total_previsto_eventos + total_previsto_os)
                 data_inicio = data_fim
 
             fig_barra.add_trace(go.Bar(
@@ -7764,7 +7775,7 @@ def previsao_pagamentos(request):
 
         fig_barra.update_layout(
             barmode='stack',
-            title="Pagamentos Previsto (por Coordenador, conforme calendário de pagamento)",
+            title="Pagamentos Previstos (Eventos + OS por Líder Técnico, conforme calendário de pagamento)",
             xaxis_title="Data do Calendário",
             yaxis_title="Valor Previsto (R$)",
             template="plotly_white",
@@ -7775,9 +7786,15 @@ def previsao_pagamentos(request):
         grafico_barras = plot(fig_barra, output_type='div')
 
         # ==== GRÁFICO 2.1: POR LÍDER DE CONTRATO ====
-        lideres_contrato = list(set(
-            eventos.values_list('contrato_terceiro__lider_contrato__username', flat=True)
-        ))
+        lideres_contrato = sorted(
+            {
+                nome for nome in (
+                    list(eventos.values_list('contrato_terceiro__lider_contrato__username', flat=True))
+                    + list(eventos.values_list('contrato_terceiro__cod_projeto__lider_contrato__username', flat=True))
+                    + list(os_queryset.values_list('lider_contrato__username', flat=True))
+                ) if nome
+            }
+        )
 
         fig_barra_lider = go.Figure()
         for lider in lideres_contrato:
@@ -7790,15 +7807,25 @@ def previsao_pagamentos(request):
                     filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
 
                 eventos_previsto = eventos.filter(
-                    filtro_periodo,
-                    contrato_terceiro__lider_contrato__username=lider,
+                    filtro_periodo
+                ).filter(
+                    Q(contrato_terceiro__lider_contrato__username=lider)
+                    | Q(contrato_terceiro__cod_projeto__lider_contrato__username=lider)
                 )
 
-                total_previsto_periodo = eventos_previsto.aggregate(
+                total_previsto_eventos = eventos_previsto.aggregate(
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
                 )['total']
+                total_previsto_os = os_queryset.filter(
+                    data_prevista_pagamento__lte=data_fim,
+                    lider_contrato__username=lider,
+                ).filter(
+                    Q(data_prevista_pagamento__gt=data_inicio) if data_inicio else Q()
+                ).aggregate(
+                    total=Coalesce(Sum('valor'), Decimal('0.00'))
+                )['total']
 
-                y_previstos.append(total_previsto_periodo)
+                y_previstos.append(total_previsto_eventos + total_previsto_os)
                 data_inicio = data_fim
 
             fig_barra_lider.add_trace(go.Bar(
@@ -7809,7 +7836,7 @@ def previsao_pagamentos(request):
 
         fig_barra_lider.update_layout(
             barmode='stack',
-            title="Pagamentos Previsto (por Líder de Contrato, conforme calendário de pagamento)",
+            title="Pagamentos Previstos (Eventos + OS por Líder de Contrato, conforme calendário de pagamento)",
             xaxis_title="Data do Calendário",
             yaxis_title="Valor Previsto (R$)",
             template="plotly_white",
@@ -7822,28 +7849,25 @@ def previsao_pagamentos(request):
         # ==== GRÁFICO 2.2: POR PROJETO ====
         calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
                           .values_list('data_pagamento', flat=True))
+        if not calendario:
+            calendario = sorted(
+                {
+                    data for data in (
+                        list(eventos.values_list('data_prevista_pagamento', flat=True))
+                        + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
+                        + list(os_queryset.values_list('data_pagamento', flat=True))
+                    ) if data
+                }
+            )
 
         # filtra os projetos conforme coordenador (ou todos se não houver filtro)
-        if coordenador:
-            if request.user.grupo == 'gerente_contrato':
-                projetos = list(Evento.objects.filter(
-                    contrato_terceiro__coordenador=coordenador, contrato_terceiro__isnull=False,
-                    contrato_terceiro__lider_contrato__grupo='lider_contrato'
-                ).values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True))
-            else:
-                projetos = list(Evento.objects.filter(
-                    contrato_terceiro__coordenador=coordenador, contrato_terceiro__isnull=False,
-                ).values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True))
-        else:
-            if request.user.grupo == 'gerente_contrato':
-                projetos = list(Evento.objects.filter(
-                    contrato_terceiro__lider_contrato__grupo='lider_contrato', contrato_terceiro__isnull=False,
-                ).values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True))
-            else:
-                projetos = list(Evento.objects.values_list(
-                    'contrato_terceiro__cod_projeto__cod_projeto', flat=True))
-
-        projetos = list(set(projetos))
+        projetos_eventos = list(
+            eventos.values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True)
+        )
+        projetos_os = list(
+            os_queryset.values_list('cod_projeto__cod_projeto', flat=True)
+        )
+        projetos = sorted({projeto for projeto in (projetos_eventos + projetos_os) if projeto})
 
         fig_barra_proj = go.Figure()
         for proj in projetos:
@@ -7855,17 +7879,26 @@ def previsao_pagamentos(request):
                 if data_inicio:
                     filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
 
-                filtro_base = Q(contrato_terceiro__cod_projeto__cod_projeto=proj)
+                filtro_base_evento = Q(contrato_terceiro__cod_projeto__cod_projeto=proj)
+                filtro_base_os = Q(cod_projeto__cod_projeto=proj)
                 if coordenador:
-                    filtro_base &= Q(contrato_terceiro__coordenador=coordenador)
+                    filtro_base_evento &= Q(contrato_terceiro__coordenador=coordenador)
+                    filtro_base_os &= Q(coordenador=coordenador)
 
-                eventos_previsto = Evento.objects.filter(filtro_periodo & filtro_base, contrato_terceiro__isnull=False)
-
-                total_previsto_periodo = eventos_previsto.aggregate(
+                eventos_previsto = eventos.filter(filtro_periodo & filtro_base_evento)
+                total_previsto_eventos = eventos_previsto.aggregate(
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
                 )['total']
+                os_previsto = os_queryset.filter(
+                    data_prevista_pagamento__lte=data_fim
+                ).filter(
+                    Q(data_prevista_pagamento__gt=data_inicio) if data_inicio else Q()
+                ).filter(filtro_base_os)
+                total_previsto_os = os_previsto.aggregate(
+                    total=Coalesce(Sum('valor'), Decimal('0.00'))
+                )['total']
 
-                y_previstos.append(total_previsto_periodo)
+                y_previstos.append(total_previsto_eventos + total_previsto_os)
                 data_inicio = data_fim
 
             fig_barra_proj.add_trace(go.Bar(
@@ -7876,7 +7909,7 @@ def previsao_pagamentos(request):
 
         fig_barra_proj.update_layout(
             barmode='stack',
-            title="Pagamentos Previsto (por Projeto, conforme calendário de pagamento)",
+            title="Pagamentos Previstos (Eventos + OS por Projeto, conforme calendário de pagamento)",
             xaxis_title="Data do Calendário",
             yaxis_title="Valor Previsto (R$)",
             template="plotly_white",
@@ -7892,6 +7925,17 @@ def previsao_pagamentos(request):
             CalendarioPagamento.objects.order_by("data_pagamento")
             .values_list("data_pagamento", flat=True)
         )
+        if not calendario:
+            calendario = sorted(
+                {
+                    data for data in (
+                        list(eventos.values_list('data_prevista_pagamento', flat=True))
+                        + list(eventos.values_list('data_pagamento', flat=True))
+                        + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
+                        + list(os_queryset.values_list('data_pagamento', flat=True))
+                    ) if data
+                }
+            )
 
         y_previstos = []
         y_pagos = []
@@ -7900,12 +7944,12 @@ def previsao_pagamentos(request):
         for data_fim in calendario:
             filtro_prev_evento = Q(data_prevista_pagamento__lte=data_fim)
             filtro_pago_evento = Q(data_pagamento__lte=data_fim)
-            filtro_os = Q(data_pagamento__lte=data_fim)
+            filtro_os = Q(data_prevista_pagamento__lte=data_fim)
 
             if data_inicio:
                 filtro_prev_evento &= Q(data_prevista_pagamento__gt=data_inicio)
                 filtro_pago_evento &= Q(data_pagamento__gt=data_inicio)
-                filtro_os &= Q(data_pagamento__gt=data_inicio)
+                filtro_os &= Q(data_prevista_pagamento__gt=data_inicio)
 
             if coordenador:
                 filtro_prev_evento &= Q(contrato_terceiro__coordenador=coordenador)
@@ -7979,7 +8023,8 @@ def previsao_pagamentos(request):
         bms = bms.select_related(
             'contrato__cod_projeto',
             'contrato__coordenador',
-            'evento'
+            'evento',
+            'os'
         ).order_by('-data_pagamento')
 
         # Se o coordenador foi selecionado, filtra também os BMs
@@ -8013,7 +8058,11 @@ def previsao_pagamentos(request):
 
         total_bm_pago = sum(bm.valor_pago or 0 for bm in bms)
         total_bm_previsto = sum(
-            (bm.evento.valor_previsto if bm.evento and bm.evento.valor_previsto else 0)
+            (
+                bm.evento.valor_previsto if bm.evento and bm.evento.valor_previsto
+                else bm.os.valor if bm.os and bm.os.valor
+                else 0
+            )
             for bm in bms
         )
 
@@ -8147,6 +8196,7 @@ def exportar_previsao_pagamentos_excel(request):
     eventos = filter_payment_events_for_user(usuario, filtros_base)
     os_queryset = filter_payment_os_for_user(
         usuario,
+        Q(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]) |
         Q(data_pagamento__range=[data_inicio_filtro, data_limite])
     )
 
@@ -8158,7 +8208,7 @@ def exportar_previsao_pagamentos_excel(request):
         os_queryset = os_queryset.filter(coordenador=coordenador)
 
     eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
-    os_queryset = os_queryset.order_by('data_pagamento')
+    os_queryset = os_queryset.order_by('data_prevista_pagamento', 'data_pagamento')
 
     pagamentos_exportacao = []
     for evento in eventos:
@@ -8176,7 +8226,7 @@ def exportar_previsao_pagamentos_excel(request):
     for ordem_servico in os_queryset:
         pagamentos_exportacao.append({
             "tipo": "OS",
-            "data_prevista": ordem_servico.data_pagamento,
+            "data_prevista": ordem_servico.data_prevista_pagamento,
             "projeto": ordem_servico.cod_projeto.cod_projeto if ordem_servico.cod_projeto else "",
             "fornecedor": ordem_servico.contrato.empresa_terceira.nome if ordem_servico.contrato and ordem_servico.contrato.empresa_terceira else "",
             "coordenador": ordem_servico.coordenador.username if ordem_servico.coordenador else "",
@@ -8501,6 +8551,45 @@ def cadastrar_bm(request, contrato_id, evento_id):
 
 
 @login_required
+def cadastrar_bm_os(request, os_id):
+    if request.user.grupo not in ["suprimento"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    os_obj = get_object_or_404(OS, id=os_id)
+    contrato = os_obj.contrato
+
+    if request.method == "POST":
+        form = BMForm(request.POST, request.FILES)
+        if form.is_valid():
+            bm = form.save(commit=False)
+            bm.contrato = contrato
+            bm.os = os_obj
+
+            if not bm.valor_pago:
+                bm.valor_pago = os_obj.valor or 0
+
+            bm.save()
+            return JsonResponse({"success": True})
+
+        return JsonResponse({"success": False, "errors": form.errors})
+
+    form = BMForm(initial={
+        "valor_pago": os_obj.valor,
+        "data_pagamento": (
+            os_obj.data_pagamento.strftime('%Y-%m-%d')
+            if os_obj.data_pagamento else None
+        ),
+    })
+
+    return render(request, "bm/cadastrar_bm_popup.html", {
+        "form": form,
+        "contrato": contrato,
+        "os": os_obj,
+    })
+
+
+@login_required
 def cadastrar_nf(request, evento_id):
     if request.user.grupo not in ["suprimento", "financeiro"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -8589,6 +8678,50 @@ def cadastrar_nf(request, evento_id):
 
 
 @login_required
+def cadastrar_nf_os(request, os_id):
+    if request.user.grupo not in ["suprimento", "financeiro"]:
+        messages.error(request, "Você não tem permissão para isso!")
+        return redirect("home")
+
+    os_obj = get_object_or_404(OS, id=os_id)
+    contrato = get_object_or_404(ContratoTerceiros, id=os_obj.contrato.id)
+
+    def atualizar_os_com_base_na_nf(nf_obj):
+        if not nf_obj.financeiro_autorizou:
+            return
+        os_obj.valor_pago = nf_obj.valor_pago
+        os_obj.data_pagamento = nf_obj.data_pagamento
+        os_obj.observacao = nf_obj.observacao
+        os_obj.save(update_fields=["valor_pago", "data_pagamento", "observacao"])
+
+    if request.method == "POST":
+        form = NFForm(request.POST, request.FILES, os=os_obj)
+        if form.is_valid():
+            nf = form.save(commit=False)
+            nf.contrato = contrato
+            nf.os = os_obj
+            nf.evento = None
+            nf.save()
+            atualizar_os_com_base_na_nf(nf)
+            return JsonResponse({"success": True})
+        return JsonResponse({"success": False, "errors": form.errors})
+
+    form = NFForm(
+        os=os_obj,
+        initial={
+            "valor_pago": os_obj.valor or None,
+            "data_pagamento": os_obj.data_pagamento or None,
+        }
+    )
+
+    return render(request, "nf/cadastrar_nf_popup.html", {
+        "form": form,
+        "contrato": contrato,
+        "os": os_obj,
+    })
+
+
+@login_required
 def editar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
 
@@ -8620,22 +8753,29 @@ def editar_nf(request, nf_id):
 
     nf = get_object_or_404(NF, id=nf_id)
     evento = nf.evento
+    os_obj = nf.os
 
     if request.method == "POST":
-        form = NFForm(request.POST, request.FILES, evento=evento, instance=nf)
+        form = NFForm(request.POST, request.FILES, evento=evento, os=os_obj, instance=nf)
         if form.is_valid():
             nf = form.save()
-            if nf.financeiro_autorizou:
+            if nf.financeiro_autorizou and evento:
                 evento.valor_pago = nf.valor_pago
                 evento.data_pagamento = nf.data_pagamento
                 evento.justificativa = nf.observacao
                 evento.save(update_fields=["valor_pago", "data_pagamento", "justificativa"])
+            if nf.financeiro_autorizou and os_obj:
+                os_obj.valor_pago = nf.valor_pago
+                os_obj.data_pagamento = nf.data_pagamento
+                os_obj.observacao = nf.observacao
+                os_obj.save(update_fields=["valor_pago", "data_pagamento", "observacao"])
             return JsonResponse({"success": True})
         return JsonResponse({"success": False, "errors": form.errors})
 
     else:
         form = NFForm(
             evento=evento,
+            os=os_obj,
             instance=nf,
             initial={
                 "valor_pago": nf.valor_pago,
@@ -8647,6 +8787,7 @@ def editar_nf(request, nf_id):
         "form": form,
         "nf": nf,
         "evento": evento,
+        "os": os_obj,
         "contrato": nf.contrato,
     })
 
@@ -8661,10 +8802,13 @@ def deletar_bm(request, pk):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
-    evento_id = bm.evento.id
+    evento_id = bm.evento.id if bm.evento else None
+    os_id = bm.os.id if bm.os else None
     bm.delete()
 
     messages.success(request, "BM apagado com sucesso!")
+    if os_id:
+        return redirect("registrar_entrega_os", pk=os_id)
     return redirect("registrar_entrega", pk=evento_id)
 
 
@@ -8675,11 +8819,14 @@ def deletar_nf(request, nf_id):
         return redirect("home")
 
     nf = get_object_or_404(NF, id=nf_id)
-    evento_id = nf.evento.id
+    evento_id = nf.evento.id if nf.evento else None
+    os_id = nf.os.id if nf.os else None
 
 
     nf.delete()
     messages.success(request, "NF apagada com sucesso!")
+    if os_id:
+        return redirect("registrar_entrega_os", pk=os_id)
     if request.user.grupo == 'financeiro':
         return redirect("detalhes_entrega", evento_id=evento_id)
     return redirect("registrar_entrega", pk=evento_id)
@@ -8804,6 +8951,8 @@ def detalhes_os(request, pk):
 @login_required
 def registrar_entrega_os(request, pk):
     os = get_object_or_404(OS, pk=pk)
+    boletins = os.boletins_medicao.all()
+    notas_fiscais = os.nota_fiscal.all()
 
     if not can_user_manage_os_delivery(request.user, os):
         messages.error(request, "Você não tem permissão para isso.")
@@ -8813,8 +8962,41 @@ def registrar_entrega_os(request, pk):
         messages.error(request, "Não é possível registrar entrega de uma OS cancelada.")
         return redirect("detalhes_os", pk=os.id)
 
+    boletins_detalhados = []
+    has_reprovacao_coordenador = False
+    has_reprovacao_gerente = False
+    tem_reprovacao_diretor = False
+
+    for bm in boletins:
+        operational_pending = bm_is_operationally_pending(bm)
+        can_approve_pagamento = (
+            request.user.grupo == "diretoria"
+            and bm_has_operational_approval(bm)
+        )
+
+        if bm_has_operational_approval(bm):
+            row_class = "table-success"
+        elif bm.status_coordenador == "reprovado" or bm.status_gerente == "reprovado":
+            row_class = "table-danger"
+        else:
+            row_class = "table-warning"
+
+        if bm.status_coordenador == "reprovado":
+            has_reprovacao_coordenador = True
+        if bm.status_gerente == "reprovado":
+            has_reprovacao_gerente = True
+        if bm.aprovacao_pagamento == "reprovado":
+            tem_reprovacao_diretor = True
+
+        boletins_detalhados.append({
+            "bm": bm,
+            "row_class": row_class,
+            "operational_pending": operational_pending,
+            "can_approve_pagamento": can_approve_pagamento,
+        })
+
     if request.method == "POST":
-        form = RegistroEntregaOSForm(request.POST, instance=os)
+        form = RegistroEntregaOSForm(request.POST, instance=os, user=request.user)
         if form.is_valid():
             entrega = form.save(commit=False)
 
@@ -8828,7 +9010,7 @@ def registrar_entrega_os(request, pk):
             messages.success(request, "Entrega da OS registrada com sucesso.")
             return redirect("detalhes_os", pk=os.id)
     else:
-        form = RegistroEntregaOSForm(instance=os)
+        form = RegistroEntregaOSForm(instance=os, user=request.user)
 
     return render(
         request,
@@ -8836,5 +9018,13 @@ def registrar_entrega_os(request, pk):
         {
             "os": os,
             "form": form,
+            "can_manage_delivery": can_user_manage_os_delivery(request.user, os),
+            "can_approve_bm_as_lider": request.user.grupo == "lider_contrato" and request.user == os.lider_contrato or request.user.grupo == "gerente_lider" and user_shares_center_with_coordinator(request.user, os.coordenador),
+            "can_approve_bm_as_gerente": request.user.grupo == "gerente_contrato",
+            "boletins_detalhados": boletins_detalhados,
+            "has_reprovacao_coordenador": has_reprovacao_coordenador,
+            "has_reprovacao_gerente": has_reprovacao_gerente,
+            "tem_reprovacao_diretor": tem_reprovacao_diretor,
+            "notas_fiscais": notas_fiscais,
         }
     )
