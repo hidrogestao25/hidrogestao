@@ -30,12 +30,7 @@
             <th>#</th>
             <th>Projeto</th>
             <th>Título</th>
-            {% if request.user.grupo != "coordenador" %}
-              <th>Solicitante</th>
-            {% endif %}
-            {% if request.user.grupo != "lider_contrato" %}
-              <th>Líder</th>
-            {% endif %}
+            <th>Líder</th>
             <th>Valor Previsto</th>
             <th>Status</th>
             <th>Prazo de Execução</th>
@@ -51,20 +46,13 @@
                 <td>{{ os.id }}</td>
                 <td>{{ os.cod_projeto }}</td>
                 <td>{{ os.titulo|truncatechars:40 }}</td>
-                {% if request.user.grupo != "coordenador" %}
-                  <td>
-                      {{ os.coordenador.get_full_name|default:os.coordenador.username }}
-                  </td>
-                {% endif %}
-                {% if request.user.grupo != "lider_contrato" %}
-                  <td>
-                      {% if os.lider_contrato %}
-                          {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
-                      {% else %}
-                          -
-                      {% endif %}
-                  </td>
-                {% endif %}
+                <td>
+                    {% if os.lider_contrato %}
+                        {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
                 <td>{{ os.valor }}</td>
                 <td>
                     {% if os.status == 'paralizada' %}
