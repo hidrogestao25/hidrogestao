@@ -15,7 +15,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.html import escape, strip_tags
 from django.views.generic.edit import CreateView
-from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato, AditivoContratoTerceiro, RegistroAuditoria
+from .models import Contrato, Cliente, EmpresaTerceira, ContratoTerceiros, SolicitacaoProspeccao, Indicadores, PropostaFornecedor, DocumentoContratoTerceiro, DocumentoBM, Evento, CalendarioPagamento, BM, NF, AvaliacaoFornecedor, NFCliente, SolicitacaoOrdemServico, OS, SolicitacaoContrato, AditivoContratoTerceiro, RegistroAuditoria, ConfiguracaoSLA, Feriado
 from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedorForm, SolicitacaoProspeccaoForm, DocumentoContratoTerceiroForm, DocumentoBMForm, EventoPrevisaoForm, EventoEntregaForm, FiltroPrevisaoForm, BMForm, NFForm, NFClienteForm, SolicitacaoOrdemServicoForm, SolicitacaoOrdemServicoSemContratoForm, UploadContratoOSForm, RegistroEntregaOSForm, OrdemServicoForm, SolicitacaoContratoForm, ContratoModalForm, SolicitacaoGuardaChuvaForm, SolicitacaoAditivoContratoTerceiroForm, DocumentoAditivoContratoTerceiroForm, DocumentoAditivoAssinadoContratoTerceiroForm
 
 import plotly.graph_objs as go
@@ -37,13 +37,73 @@ from io import BytesIO
 from datetime import datetime, timedelta
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from collections import Counter
+from collections import Counter, defaultdict
 
 User = get_user_model()
 FROM_EMAIL = settings.DEFAULT_FROM_EMAIL
 CONTRACT_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Contrato.docm"
 ADDENDUM_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Aditivo.docm"
 SIGNED_FILES_PENDING_STATUS = "Aguardando Arquivos Assinados"
+
+SLA_STAGE_DEFINITIONS = {
+    "prospeccao": [
+        {"slug": "solicitacao", "label": "Solicitação de prospecção", "statuses": ["Solicitação de prospecção", "Em análise"]},
+        {"slug": "aprovacao_suprimento", "label": "Aprovação do suprimento", "statuses": ["Aprovada pelo suprimento"]},
+        {"slug": "triagem", "label": "Triagem", "statuses": ["Triagem realizada"]},
+        {"slug": "aprovacao_fornecedor", "label": "Aprovação do fornecedor", "statuses": ["Fornecedor selecionado"]},
+        {"slug": "planejamento_contrato", "label": "Planejamento do contrato", "statuses": ["Fornecedor aprovado", "Planejamento do Contrato"]},
+        {"slug": "aprovacao_final", "label": "Aprovação final", "statuses": ["Aprovação Final"]},
+        {"slug": "documento_assinado", "label": "Contrato assinado", "statuses": [SIGNED_FILES_PENDING_STATUS]},
+    ],
+    "contratacao": [
+        {"slug": "solicitacao", "label": "Solicitação de contratação", "statuses": ["Solicitação de contratação", "Em análise"]},
+        {"slug": "planejamento_contrato", "label": "Planejamento do contrato", "statuses": ["Fornecedor aprovado", "Planejamento do Contrato"]},
+        {"slug": "aprovacao_final", "label": "Aprovação final", "statuses": ["Aprovação Final"]},
+        {"slug": "documento_assinado", "label": "Contrato assinado", "statuses": [SIGNED_FILES_PENDING_STATUS]},
+    ],
+    "os": [
+        {"slug": "aprovacao_gerencia", "label": "Aprovação da gerência", "statuses": ["solicitacao_os", "pendente_gerente"]},
+        {"slug": "aprovacao_diretoria", "label": "Aprovação da diretoria", "statuses": ["pendente_diretoria"]},
+        {"slug": "minuta_os", "label": "Minuta da OS", "statuses": ["pendente_suprimento"]},
+        {"slug": "aprovacao_minuta", "label": "Aprovação da minuta", "statuses": ["pendente_minuta_gerente"]},
+    ],
+    "aditivo": [
+        {"slug": "aprovacao_solicitacao", "label": "Aprovação da solicitação", "statuses": ["Aguardando Aprovacao da Solicitacao"]},
+        {"slug": "minuta_aditivo", "label": "Minuta do aditivo", "statuses": ["Aguardando Minuta do Aditivo"]},
+        {"slug": "aprovacao_minuta", "label": "Aprovação da minuta", "statuses": ["Aguardando Aprovacao da Minuta"]},
+        {"slug": "documento_assinado", "label": "Documento assinado", "statuses": ["Aguardando Documento Assinado"]},
+    ],
+}
+
+SLA_DEFAULT_CONFIG = {
+    "prospeccao": [
+        ("solicitacao", "Solicitação de prospecção", 2),
+        ("aprovacao_suprimento", "Aprovação do suprimento", 2),
+        ("triagem", "Triagem", 3),
+        ("aprovacao_fornecedor", "Aprovação do fornecedor", 3),
+        ("planejamento_contrato", "Planejamento do contrato", 2),
+        ("aprovacao_final", "Aprovação final", 2),
+        ("documento_assinado", "Contrato assinado", 5),
+    ],
+    "contratacao": [
+        ("solicitacao", "Solicitação de contratação", 3),
+        ("planejamento_contrato", "Planejamento do contrato", 2),
+        ("aprovacao_final", "Aprovação final", 2),
+        ("documento_assinado", "Contrato assinado", 5),
+    ],
+    "os": [
+        ("aprovacao_gerencia", "Aprovação da gerência", 2),
+        ("aprovacao_diretoria", "Aprovação da diretoria", 2),
+        ("minuta_os", "Minuta da OS", 2),
+        ("aprovacao_minuta", "Aprovação da minuta", 2),
+    ],
+    "aditivo": [
+        ("aprovacao_solicitacao", "Aprovação da solicitação", 2),
+        ("minuta_aditivo", "Minuta do aditivo", 2),
+        ("aprovacao_minuta", "Aprovação da minuta", 2),
+        ("documento_assinado", "Documento assinado", 3),
+    ],
+}
 
 
 def format_date_br(value):
@@ -73,6 +133,42 @@ def format_currency_br(value, with_symbol=False):
 
 def get_signed_files_pending_status():
     return SIGNED_FILES_PENDING_STATUS
+
+
+def _unique_emails(*groups):
+    emails = []
+    for group in groups:
+        if not group:
+            continue
+        for email in group:
+            if email:
+                emails.append(email)
+    return sorted(set(emails))
+
+
+def _group_emails(*grupos):
+    if not grupos:
+        return []
+    return list(
+        User.objects.filter(grupo__in=grupos, is_active=True)
+        .exclude(email__isnull=True)
+        .exclude(email__exact="")
+        .values_list("email", flat=True)
+        .distinct()
+    )
+
+
+def _safe_user_email(user):
+    if user and hasattr(user, "email") and user.email:
+        return user.email
+    return None
+
+
+def _send_stage_return_notification(assunto, mensagem, destinatarios):
+    lista_emails = _unique_emails(destinatarios)
+    if not lista_emails:
+        return
+    send_mail(assunto, mensagem, FROM_EMAIL, lista_emails, fail_silently=False)
 
 
 def notify_supply_about_signed_files_request(solicitacao):
@@ -682,6 +778,541 @@ def average_days_from_pairs(pairs):
     return round(sum(valid_deltas) / len(valid_deltas), 1)
 
 
+def normalize_to_date(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        if timezone.is_aware(value):
+            return timezone.localtime(value).date()
+        return value.date()
+    return value
+
+
+def build_holiday_date_set():
+    return set(
+        Feriado.objects.filter(ativo=True).values_list("data", flat=True)
+    )
+
+
+def business_days_between(start_value, end_value, holiday_dates=None):
+    start_date = normalize_to_date(start_value)
+    end_date = normalize_to_date(end_value)
+    if not start_date or not end_date or end_date <= start_date:
+        return 0
+
+    holiday_dates = holiday_dates or set()
+    current_date = start_date
+    total = 0
+    while current_date < end_date:
+        current_date += timedelta(days=1)
+        if current_date.weekday() >= 5:
+            continue
+        if current_date in holiday_dates:
+            continue
+        total += 1
+    return total
+
+
+def add_business_days(start_value, business_days, holiday_dates=None):
+    start_date = normalize_to_date(start_value)
+    if not start_date:
+        return None
+
+    holiday_dates = holiday_dates or set()
+    current_date = start_date
+    remaining = max(int(business_days or 0), 0)
+    while remaining > 0:
+        current_date += timedelta(days=1)
+        if current_date.weekday() >= 5:
+            continue
+        if current_date in holiday_dates:
+            continue
+        remaining -= 1
+    return current_date
+
+
+def get_sla_config_map():
+    config_rows = list(
+        ConfiguracaoSLA.objects.filter(ativo=True).order_by("tipo_fluxo", "ordem", "nome_etapa")
+    )
+    config_map = {}
+    if config_rows:
+        for item in config_rows:
+            config_map[(item.tipo_fluxo, item.etapa)] = item
+        return config_map
+
+    for tipo_fluxo, stage_rows in SLA_DEFAULT_CONFIG.items():
+        for ordem, (slug, nome_etapa, prazo) in enumerate(stage_rows, start=1):
+            config_map[(tipo_fluxo, slug)] = {
+                "tipo_fluxo": tipo_fluxo,
+                "etapa": slug,
+                "nome_etapa": nome_etapa,
+                "ordem": ordem,
+                "prazo_dias_uteis": prazo,
+                "ativo": True,
+            }
+    return config_map
+
+
+def get_sla_stage_label(tipo_fluxo, stage_slug):
+    for stage in SLA_STAGE_DEFINITIONS.get(tipo_fluxo, []):
+        if stage["slug"] == stage_slug:
+            return stage["label"]
+    return stage_slug.replace("_", " ").title()
+
+
+def get_sla_stage_mapping_rows(config_map):
+    rows = []
+    for tipo_fluxo, stages in SLA_STAGE_DEFINITIONS.items():
+        for ordem, stage in enumerate(stages, start=1):
+            config = config_map.get((tipo_fluxo, stage["slug"]))
+            prazo = getattr(config, "prazo_dias_uteis", None)
+            if prazo is None and isinstance(config, dict):
+                prazo = config.get("prazo_dias_uteis")
+            rows.append(
+                {
+                    "tipo_fluxo": tipo_fluxo,
+                    "fluxo_label": dict(ConfiguracaoSLA.TIPO_FLUXO_CHOICES).get(tipo_fluxo, tipo_fluxo.title()),
+                    "ordem": ordem,
+                    "etapa": stage["label"],
+                    "statuses": ", ".join(stage["statuses"]),
+                    "prazo_dias_uteis": prazo,
+                }
+            )
+    return rows
+
+
+def get_latest_audit_datetime(audit_map, object_id):
+    audit = audit_map.get(object_id)
+    if not audit:
+        return None
+    return audit.data_hora
+
+
+def get_open_sla_stage_for_prospeccao(solicitacao, audit_map):
+    if not solicitacao or solicitacao.status in ["Onboarding", "Reprovada pelo suprimento"]:
+        return None
+
+    latest_audit = get_latest_audit_datetime(audit_map, solicitacao.pk)
+    approval_complete_at = None
+    if solicitacao.aprocacao_fornecedor_gerente_em and solicitacao.aprocacao_fornecedor_diretor_em:
+        approval_complete_at = max(
+            solicitacao.aprocacao_fornecedor_gerente_em,
+            solicitacao.aprocacao_fornecedor_diretor_em,
+        )
+
+    stage_map = {
+        "Solicitação de prospecção": ("solicitacao", solicitacao.data_solicitacao),
+        "Em análise": ("solicitacao", solicitacao.data_solicitacao),
+        "Aprovada pelo suprimento": ("aprovacao_suprimento", solicitacao.data_aprovacao or latest_audit or solicitacao.data_solicitacao),
+        "Triagem realizada": ("triagem", latest_audit or solicitacao.data_solicitacao),
+        "Fornecedor selecionado": ("aprovacao_fornecedor", latest_audit or solicitacao.data_solicitacao),
+        "Fornecedor aprovado": ("planejamento_contrato", approval_complete_at or latest_audit or solicitacao.data_solicitacao),
+        "Planejamento do Contrato": ("planejamento_contrato", latest_audit or approval_complete_at or solicitacao.data_solicitacao),
+        "Aprovação Final": ("aprovacao_final", latest_audit or solicitacao.data_solicitacao),
+        SIGNED_FILES_PENDING_STATUS: ("documento_assinado", latest_audit or solicitacao.data_solicitacao),
+    }
+    result = stage_map.get(solicitacao.status)
+    if not result:
+        return None
+    return {
+        "tipo_fluxo": "prospeccao",
+        "stage_slug": result[0],
+        "stage_label": get_sla_stage_label("prospeccao", result[0]),
+        "started_at": result[1],
+        "status_atual": solicitacao.status,
+        "objeto": solicitacao,
+    }
+
+
+def get_open_sla_stage_for_contratacao(solicitacao, audit_map):
+    if not solicitacao or solicitacao.status in ["Onboarding", "Reprovada pelo suprimento"]:
+        return None
+
+    latest_audit = get_latest_audit_datetime(audit_map, solicitacao.pk)
+    approval_complete_at = None
+    if solicitacao.aprocacao_fornecedor_gerente_em and solicitacao.aprocacao_fornecedor_diretor_em:
+        approval_complete_at = max(
+            solicitacao.aprocacao_fornecedor_gerente_em,
+            solicitacao.aprocacao_fornecedor_diretor_em,
+        )
+
+    stage_map = {
+        "Solicitação de contratação": ("solicitacao", solicitacao.data_solicitacao),
+        "Em análise": ("solicitacao", solicitacao.data_solicitacao),
+        "Fornecedor aprovado": ("planejamento_contrato", approval_complete_at or latest_audit or solicitacao.data_solicitacao),
+        "Planejamento do Contrato": ("planejamento_contrato", latest_audit or approval_complete_at or solicitacao.data_solicitacao),
+        "Aprovação Final": ("aprovacao_final", latest_audit or solicitacao.data_solicitacao),
+        SIGNED_FILES_PENDING_STATUS: ("documento_assinado", latest_audit or solicitacao.data_solicitacao),
+    }
+    result = stage_map.get(solicitacao.status)
+    if not result:
+        return None
+    return {
+        "tipo_fluxo": "contratacao",
+        "stage_slug": result[0],
+        "stage_label": get_sla_stage_label("contratacao", result[0]),
+        "started_at": result[1],
+        "status_atual": solicitacao.status,
+        "objeto": solicitacao,
+    }
+
+
+def get_open_sla_stage_for_os(solicitacao_os, audit_map):
+    if not solicitacao_os or solicitacao_os.status in ["aprovada", "reprovada", "finalizada"]:
+        return None
+
+    latest_audit = get_latest_audit_datetime(audit_map, solicitacao_os.pk)
+    stage_map = {
+        "solicitacao_os": ("aprovacao_gerencia", solicitacao_os.criado_em),
+        "pendente_gerente": ("aprovacao_gerencia", solicitacao_os.criado_em),
+        "pendente_diretoria": ("aprovacao_diretoria", solicitacao_os.aprovado_gerente_em or latest_audit or solicitacao_os.criado_em),
+        "pendente_suprimento": ("minuta_os", solicitacao_os.aprovado_diretor_em or latest_audit or solicitacao_os.criado_em),
+        "pendente_minuta_gerente": ("aprovacao_minuta", latest_audit or solicitacao_os.aprovado_diretor_em or solicitacao_os.criado_em),
+    }
+    result = stage_map.get(solicitacao_os.status)
+    if not result:
+        return None
+    return {
+        "tipo_fluxo": "os",
+        "stage_slug": result[0],
+        "stage_label": get_sla_stage_label("os", result[0]),
+        "started_at": result[1],
+        "status_atual": solicitacao_os.status,
+        "objeto": solicitacao_os,
+    }
+
+
+def get_open_sla_stage_for_aditivo(aditivo):
+    if not aditivo or aditivo.aprovado_totalmente or aditivo.reprovado_por_alguem:
+        return None
+
+    stage_map = {
+        "Aguardando Aprovacao da Solicitacao": ("aprovacao_solicitacao", aditivo.criado_em),
+        "Aguardando Minuta do Aditivo": (
+            "minuta_aditivo",
+            max([dt for dt in [aditivo.data_aprovacao_gerente, aditivo.data_aprovacao_diretoria] if dt], default=aditivo.criado_em),
+        ),
+        "Aguardando Aprovacao da Minuta": ("aprovacao_minuta", aditivo.documento_enviado_em or aditivo.atualizado_em or aditivo.criado_em),
+        "Aguardando Documento Assinado": ("documento_assinado", aditivo.data_aprovacao_lider or aditivo.atualizado_em or aditivo.criado_em),
+    }
+    current_stage = stage_map.get(aditivo.etapa_atual)
+    if not current_stage:
+        return None
+    return {
+        "tipo_fluxo": "aditivo",
+        "stage_slug": current_stage[0],
+        "stage_label": get_sla_stage_label("aditivo", current_stage[0]),
+        "started_at": current_stage[1],
+        "status_atual": aditivo.etapa_atual,
+        "objeto": aditivo,
+    }
+
+
+def classify_sla_status(days_elapsed, prazo_dias_uteis):
+    if prazo_dias_uteis is None:
+        return "sem_configuracao"
+    if days_elapsed > prazo_dias_uteis:
+        return "vencido"
+    if prazo_dias_uteis - days_elapsed <= 1:
+        return "alerta"
+    return "dentro"
+
+
+def build_sla_dashboard(solicitacoes_prospeccao, solicitacoes_contratacao, os_queryset, aditivos, prospeccao_audit_map, contratacao_audit_map, os_audit_map):
+    holiday_dates = build_holiday_date_set()
+    config_map = get_sla_config_map()
+    today = timezone.localdate()
+
+    active_items = []
+    for solicitacao in solicitacoes_prospeccao:
+        stage = get_open_sla_stage_for_prospeccao(solicitacao, prospeccao_audit_map)
+        if stage:
+            active_items.append(stage)
+    for solicitacao in solicitacoes_contratacao:
+        stage = get_open_sla_stage_for_contratacao(solicitacao, contratacao_audit_map)
+        if stage:
+            active_items.append(stage)
+    for solicitacao_os in os_queryset:
+        stage = get_open_sla_stage_for_os(solicitacao_os, os_audit_map)
+        if stage:
+            active_items.append(stage)
+    for aditivo in aditivos:
+        stage = get_open_sla_stage_for_aditivo(aditivo)
+        if stage:
+            active_items.append(stage)
+
+    stage_groups = defaultdict(list)
+    summary = {
+        "ativos_total": 0,
+        "dentro_sla": 0,
+        "em_alerta": 0,
+        "vencidos": 0,
+        "sem_configuracao": 0,
+        "taxa_dentro_sla": 0.0,
+    }
+
+    for item in active_items:
+        config = config_map.get((item["tipo_fluxo"], item["stage_slug"]))
+        prazo_dias_uteis = getattr(config, "prazo_dias_uteis", None)
+        if prazo_dias_uteis is None and isinstance(config, dict):
+            prazo_dias_uteis = config.get("prazo_dias_uteis")
+
+        started_at = item["started_at"]
+        days_elapsed = business_days_between(started_at, today, holiday_dates) if started_at else 0
+        due_date = add_business_days(started_at, prazo_dias_uteis, holiday_dates) if started_at and prazo_dias_uteis is not None else None
+        sla_status = classify_sla_status(days_elapsed, prazo_dias_uteis)
+
+        item.update(
+            {
+                "owner_label": get_sla_stage_owner_label(item),
+                "owner_since": started_at,
+                "prazo_dias_uteis": prazo_dias_uteis,
+                "dias_uteis_decorridos": days_elapsed,
+                "data_limite": due_date,
+                "sla_status": sla_status,
+            }
+        )
+        summary["ativos_total"] += 1
+        if sla_status == "dentro":
+            summary["dentro_sla"] += 1
+        elif sla_status == "alerta":
+            summary["em_alerta"] += 1
+        elif sla_status == "vencido":
+            summary["vencidos"] += 1
+        else:
+            summary["sem_configuracao"] += 1
+
+        stage_groups[(item["tipo_fluxo"], item["stage_slug"], item["stage_label"], prazo_dias_uteis)].append(item)
+
+    considered_items = summary["ativos_total"] - summary["sem_configuracao"]
+    if considered_items > 0:
+        summary["taxa_dentro_sla"] = round((summary["dentro_sla"] / considered_items) * 100, 1)
+
+    stage_rows = []
+    for (tipo_fluxo, stage_slug, stage_label, prazo_dias_uteis), items in stage_groups.items():
+        stage_rows.append(
+            {
+                "tipo_fluxo": tipo_fluxo,
+                "fluxo_label": dict(ConfiguracaoSLA.TIPO_FLUXO_CHOICES).get(tipo_fluxo, tipo_fluxo.title()),
+                "etapa": stage_label,
+                "etapa_slug": stage_slug,
+                "owner_label": ", ".join(sorted({item.get("owner_label") for item in items if item.get("owner_label")})) or "-",
+                "prazo_dias_uteis": prazo_dias_uteis,
+                "itens_ativos": len(items),
+                "dentro_sla": sum(1 for item in items if item["sla_status"] == "dentro"),
+                "em_alerta": sum(1 for item in items if item["sla_status"] == "alerta"),
+                "vencidos": sum(1 for item in items if item["sla_status"] == "vencido"),
+                "media_dias_decorridos": round(
+                    sum(item["dias_uteis_decorridos"] for item in items) / len(items), 1
+                ) if items else None,
+            }
+        )
+
+    stage_rows.sort(key=lambda item: (item["fluxo_label"].lower(), item["etapa"].lower()))
+
+    return {
+        "summary": summary,
+        "stage_rows": stage_rows,
+        "stage_mapping_rows": get_sla_stage_mapping_rows(config_map),
+    }
+
+
+def get_sla_badge_meta(sla_status):
+    if sla_status == "dentro":
+        return {"label": "Dentro do SLA", "badge_class": "bg-success"}
+    if sla_status == "alerta":
+        return {"label": "Em alerta", "badge_class": "bg-warning text-dark"}
+    if sla_status == "vencido":
+        return {"label": "SLA vencido", "badge_class": "bg-danger"}
+    return {"label": "Sem configuracao", "badge_class": "bg-secondary"}
+
+
+def get_sla_stage_owner_label(stage):
+    if not stage:
+        return None
+
+    objeto = stage.get("objeto")
+    stage_slug = stage.get("stage_slug")
+
+    if isinstance(objeto, SolicitacaoProspeccao):
+        if stage_slug in {"solicitacao", "aprovacao_suprimento", "triagem", "planejamento_contrato", "documento_assinado"}:
+            return "Suprimento"
+        if stage_slug == "aprovacao_fornecedor":
+            gerente_pendente = objeto.aprovacao_fornecedor_gerente != "aprovado"
+            diretoria_pendente = objeto.aprovacao_gerencia is not True
+            if gerente_pendente and diretoria_pendente:
+                return "Gerência de Contrato e Diretoria"
+            if gerente_pendente:
+                return "Gerência de Contrato"
+            if diretoria_pendente:
+                return "Diretoria"
+            return "Gerência de Contrato e Diretoria"
+        if stage_slug == "aprovacao_final":
+            return "Gerência de Contrato"
+
+    if isinstance(objeto, SolicitacaoContrato):
+        if stage_slug == "solicitacao":
+            gerente_pendente = objeto.aprovacao_fornecedor_gerente != "aprovado"
+            diretoria_pendente = objeto.aprovacao_fornecedor_diretor != "aprovado"
+            if gerente_pendente and diretoria_pendente:
+                return "Gerência de Contrato e Diretoria"
+            if gerente_pendente:
+                return "Gerência de Contrato"
+            if diretoria_pendente:
+                return "Diretoria"
+            return "Gerência de Contrato e Diretoria"
+        if stage_slug in {"planejamento_contrato", "documento_assinado"}:
+            return "Suprimento"
+        if stage_slug == "aprovacao_final":
+            return "Gerência de Contrato"
+
+    if isinstance(objeto, SolicitacaoOrdemServico):
+        if stage_slug == "aprovacao_gerencia":
+            return "Gerência de Contrato"
+        if stage_slug == "aprovacao_diretoria":
+            return "Diretoria"
+        if stage_slug == "minuta_os":
+            return "Suprimento"
+        if stage_slug == "aprovacao_minuta":
+            return "Gerência de Contrato"
+
+    if isinstance(objeto, AditivoContratoTerceiro):
+        if stage_slug == "aprovacao_solicitacao":
+            gerente_pendente = objeto.status_gerente != "aprovado"
+            diretoria_pendente = objeto.status_diretoria != "aprovado"
+            if gerente_pendente and diretoria_pendente:
+                return "Gerência de Contrato e Diretoria"
+            if gerente_pendente:
+                return "Gerência de Contrato"
+            if diretoria_pendente:
+                return "Diretoria"
+            return "Gerência de Contrato e Diretoria"
+        if stage_slug in {"minuta_aditivo", "documento_assinado"}:
+            return "Suprimento"
+        if stage_slug == "aprovacao_minuta":
+            return "Gerência de Contrato"
+
+    return None
+
+
+def build_sla_display_from_stage(stage, config_map=None, holiday_dates=None):
+    if not stage:
+        return None
+
+    config_map = config_map or get_sla_config_map()
+    holiday_dates = holiday_dates or build_holiday_date_set()
+    config = config_map.get((stage["tipo_fluxo"], stage["stage_slug"]))
+    prazo_dias_uteis = getattr(config, "prazo_dias_uteis", None)
+    if prazo_dias_uteis is None and isinstance(config, dict):
+        prazo_dias_uteis = config.get("prazo_dias_uteis")
+
+    today = timezone.localdate()
+    started_at = stage.get("started_at")
+    dias_uteis_decorridos = business_days_between(started_at, today, holiday_dates) if started_at else 0
+    data_limite = add_business_days(started_at, prazo_dias_uteis, holiday_dates) if started_at and prazo_dias_uteis is not None else None
+    sla_status = classify_sla_status(dias_uteis_decorridos, prazo_dias_uteis)
+    badge_meta = get_sla_badge_meta(sla_status)
+    owner_label = get_sla_stage_owner_label(stage)
+
+    return {
+        "tipo_fluxo": stage["tipo_fluxo"],
+        "etapa": stage["stage_label"],
+        "status_atual": stage["status_atual"],
+        "owner_label": owner_label,
+        "owner_since": started_at,
+        "prazo_dias_uteis": prazo_dias_uteis,
+        "dias_uteis_decorridos": dias_uteis_decorridos,
+        "data_limite": data_limite,
+        "sla_status": sla_status,
+        "badge_label": badge_meta["label"],
+        "badge_class": badge_meta["badge_class"],
+    }
+
+
+def build_request_sla_display(objeto, prospeccao_audit_map=None, contratacao_audit_map=None, os_audit_map=None, config_map=None, holiday_dates=None):
+    stage = None
+    if isinstance(objeto, SolicitacaoProspeccao):
+        stage = get_open_sla_stage_for_prospeccao(objeto, prospeccao_audit_map or {})
+    elif isinstance(objeto, SolicitacaoContrato):
+        stage = get_open_sla_stage_for_contratacao(objeto, contratacao_audit_map or {})
+    elif isinstance(objeto, SolicitacaoOrdemServico):
+        stage = get_open_sla_stage_for_os(objeto, os_audit_map or {})
+    elif isinstance(objeto, AditivoContratoTerceiro):
+        stage = get_open_sla_stage_for_aditivo(objeto)
+
+    return build_sla_display_from_stage(stage, config_map=config_map, holiday_dates=holiday_dates)
+
+
+def attach_home_sla_displays(solicitacoes_prospeccao=None, solicitacoes_contrato=None, solicitacoes_os=None, aditivos_pendentes=None):
+    solicitacoes_prospeccao = list(solicitacoes_prospeccao or [])
+    solicitacoes_contrato = list(solicitacoes_contrato or [])
+    solicitacoes_os = list(solicitacoes_os or [])
+    aditivos_pendentes = list(aditivos_pendentes or [])
+
+    sla_config_map = get_sla_config_map()
+    holiday_dates = build_holiday_date_set()
+    prospeccao_audit_map = build_latest_audit_map(
+        SolicitacaoProspeccao,
+        [item.pk for item in solicitacoes_prospeccao],
+    )
+    contratacao_audit_map = build_latest_audit_map(
+        SolicitacaoContrato,
+        [item.pk for item in solicitacoes_contrato],
+    )
+    os_audit_map = build_latest_audit_map(
+        SolicitacaoOrdemServico,
+        [item.pk for item in solicitacoes_os],
+    )
+
+    for item in solicitacoes_prospeccao:
+        item.sla_display = build_request_sla_display(
+            item,
+            prospeccao_audit_map=prospeccao_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=holiday_dates,
+        )
+    for item in solicitacoes_contrato:
+        item.sla_display = build_request_sla_display(
+            item,
+            contratacao_audit_map=contratacao_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=holiday_dates,
+        )
+    for item in solicitacoes_os:
+        item.sla_display = build_request_sla_display(
+            item,
+            os_audit_map=os_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=holiday_dates,
+        )
+    for item in aditivos_pendentes:
+        item.sla_display = build_request_sla_display(
+            item,
+            config_map=sla_config_map,
+            holiday_dates=holiday_dates,
+        )
+
+
+def sort_home_items_by_sla_priority(items):
+    priority_map = {
+        "vencido": 0,
+        "alerta": 1,
+        "dentro": 2,
+        "sem_configuracao": 3,
+    }
+
+    return sorted(
+        list(items or []),
+        key=lambda item: priority_map.get(
+            getattr(getattr(item, "sla_display", None), "get", lambda *_: None)("sla_status")
+            if isinstance(getattr(item, "sla_display", None), dict)
+            else None,
+            4,
+        ),
+    )
+
+
 def build_supply_retrabalho_queryset():
     retrabalho_prospeccao = SolicitacaoProspeccao.objects.filter(
         Q(solicitacao_origem__isnull=False)
@@ -825,6 +1456,408 @@ def build_supply_user_indicator_rows(
     )
 
 
+def get_request_participants(solicitacao):
+    participants = []
+    seen_ids = set()
+
+    for attr in ["solicitante", "coordenador", "lider_contrato"]:
+        user = getattr(solicitacao, attr, None)
+        if not user or not hasattr(user, "pk") or user.pk is None:
+            continue
+        if user.pk not in seen_ids:
+            participants.append(user)
+            seen_ids.add(user.pk)
+
+    return participants
+
+
+def user_participates_in_request(user, solicitacao):
+    if not user or not solicitacao:
+        return False
+    return any(participant.pk == user.pk for participant in get_request_participants(solicitacao))
+
+
+def get_related_active_contracts_for_user(user, contracts):
+    if not user:
+        return []
+
+    if user.grupo == "gerente_contrato":
+        related_contracts = []
+        for contract in contracts:
+            contract_lider = getattr(contract, "referencia_lider_contrato", None)
+            if (
+                contract_lider
+                and getattr(contract_lider, "grupo", None) in ["lider_contrato", "gerente_lider", "gerente_contrato"]
+            ):
+                related_contracts.append(contract)
+        return related_contracts
+
+    related_contracts = []
+    for contract in contracts:
+        if user.grupo in ["suprimento", "diretoria"]:
+            related_contracts.append(contract)
+            continue
+
+        if user.grupo == "gerente_lider" and user_shares_center_with_contract_coordinators(user, contract):
+            related_contracts.append(contract)
+            continue
+
+        contract_lider = getattr(contract, "referencia_lider_contrato", None)
+        if contract_lider and contract_lider.pk == user.pk:
+            related_contracts.append(contract)
+            continue
+
+        if user_is_contract_coordinator(user, contract):
+            related_contracts.append(contract)
+            continue
+
+        if contract.prospeccao and user_participates_in_request(user, contract.prospeccao):
+            related_contracts.append(contract)
+            continue
+
+        if contract.solicitacao and user_participates_in_request(user, contract.solicitacao):
+            related_contracts.append(contract)
+            continue
+
+    unique_contracts = []
+    seen_ids = set()
+    for contract in related_contracts:
+        if contract.pk not in seen_ids:
+            unique_contracts.append(contract)
+            seen_ids.add(contract.pk)
+    return unique_contracts
+
+
+def build_supply_user_options(
+    solicitacoes_prospeccao,
+    solicitacoes_contratacao,
+    os_queryset,
+    contratos_ativos,
+):
+    return sorted(
+        [
+            {
+                "id": user.pk,
+                "nome": user.get_full_name() or user.username,
+                "grupo": user.get_grupo_display() if user.grupo else "-",
+            }
+            for user in User.objects.filter(is_superuser=False).exclude(grupo="suprimento").order_by("first_name", "last_name", "username")
+        ],
+        key=lambda item: item["nome"].lower(),
+    )
+
+
+def calculate_contract_payment_totals(contracts):
+    contract_ids = [contract.pk for contract in contracts]
+    if not contract_ids:
+        return {
+            "valor_total": Decimal("0.00"),
+            "valor_pago": Decimal("0.00"),
+            "valor_previsto": Decimal("0.00"),
+        }
+
+    eventos = Evento.objects.filter(contrato_terceiro_id__in=contract_ids)
+    ordens = OS.objects.filter(contrato_id__in=contract_ids)
+
+    valor_total = sum((contract.valor_total or Decimal("0.00")) for contract in contracts)
+    valor_pago_eventos = eventos.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
+    valor_pago_os = ordens.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
+    valor_pago = (valor_pago_eventos or Decimal("0.00")) + (valor_pago_os or Decimal("0.00"))
+    valor_previsto = valor_total - valor_pago
+    if valor_previsto < Decimal("0.00"):
+        valor_previsto = Decimal("0.00")
+
+    return {
+        "valor_total": valor_total,
+        "valor_pago": valor_pago,
+        "valor_previsto": valor_previsto,
+    }
+
+
+def build_selected_user_supply_metrics(
+    user,
+    solicitacoes_prospeccao,
+    solicitacoes_contratacao,
+    os_queryset,
+    prospeccao_onboarding_map,
+    contratacao_onboarding_map,
+    os_audit_map,
+    contratos_ativos,
+):
+    if not user:
+        return None
+
+    prospeccao_pairs = []
+    contratacao_pairs = []
+    guarda_chuva_pairs = []
+    os_pairs = []
+    total_solicitacoes = 0
+
+    for solicitacao in solicitacoes_prospeccao:
+        if not user_participates_in_request(user, solicitacao):
+            continue
+        total_solicitacoes += 1
+        onboarding_audit = prospeccao_onboarding_map.get(solicitacao.pk)
+        if solicitacao.data_solicitacao and onboarding_audit:
+            pair = (solicitacao.data_solicitacao, onboarding_audit.data_hora)
+            prospeccao_pairs.append(pair)
+            if solicitacao.guarda_chuva:
+                guarda_chuva_pairs.append(pair)
+
+    for solicitacao in solicitacoes_contratacao:
+        if not user_participates_in_request(user, solicitacao):
+            continue
+        total_solicitacoes += 1
+        onboarding_audit = contratacao_onboarding_map.get(solicitacao.pk)
+        if solicitacao.data_solicitacao and onboarding_audit:
+            pair = (solicitacao.data_solicitacao, onboarding_audit.data_hora)
+            contratacao_pairs.append(pair)
+            if solicitacao.guarda_chuva:
+                guarda_chuva_pairs.append(pair)
+
+    for solicitacao_os in os_queryset:
+        if not user_participates_in_request(user, solicitacao_os):
+            continue
+        total_solicitacoes += 1
+        audit = os_audit_map.get(solicitacao_os.pk)
+        if solicitacao_os.criado_em and audit and is_request_concluded(solicitacao_os):
+            os_pairs.append((solicitacao_os.criado_em, audit.data_hora))
+
+    related_contracts = get_related_active_contracts_for_user(user, contratos_ativos)
+    contract_totals = calculate_contract_payment_totals(related_contracts)
+
+    bm_ids = list(
+        BM.objects.filter(contrato__in=related_contracts).values_list("pk", flat=True)
+    )
+    content_type = ContentType.objects.get_for_model(BM)
+    bm_audits = (
+        RegistroAuditoria.objects.filter(
+            content_type=content_type,
+            object_id__in=bm_ids,
+            usuario__isnull=False,
+        )
+        .select_related("usuario")
+        .order_by("object_id", "data_hora")
+    )
+    audits_by_bm = {}
+    for audit in bm_audits:
+        audits_by_bm.setdefault(audit.object_id, []).append(audit)
+
+    bm_approval_deltas = []
+    related_bms = BM.objects.filter(pk__in=bm_ids)
+    for bm in related_bms:
+        audit_list = audits_by_bm.get(bm.pk, [])
+        if not audit_list:
+            continue
+        start_audit = audit_list[0]
+
+        for approval_dt in [bm.data_aprovacao_coordenador, bm.data_aprovacao_gerente, bm.data_aprovacao_diretor]:
+            if not approval_dt:
+                continue
+            matching_audits = [
+                audit
+                for audit in audit_list
+                if audit.usuario_id == user.pk
+                and abs((audit.data_hora - approval_dt).total_seconds()) <= 300
+            ]
+            if not matching_audits:
+                continue
+            nearest_audit = min(
+                matching_audits,
+                key=lambda audit: abs((audit.data_hora - approval_dt).total_seconds()),
+            )
+            bm_approval_deltas.append((nearest_audit.data_hora - start_audit.data_hora).total_seconds() / 86400)
+            break
+
+    etapa_rows = [
+        ("Prazo medio geral", average_days_from_pairs(prospeccao_pairs + contratacao_pairs + os_pairs)),
+        ("Prazo medio prospeccao", average_days_from_pairs(prospeccao_pairs)),
+        ("Prazo medio contratacao", average_days_from_pairs(contratacao_pairs)),
+        ("Prazo medio OS", average_days_from_pairs(os_pairs)),
+        ("Prazo medio guarda-chuva", average_days_from_pairs(guarda_chuva_pairs)),
+    ]
+
+    return {
+        "usuario": user,
+        "etapa_rows": etapa_rows,
+        "tempo_medio_aprovacao_bm": round(sum(bm_approval_deltas) / len(bm_approval_deltas), 1) if bm_approval_deltas else None,
+        "numero_solicitacoes": total_solicitacoes,
+        "contratos_ativos_total": len(related_contracts),
+        "valor_total_contratos_ativos": contract_totals["valor_total"],
+        "valor_pago_contratos_ativos": contract_totals["valor_pago"],
+        "valor_previsto_contratos_ativos": contract_totals["valor_previsto"],
+    }
+
+
+def get_responsible_groups_for_sla_item(objeto):
+    if isinstance(objeto, SolicitacaoProspeccao):
+        if objeto.status in ["Solicitação de prospecção", "Em análise", "Aprovada pelo suprimento", "Triagem realizada", "Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS]:
+            return {"suprimento"}
+        if objeto.status == "Fornecedor selecionado":
+            groups = set()
+            if objeto.aprovacao_fornecedor_gerente == "pendente":
+                groups.add("gerente_contrato")
+            if objeto.aprovacao_fornecedor_diretor == "pendente":
+                groups.add("diretoria")
+            return groups
+        if objeto.status == "Aprovação Final":
+            return {"gerente_contrato"}
+        return set()
+
+    if isinstance(objeto, SolicitacaoContrato):
+        if objeto.status in ["Solicitação de contratação", "Em análise"]:
+            groups = set()
+            if objeto.aprovacao_fornecedor_gerente == "pendente":
+                groups.add("gerente_contrato")
+            if objeto.aprovacao_fornecedor_diretor == "pendente":
+                groups.add("diretoria")
+            return groups
+        if objeto.status in ["Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS]:
+            return {"suprimento"}
+        if objeto.status == "Aprovação Final":
+            return {"gerente_contrato"}
+        return set()
+
+    if isinstance(objeto, SolicitacaoOrdemServico):
+        status_group_map = {
+            "solicitacao_os": {"gerente_contrato"},
+            "pendente_gerente": {"gerente_contrato"},
+            "pendente_diretoria": {"diretoria"},
+            "pendente_suprimento": {"suprimento"},
+            "pendente_minuta_gerente": {"gerente_contrato"},
+        }
+        return status_group_map.get(objeto.status, set())
+
+    if isinstance(objeto, AditivoContratoTerceiro):
+        if objeto.etapa_atual == "Aguardando Aprovacao da Solicitacao":
+            groups = set()
+            if objeto.status_gerente == "pendente":
+                groups.add("gerente_contrato")
+            if objeto.status_diretoria == "pendente":
+                groups.add("diretoria")
+            return groups
+        if objeto.etapa_atual == "Aguardando Minuta do Aditivo":
+            return {"suprimento"}
+        if objeto.etapa_atual == "Aguardando Aprovacao da Minuta":
+            return {"gerente_contrato"}
+        if objeto.etapa_atual == "Aguardando Documento Assinado":
+            return {"suprimento"}
+    return set()
+
+
+def build_user_sla_responsibility_map(
+    users,
+    solicitacoes_prospeccao,
+    solicitacoes_contratacao,
+    os_queryset,
+    aditivos_queryset,
+    prospeccao_audit_map,
+    contratacao_audit_map,
+    os_audit_map,
+):
+    users = list(users or [])
+    users_by_group = defaultdict(list)
+    user_map = {}
+    for user in users:
+        users_by_group[getattr(user, "grupo", None)].append(user)
+        user_map[user.pk] = {
+            "usuario": user,
+            "summary": {
+                "ativos_total": 0,
+                "dentro_sla": 0,
+                "em_alerta": 0,
+                "vencidos": 0,
+                "sem_configuracao": 0,
+                "taxa_dentro_sla": 0.0,
+            },
+            "stage_groups": defaultdict(list),
+        }
+
+    def register_item(objeto, sla_display):
+        if not sla_display:
+            return
+        responsible_groups = get_responsible_groups_for_sla_item(objeto)
+        if not responsible_groups:
+            return
+
+        for group in responsible_groups:
+            for user in users_by_group.get(group, []):
+                row = user_map[user.pk]
+                summary = row["summary"]
+                summary["ativos_total"] += 1
+                sla_status = sla_display["sla_status"]
+                if sla_status == "dentro":
+                    summary["dentro_sla"] += 1
+                elif sla_status == "alerta":
+                    summary["em_alerta"] += 1
+                elif sla_status == "vencido":
+                    summary["vencidos"] += 1
+                else:
+                    summary["sem_configuracao"] += 1
+
+                row["stage_groups"][
+                    (
+                        sla_display["tipo_fluxo"],
+                        sla_display["etapa"],
+                        sla_display["prazo_dias_uteis"],
+                    )
+                ].append(sla_display)
+
+    for solicitacao in solicitacoes_prospeccao:
+        register_item(
+            solicitacao,
+            build_request_sla_display(
+                solicitacao,
+                prospeccao_audit_map=prospeccao_audit_map,
+            ),
+        )
+    for solicitacao in solicitacoes_contratacao:
+        register_item(
+            solicitacao,
+            build_request_sla_display(
+                solicitacao,
+                contratacao_audit_map=contratacao_audit_map,
+            ),
+        )
+    for solicitacao_os in os_queryset:
+        register_item(
+            solicitacao_os,
+            build_request_sla_display(
+                solicitacao_os,
+                os_audit_map=os_audit_map,
+            ),
+        )
+    for aditivo in aditivos_queryset:
+        register_item(aditivo, build_request_sla_display(aditivo))
+
+    for row in user_map.values():
+        considered = row["summary"]["ativos_total"] - row["summary"]["sem_configuracao"]
+        if considered > 0:
+            row["summary"]["taxa_dentro_sla"] = round((row["summary"]["dentro_sla"] / considered) * 100, 1)
+
+        stage_rows = []
+        for (tipo_fluxo, etapa, prazo), entries in row["stage_groups"].items():
+            stage_rows.append(
+                {
+                    "tipo_fluxo": tipo_fluxo,
+                    "fluxo_label": dict(ConfiguracaoSLA.TIPO_FLUXO_CHOICES).get(tipo_fluxo, tipo_fluxo.title()),
+                    "etapa": etapa,
+                    "owner_label": ", ".join(sorted({entry.get("owner_label") for entry in entries if entry.get("owner_label")})) or "-",
+                    "prazo_dias_uteis": prazo,
+                    "itens_ativos": len(entries),
+                    "dentro_sla": sum(1 for entry in entries if entry["sla_status"] == "dentro"),
+                    "em_alerta": sum(1 for entry in entries if entry["sla_status"] == "alerta"),
+                    "vencidos": sum(1 for entry in entries if entry["sla_status"] == "vencido"),
+                    "media_dias_decorridos": round(
+                        sum(entry["dias_uteis_decorridos"] for entry in entries) / len(entries), 1
+                    ) if entries else None,
+                }
+            )
+        row["stage_rows"] = sorted(stage_rows, key=lambda item: (item["fluxo_label"].lower(), item["etapa"].lower()))
+
+    return user_map
+
+
 def filter_records_with_date_and_audit(records, audit_map, date_attr):
     filtered_records = []
     for record in records:
@@ -922,6 +1955,7 @@ def indicadores_suprimento(request):
         list(solicitacoes_contratacao.values_list("pk", flat=True)),
     )
     os_queryset = SolicitacaoOrdemServico.objects.all()
+    aditivos_queryset = AditivoContratoTerceiro.objects.select_related("contrato", "solicitado_por")
     os_audit_map = build_latest_audit_map(
         SolicitacaoOrdemServico,
         list(os_queryset.values_list("pk", flat=True)),
@@ -1004,7 +2038,11 @@ def indicadores_suprimento(request):
     percentual_retrabalho = round((total_retrabalho / total_solicitacoes) * 100, 1) if total_solicitacoes else 0.0
 
     contratos_ativos_qs = ContratoTerceiros.objects.exclude(status="encerrado")
-    valor_total_contratos_ativos = contratos_ativos_qs.aggregate(total=Coalesce(Sum("valor_total"), Decimal("0.00")))["total"]
+    contratos_ativos_list = list(contratos_ativos_qs)
+    contract_totals = calculate_contract_payment_totals(contratos_ativos_list)
+    valor_total_contratos_ativos = contract_totals["valor_total"]
+    valor_pago_contratos_ativos = contract_totals["valor_pago"]
+    valor_previsto_contratos_ativos = contract_totals["valor_previsto"]
 
     eventos_sem_nf_count = Evento.objects.filter(
         boletins_medicao__aprovacao_pagamento="aprovado",
@@ -1014,6 +2052,12 @@ def indicadores_suprimento(request):
         | Q(boletins_medicao__status_gerente="aprovado")
     ).distinct().count()
 
+    hoje = timezone.localdate()
+    eventos_atrasados_count = Evento.objects.filter(contrato_terceiro__in=contratos_ativos_qs).filter(
+        Q(com_atraso=True)
+        | Q(realizado=False, data_prevista__lt=hoje)
+    ).distinct().count()
+
     bms = list(BM.objects.all())
     bms_pendentes_operacionais = sum(1 for bm in bms if bm_is_operationally_pending(bm))
     bms_pendentes_diretoria = sum(
@@ -1021,6 +2065,7 @@ def indicadores_suprimento(request):
         for bm in bms
         if bm.aprovacao_pagamento == "pendente" and bm_has_operational_approval(bm)
     )
+    bms_pendentes_total = bms_pendentes_operacionais + bms_pendentes_diretoria
 
     prospeccao_status_records = filter_records_with_date_and_audit(
         list(solicitacoes_prospeccao),
@@ -1055,6 +2100,118 @@ def indicadores_suprimento(request):
         prospeccao_onboarding_map,
         contratacao_onboarding_map,
     )
+    user_options = build_supply_user_options(
+        list(solicitacoes_prospeccao),
+        list(solicitacoes_contratacao),
+        list(os_queryset),
+        contratos_ativos_list,
+    )
+    indicator_users = list(
+        User.objects.filter(pk__in=[item["id"] for item in user_options])
+    )
+    user_sla_map = build_user_sla_responsibility_map(
+        indicator_users,
+        list(solicitacoes_prospeccao),
+        list(solicitacoes_contratacao),
+        list(os_queryset),
+        list(aditivos_queryset),
+        prospeccao_audit_map,
+        contratacao_audit_map,
+        os_audit_map,
+    )
+    selected_user_id = request.GET.get("usuario")
+    selected_user = None
+    if selected_user_id:
+        try:
+            selected_user_id = int(selected_user_id)
+        except (TypeError, ValueError):
+            selected_user_id = None
+        if selected_user_id:
+            selected_user = User.objects.filter(pk=selected_user_id).first()
+    if selected_user is None and user_options:
+        selected_user = User.objects.filter(pk=user_options[0]["id"]).first()
+
+    selected_user_metrics = build_selected_user_supply_metrics(
+        selected_user,
+        list(solicitacoes_prospeccao),
+        list(solicitacoes_contratacao),
+        list(os_queryset),
+        prospeccao_onboarding_map,
+        contratacao_onboarding_map,
+        os_audit_map,
+        contratos_ativos_list,
+    )
+    if selected_user_metrics:
+        selected_user_metrics["sla_summary"] = user_sla_map.get(selected_user.pk, {}).get(
+            "summary",
+            {
+                "ativos_total": 0,
+                "dentro_sla": 0,
+                "em_alerta": 0,
+                "vencidos": 0,
+                "sem_configuracao": 0,
+                "taxa_dentro_sla": 0.0,
+            },
+        )
+        selected_user_metrics["sla_stage_rows"] = user_sla_map.get(selected_user.pk, {}).get("stage_rows", [])
+
+    sla_dashboard = build_sla_dashboard(
+        list(solicitacoes_prospeccao),
+        list(solicitacoes_contratacao),
+        list(os_queryset),
+        list(aditivos_queryset),
+        prospeccao_audit_map,
+        contratacao_audit_map,
+        os_audit_map,
+    )
+
+    user_indicator_rows_map = {row["usuario_id"]: row for row in user_indicator_rows}
+    merged_user_indicator_rows = []
+    for item in user_options:
+        row = user_indicator_rows_map.get(
+            item["id"],
+            {
+                "usuario_id": item["id"],
+                "usuario_nome": item["nome"],
+                "grupo": item["grupo"],
+                "papeis": "",
+                "solicitacoes_vinculadas": 0,
+                "em_aberto": 0,
+                "concluidas": 0,
+                "retrabalho": 0,
+                "media_prazo": None,
+            },
+        )
+        sla_summary = user_sla_map.get(item["id"], {}).get(
+            "summary",
+            {
+                "ativos_total": 0,
+                "dentro_sla": 0,
+                "em_alerta": 0,
+                "vencidos": 0,
+                "sem_configuracao": 0,
+                "taxa_dentro_sla": 0.0,
+            },
+        )
+        merged_row = dict(row)
+        merged_row.update(
+            {
+                "sla_ativos": sla_summary["ativos_total"],
+                "sla_alerta": sla_summary["em_alerta"],
+                "sla_vencidos": sla_summary["vencidos"],
+                "sla_taxa_dentro": sla_summary["taxa_dentro_sla"],
+            }
+        )
+        merged_user_indicator_rows.append(merged_row)
+
+    merged_user_indicator_rows.sort(
+        key=lambda item: (
+            -item["sla_vencidos"],
+            -item["sla_ativos"],
+            -item["em_aberto"],
+            item["usuario_nome"].lower(),
+        )
+    )
 
     latest_completed = sorted(latest_completed, key=lambda item: item["concluido_em"], reverse=True)[:10]
 
@@ -1073,16 +2230,26 @@ def indicadores_suprimento(request):
         "total_retrabalho": total_retrabalho,
         "percentual_retrabalho": percentual_retrabalho,
         "valor_total_contratos_ativos": valor_total_contratos_ativos,
+        "valor_pago_contratos_ativos": valor_pago_contratos_ativos,
+        "valor_previsto_contratos_ativos": valor_previsto_contratos_ativos,
         "contratos_ativos_total": contratos_ativos_qs.count(),
         "contratos_gerados_total": len(latest_completed),
+        "eventos_atrasados_count": eventos_atrasados_count,
         "eventos_sem_nf_count": eventos_sem_nf_count,
         "bms_pendentes_operacionais": bms_pendentes_operacionais,
         "bms_pendentes_diretoria": bms_pendentes_diretoria,
+        "bms_pendentes_total": bms_pendentes_total,
         "prospeccao_status_rows": prospeccao_status_rows,
         "contratacao_status_rows": contratacao_status_rows,
         "guarda_chuva_status_rows": guarda_chuva_status_rows,
         "os_status_rows": os_status_rows,
-        "user_indicator_rows": user_indicator_rows,
+        "user_indicator_rows": merged_user_indicator_rows,
+        "user_options": user_options,
+        "selected_user": selected_user,
+        "selected_user_metrics": selected_user_metrics,
+        "sla_summary": sla_dashboard["summary"],
+        "sla_stage_rows": sla_dashboard["stage_rows"],
+        "sla_stage_mapping_rows": sla_dashboard["stage_mapping_rows"],
         "latest_completed": latest_completed,
         "total_solicitacoes_guarda_chuva": guarda_chuva_status_counter.total() if hasattr(guarda_chuva_status_counter, "total") else sum(guarda_chuva_status_counter.values()),
     }
@@ -2041,6 +3208,62 @@ class OSCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
         return redirect('home')
 
 
+@login_required
+def editar_os_cadastrada(request, pk):
+    if request.user.grupo != "suprimento":
+        messages.error(request, "Você não tem permissão para isso.")
+        return redirect("home")
+
+    os = get_object_or_404(OS, pk=pk)
+
+    if request.method == "POST":
+        form = OrdemServicoForm(request.POST, request.FILES, instance=os, user=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "OS atualizada com sucesso.")
+            return redirect("detalhes_os", pk=os.pk)
+    else:
+        form = OrdemServicoForm(instance=os, user=request.user)
+
+    return render(
+        request,
+        "forms/os_form.html",
+        {
+            "form": form,
+            "is_editing_os": True,
+            "cancel_url": reverse("detalhes_os", kwargs={"pk": os.pk}),
+        },
+    )
+
+
+@login_required
+def duplicar_os_cadastrada(request, pk):
+    if request.user.grupo != "suprimento":
+        messages.error(request, "Você não tem permissão para isso.")
+        return redirect("home")
+
+    if request.method != "POST":
+        return redirect("detalhes_os", pk=pk)
+
+    os_original = get_object_or_404(OS, pk=pk)
+    nova_os = OS.objects.create(
+        contrato=os_original.contrato,
+        solicitacao=None,
+        cod_projeto=os_original.cod_projeto,
+        coordenador=os_original.coordenador,
+        lider_contrato=os_original.lider_contrato,
+        titulo=f"{os_original.titulo} - Copia",
+        descricao=os_original.descricao,
+        valor=os_original.valor,
+        data_prevista_pagamento=os_original.data_prevista_pagamento,
+        prazo_execucao=os_original.prazo_execucao,
+        status="em_execucao",
+    )
+
+    messages.success(request, "OS duplicada com sucesso.")
+    return redirect("editar_os_cadastrada", pk=nova_os.pk)
+
+
 #def is_financeiro(user):
 #    return user.is_authenticated and getattr(user, "grupo", None) == "financeiro"
 
@@ -2142,6 +3365,31 @@ def home(request):
                 "data_prevista",
             ).distinct()
 
+        eventos_sem_pagamento = Evento.objects.filter(
+            realizado=True,
+            valor_pago__isnull=True,
+            data_pagamento__isnull=True,
+            contrato_terceiro__isnull=False,
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira",
+        ).order_by(
+            "data_entrega",
+            "data_prevista",
+        )
+
+        os_sem_pagamento = OS.objects.filter(
+            realizado=True,
+            valor_pago__isnull=True,
+            data_pagamento__isnull=True,
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira",
+        ).order_by(
+            "data_entrega",
+            "prazo_execucao",
+        )
+
         eventos_proximos = Evento.objects.filter(
             data_prevista__gte=hoje,
             data_prevista__lte=limite,
@@ -2189,6 +3437,12 @@ def home(request):
             "contrato__empresa_terceira"
         ).order_by("prazo_execucao")
 
+        attach_home_sla_displays(solicitacoes_prospeccao, solicitacoes_contratos, solicitacoes_os, aditivos_pendentes)
+        solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
+        solicitacoes_contratos = sort_home_items_by_sla_priority(solicitacoes_contratos)
+        solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
+        aditivos_pendentes = sort_home_items_by_sla_priority(aditivos_pendentes)
+
         context.update({
             "painel_titulo": "Painel de Suprimentos",
             "solicitacoes_prospeccao": solicitacoes_prospeccao,
@@ -2201,6 +3455,8 @@ def home(request):
             "is_suprimento": user.grupo == 'suprimento',
             "bms_pendentes": bms_pendentes,
             "eventos_bm_para_entrega": eventos_bm_para_entrega,
+            "eventos_sem_pagamento": eventos_sem_pagamento,
+            "os_sem_pagamento": os_sem_pagamento,
             "proxima_data_pagamento_bm": proxima_data_pagamento_bm,
             "contratos_vencendo":contratos_vencendo,
             "os_em_aberto": os_em_aberto,
@@ -2264,6 +3520,11 @@ def home(request):
             "contrato",
             "contrato__empresa_terceira"
         ).order_by("prazo_execucao")
+
+        attach_home_sla_displays(solicitacoes_prospeccao, solicitacoes_contrato, solicitacoes_os)
+        solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
+        solicitacoes_contrato = sort_home_items_by_sla_priority(solicitacoes_contrato)
+        solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
 
         context.update({
             "painel_titulo": "Painel do Coordenador",
@@ -2349,6 +3610,11 @@ def home(request):
             "contrato__empresa_terceira"
         ).order_by("prazo_execucao")
 
+        attach_home_sla_displays(solicitacoes_prospeccao, solicitacoes_contrato, solicitacoes_os)
+        solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
+        solicitacoes_contrato = sort_home_items_by_sla_priority(solicitacoes_contrato)
+        solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
+
         context.update({
             "painel_titulo": "Painel do Lider de Contratos",
             "solicitacoes_prospeccao": solicitacoes_prospeccao,
@@ -2408,6 +3674,11 @@ def home(request):
             "contrato",
             "contrato__empresa_terceira"
         ).order_by("prazo_execucao")
+
+        attach_home_sla_displays(solicitacoes_prospeccao, solicitacoes_contratos, solicitacoes_os)
+        solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
+        solicitacoes_contratos = sort_home_items_by_sla_priority(solicitacoes_contratos)
+        solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
 
         contratos_vencendo = ContratoTerceiros.objects.filter(
             coordenador__centros__in=centros_ids,
@@ -2495,6 +3766,11 @@ def home(request):
             "contrato",
             "contrato__empresa_terceira"
         ).order_by("prazo_execucao")
+
+        attach_home_sla_displays(solicitacoes_prospeccao, solicitacoes_contratos, solicitacoes_os)
+        solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
+        solicitacoes_contratos = sort_home_items_by_sla_priority(solicitacoes_contratos)
+        solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
 
         contratos_vencendo = ContratoTerceiros.objects.filter(
             coordenador__centros__in=centros_ids,
@@ -2616,6 +3892,12 @@ def home(request):
             "contrato__empresa_terceira"
         ).order_by("prazo_execucao")
 
+        attach_home_sla_displays(solicitacoes_prospeccao, solicitacoes_contrato, solicitacoes_os, aditivos_pendentes)
+        solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
+        solicitacoes_contrato = sort_home_items_by_sla_priority(solicitacoes_contrato)
+        solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
+        aditivos_pendentes = sort_home_items_by_sla_priority(aditivos_pendentes)
+
         context.update({
             "painel_titulo": "Painel da Gerência de Contratos",
             "solicitacoes_prospeccao": solicitacoes_prospeccao,
@@ -2702,6 +3984,12 @@ def home(request):
             "contrato",
             "contrato__empresa_terceira"
         ).order_by("prazo_execucao")
+
+        attach_home_sla_displays(solicitacoes_prospeccao, solicitacoes_contratos, solicitacoes_os, aditivos_pendentes)
+        solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
+        solicitacoes_contratos = sort_home_items_by_sla_priority(solicitacoes_contratos)
+        solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
+        aditivos_pendentes = sort_home_items_by_sla_priority(aditivos_pendentes)
 
         context.update({
             "painel_titulo": "Painel da Diretoria",
@@ -3672,6 +4960,7 @@ def detalhes_aditivo_contrato(request, pk):
             "aditivo": aditivo,
             "contrato": aditivo.contrato,
             "timeline_steps": build_addendum_timeline(aditivo),
+            "sla_display": build_request_sla_display(aditivo),
             "can_approve_request_as_gerente": can_user_approve_addendum_request_as_gerente(request.user, aditivo),
             "can_approve_request_as_diretoria": can_user_approve_addendum_request_as_diretoria(request.user, aditivo),
             "can_upload_draft": can_user_upload_addendum_draft(request.user, aditivo),
@@ -3776,6 +5065,7 @@ def avaliar_solicitacao_aditivo_contrato(request, pk):
             "aditivo": aditivo,
             "contrato": contrato,
             "timeline_steps": build_addendum_timeline(aditivo),
+            "sla_display": build_request_sla_display(aditivo),
             "can_approve_request_as_gerente": can_user_approve_addendum_request_as_gerente(request.user, aditivo),
             "can_approve_request_as_diretoria": can_user_approve_addendum_request_as_diretoria(request.user, aditivo),
         },
@@ -3843,7 +5133,13 @@ def enviar_documento_aditivo_contrato(request, pk):
     return render(
         request,
         "contratos/enviar_documento_aditivo.html",
-        {"aditivo": aditivo, "contrato": aditivo.contrato, "form": form, "timeline_steps": build_addendum_timeline(aditivo)},
+        {
+            "aditivo": aditivo,
+            "contrato": aditivo.contrato,
+            "form": form,
+            "timeline_steps": build_addendum_timeline(aditivo),
+            "sla_display": build_request_sla_display(aditivo),
+        },
     )
 
 
@@ -3926,6 +5222,7 @@ def avaliar_minuta_aditivo_contrato(request, pk):
             "aditivo": aditivo,
             "contrato": contrato,
             "timeline_steps": build_addendum_timeline(aditivo),
+            "sla_display": build_request_sla_display(aditivo),
         },
     )
 
@@ -3985,6 +5282,7 @@ def enviar_aditivo_assinado_contrato(request, pk):
             "contrato": aditivo.contrato,
             "form": form,
             "timeline_steps": build_addendum_timeline(aditivo),
+            "sla_display": build_request_sla_display(aditivo),
         },
     )
 
@@ -4253,6 +5551,9 @@ def aprovar_solicitacao_contrato(request, pk):
 
         # --- Caso REPROVADO ---
         elif acao == "reprovar":
+            if not justificativa.strip():
+                messages.warning(request, "A justificativa é obrigatória para reprovar o fornecedor.")
+                return redirect('detalhes_triagem_fornecedores', pk=pk)
             solicitacao.status = "Fornecedor reprovado pela gerência"
             solicitacao.aprovacao_fornecedor_gerente = "reprovado"
             solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
@@ -4738,7 +6039,7 @@ def _notify_os_supply_minute_request(os_request):
     assunto = f"Solicitacao de OS #{os_request.pk} - Inserir minuta"
     mensagem = (
         f"A solicitacao de Ordem de Servico #{os_request.pk} foi aprovada por "
-        f"Gerencia de Contratos e Diretoria.\n\n"
+        f"Gerência de Contratos e Diretoria.\n\n"
         f"Titulo: {os_request.titulo}\n"
         f"Contrato: {os_request.contrato}\n"
         f"Projeto: {os_request.cod_projeto}\n\n"
@@ -4770,7 +6071,7 @@ def _notify_os_minute_ready_for_manager(os_request):
         f"Titulo: {os_request.titulo}\n"
         f"Contrato: {os_request.contrato}\n"
         f"Projeto: {os_request.cod_projeto}\n\n"
-        "A proxima etapa e a avaliacao da minuta pela Gerencia de Contratos.\n"
+        "A proxima etapa e a avaliacao da minuta pela Gerência de Contratos.\n"
         "https://hidrogestao.pythonanywhere.com/"
     )
     send_mail(
@@ -4778,6 +6079,75 @@ def _notify_os_minute_ready_for_manager(os_request):
         mensagem,
         FROM_EMAIL,
         list(set(emails_gerencia)),
+        fail_silently=False,
+    )
+
+
+def _notify_os_minute_rejected(os_request):
+    emails_suprimentos = list(
+        User.objects.filter(grupo="suprimento")
+        .exclude(email__isnull=True)
+        .exclude(email__exact="")
+        .values_list("email", flat=True)
+    )
+    if not emails_suprimentos:
+        return
+
+    assunto = f"Solicitacao de OS #{os_request.pk} - Minuta reprovada"
+    mensagem = (
+        f"A minuta da Ordem de Servico #{os_request.pk} foi reprovada pela Gerência de Contratos.\n\n"
+        f"Titulo: {os_request.titulo}\n"
+        f"Contrato: {os_request.contrato}\n"
+        f"Projeto: {os_request.cod_projeto}\n"
+        f"Justificativa: {os_request.justificativa_reprovacao_gerente or '-'}\n\n"
+        "A proxima etapa e o suprimento revisar e reenviar a minuta da OS.\n"
+        "https://hidrogestao.pythonanywhere.com/"
+    )
+    send_mail(
+        assunto,
+        mensagem,
+        FROM_EMAIL,
+        list(set(emails_suprimentos)),
+        fail_silently=False,
+    )
+
+
+def _notify_os_completed(os_request):
+    destinatarios = set()
+
+    for grupo in ["suprimento", "gerente_contrato", "diretoria"]:
+        for email in (
+            User.objects.filter(grupo=grupo)
+            .exclude(email__isnull=True)
+            .exclude(email__exact="")
+            .values_list("email", flat=True)
+        ):
+            destinatarios.add(email)
+
+    for usuario in [os_request.solicitante, os_request.lider_contrato, os_request.coordenador]:
+        if usuario and getattr(usuario, "email", None):
+            destinatarios.add(usuario.email)
+
+    if not destinatarios:
+        return
+
+    assunto = f"Solicitacao de OS #{os_request.pk} - OS cadastrada"
+    mensagem = (
+        f"A Ordem de Servico #{os_request.pk} concluiu o fluxo de aprovacoes e foi cadastrada no sistema.\n\n"
+        f"Titulo: {os_request.titulo}\n"
+        f"Contrato: {os_request.contrato}\n"
+        f"Projeto: {os_request.cod_projeto}\n"
+        f"Valor previsto: {os_request.valor_previsto or '-'}\n"
+        f"Prazo de execucao: {format_date_br(os_request.prazo_execucao)}\n"
+        f"Data prevista de pagamento: {format_date_br(os_request.data_prevista_pagamento)}\n\n"
+        "Acesse o sistema HIDROGestão para acompanhar a execução.\n"
+        "https://hidrogestao.pythonanywhere.com/"
+    )
+    send_mail(
+        assunto,
+        mensagem,
+        FROM_EMAIL,
+        sorted(destinatarios),
         fail_silently=False,
     )
 
@@ -4859,7 +6229,7 @@ def upload_contrato_os(request, pk):
             try:
                 _notify_os_minute_ready_for_manager(os)
             except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para a gerencia de contratos: {e}")
+                messages.warning(request, f"Erro ao enviar e-mail para a gerência de contratos: {e}")
 
             messages.success(request, "Minuta da OS inserida com sucesso!")
             return redirect('detalhe_ordem_servico', pk=os.pk)
@@ -4876,13 +6246,14 @@ def upload_contrato_os(request, pk):
 @login_required
 def aprovar_os_gerente_contrato(request, pk, acao):
     os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
+    justificativa = request.POST.get("justificativa", "").strip()
 
     if request.user.grupo != 'gerente_contrato':
         messages.error(request, "Você não tem permissão para esta ação.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
     if os.status not in ['pendente_gerente', 'pendente_minuta_gerente']:
-        messages.warning(request, "Esta OS nao esta pendente da Gerencia de Contrato.")
+        messages.warning(request, "Esta OS nao esta pendente da Gerência de Contrato.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
     if acao not in ['aprovar', 'reprovar']:
@@ -4891,12 +6262,29 @@ def aprovar_os_gerente_contrato(request, pk, acao):
 
     if os.status == 'pendente_gerente':
         if acao == 'reprovar':
-            os.status = 'reprovada'
+            if request.method != "POST" or not justificativa:
+                messages.error(request, "A justificativa é obrigatória para reprovar a solicitação de OS.")
+                return redirect('detalhe_ordem_servico', pk=os.pk)
+            os.status = 'solicitacao_os'
             os.aprovacao_gerente = 'reprovado'
             os.aprovado_gerente_em = timezone.now()
-            os.justificativa_reprovacao_gerente = None
+            os.justificativa_reprovacao_gerente = justificativa
             os.save(update_fields=['status', 'aprovacao_gerente', 'aprovado_gerente_em', 'justificativa_reprovacao_gerente'])
-            messages.error(request, "Solicitacao de OS reprovada pela Gerencia de Contrato.")
+            try:
+                _send_stage_return_notification(
+                    f"Solicitação de OS #{os.pk} - Ajustes solicitados",
+                    (
+                        f"Olá!\n\n"
+                        f"A solicitação de OS #{os.pk} retornou para a etapa anterior após reprovação da Gerência de Contrato.\n\n"
+                        f"Justificativa: {justificativa}\n\n"
+                        "A próxima ação é revisar a solicitação e providenciar os ajustes necessários no sistema.\n"
+                        "https://hidrogestao.pythonanywhere.com/"
+                    ),
+                    [_safe_user_email(os.solicitante)],
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail de reprovação: {e}")
+            messages.error(request, "Solicitacao de OS reprovada pela Gerência de Contrato.")
             return redirect('detalhe_ordem_servico', pk=os.pk)
 
         os.aprovacao_gerente = 'aprovado'
@@ -4912,11 +6300,10 @@ def aprovar_os_gerente_contrato(request, pk, acao):
                 messages.warning(request, f"Erro ao enviar e-mail para o suprimento: {e}")
             messages.success(request, "Solicitacao de OS aprovada e enviada ao suprimento para inserir a minuta.")
         else:
-            messages.success(request, "Solicitacao de OS aprovada pela Gerencia de Contrato e enviada para a Diretoria.")
+            messages.success(request, "Solicitacao de OS aprovada pela Gerência de Contrato e enviada para a Diretoria.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
     if acao == 'reprovar':
-        justificativa = request.POST.get("justificativa", "").strip()
         if not justificativa:
             messages.error(request, "A justificativa é obrigatória para reprovar a minuta da OS.")
             return redirect('detalhe_ordem_servico', pk=os.pk)
@@ -4925,7 +6312,11 @@ def aprovar_os_gerente_contrato(request, pk, acao):
         os.aprovado_gerente_em = timezone.now()
         os.justificativa_reprovacao_gerente = justificativa
         os.save(update_fields=['status', 'aprovacao_gerente', 'aprovado_gerente_em', 'justificativa_reprovacao_gerente'])
-        messages.error(request, "Minuta da OS reprovada pela Gerencia de Contrato.")
+        try:
+            _notify_os_minute_rejected(os)
+        except Exception as e:
+            messages.warning(request, f"Erro ao enviar e-mail para o suprimento: {e}")
+        messages.error(request, "Minuta da OS reprovada pela Gerência de Contrato.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
     os.status = 'aprovada'
@@ -4947,6 +6338,10 @@ def aprovar_os_gerente_contrato(request, pk, acao):
         prazo_execucao=os.prazo_execucao if os.prazo_execucao else None,
         arquivo_os=os.arquivo_os if os.arquivo_os else None,
     )
+    try:
+        _notify_os_completed(os)
+    except Exception as e:
+        messages.warning(request, f"Erro ao enviar e-mail de conclusão da OS: {e}")
     messages.success(request, "Minuta aprovada e OS cadastrada com sucesso.")
 
     return redirect('detalhe_ordem_servico', pk=os.pk)
@@ -4955,6 +6350,7 @@ def aprovar_os_gerente_contrato(request, pk, acao):
 @login_required
 def aprovar_os_diretoria(request, pk, acao):
     os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
+    justificativa = request.POST.get("justificativa", "").strip()
 
     if request.user.grupo != 'diretoria':
         messages.error(request, "Você não tem permissão para esta ação.")
@@ -4969,17 +6365,36 @@ def aprovar_os_diretoria(request, pk, acao):
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
     if acao == 'reprovar':
-        os.status = 'reprovada'
+        if request.method != "POST" or not justificativa:
+            messages.error(request, "A justificativa é obrigatória para reprovar a solicitação de OS.")
+            return redirect('detalhe_ordem_servico', pk=os.pk)
+        os.status = 'pendente_gerente'
         os.aprovacao_diretor = 'reprovado'
         os.aprovado_diretor_em = timezone.now()
-        os.save(update_fields=['status', 'aprovacao_diretor', 'aprovado_diretor_em'])
+        os.justificativa_reprovacao_diretor = justificativa
+        os.save(update_fields=['status', 'aprovacao_diretor', 'aprovado_diretor_em', 'justificativa_reprovacao_diretor'])
+        try:
+            _send_stage_return_notification(
+                f"Solicitação de OS #{os.pk} - Retornada para nova avaliação",
+                (
+                    f"Olá!\n\n"
+                    f"A solicitação de OS #{os.pk} foi reprovada pela Diretoria e retornou para a etapa anterior.\n\n"
+                    f"Justificativa: {justificativa}\n\n"
+                    "A próxima ação é reavaliar a solicitação na Gerência de Contrato.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                ),
+                _group_emails("gerente_contrato"),
+            )
+        except Exception as e:
+            messages.warning(request, f"Erro ao enviar e-mail de reprovação: {e}")
         messages.error(request, "Solicitacao de OS reprovada pela Diretoria.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
     os.aprovacao_diretor = 'aprovado'
     os.aprovado_diretor_em = timezone.now()
+    os.justificativa_reprovacao_diretor = None
     os.status = 'pendente_suprimento' if os.aprovacao_gerente == 'aprovado' else 'pendente_gerente'
-    os.save(update_fields=['status', 'aprovacao_diretor', 'aprovado_diretor_em'])
+    os.save(update_fields=['status', 'aprovacao_diretor', 'aprovado_diretor_em', 'justificativa_reprovacao_diretor'])
 
     if os.status == 'pendente_suprimento':
         try:
@@ -4988,7 +6403,7 @@ def aprovar_os_diretoria(request, pk, acao):
             messages.warning(request, f"Erro ao enviar e-mail para o suprimento: {e}")
         messages.success(request, "Solicitacao de OS aprovada e enviada ao suprimento para inserir a minuta.")
     else:
-        messages.success(request, "Solicitacao de OS aprovada pela Diretoria e aguardando a Gerencia de Contrato.")
+        messages.success(request, "Solicitacao de OS aprovada pela Diretoria e aguardando a Gerência de Contrato.")
 
     return redirect('detalhe_ordem_servico', pk=os.pk)
 
@@ -5029,6 +6444,21 @@ def lista_solicitacoes(request):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
+    prospeccao_audit_map = build_latest_audit_map(
+        SolicitacaoProspeccao,
+        list(solicitacoes.values_list("pk", flat=True)),
+    )
+    contratacao_audit_map = build_latest_audit_map(
+        SolicitacaoContrato,
+        list(solicitacoes_c.values_list("pk", flat=True)),
+    )
+    os_audit_map = build_latest_audit_map(
+        SolicitacaoOrdemServico,
+        list(os.values_list("pk", flat=True)),
+    )
+    sla_config_map = get_sla_config_map()
+    sla_holiday_dates = build_holiday_date_set()
+
     lista_solicitacoes = []
     for s in solicitacoes:
         proposta_escolhida = PropostaFornecedor.objects.filter(
@@ -5037,6 +6467,12 @@ def lista_solicitacoes(request):
         ).first()
 
         contrato = DocumentoContratoTerceiro.objects.filter(solicitacao=s).first()
+        s.sla_display = build_request_sla_display(
+            s,
+            prospeccao_audit_map=prospeccao_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=sla_holiday_dates,
+        )
         lista_solicitacoes.append({
             "solicitacao": s,
             "fornecedor": s.fornecedor_escolhido,
@@ -5048,6 +6484,12 @@ def lista_solicitacoes(request):
         proposta_escolhida = None
 
         contrato = None
+        s.sla_display = build_request_sla_display(
+            s,
+            contratacao_audit_map=contratacao_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=sla_holiday_dates,
+        )
         lista_solicitacoes.append({
             "solicitacao": s,
             "fornecedor": s.fornecedor_escolhido,
@@ -5076,6 +6518,34 @@ def lista_solicitacoes(request):
     page_number_aditivos = request.GET.get('page_ad')
     page_obj_aditivos = paginator_aditivos.get_page(page_number_aditivos)
 
+    for solicitacao in page_obj:
+        solicitacao.sla_display = build_request_sla_display(
+            solicitacao,
+            prospeccao_audit_map=prospeccao_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=sla_holiday_dates,
+        )
+    for solicitacao in page_obj_c:
+        solicitacao.sla_display = build_request_sla_display(
+            solicitacao,
+            contratacao_audit_map=contratacao_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=sla_holiday_dates,
+        )
+    for solicitacao_os in page_obj_os:
+        solicitacao_os.sla_display = build_request_sla_display(
+            solicitacao_os,
+            os_audit_map=os_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=sla_holiday_dates,
+        )
+    for aditivo in page_obj_aditivos:
+        aditivo.sla_display = build_request_sla_display(
+            aditivo,
+            config_map=sla_config_map,
+            holiday_dates=sla_holiday_dates,
+        )
+
     context = {
             'page_obj': page_obj,
             'page_obj_contrato': page_obj_c,
@@ -5094,6 +6564,7 @@ def aprovar_solicitacao(request, pk, acao):
         return redirect("home")
 
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+    justificativa = request.POST.get("justificativa", "").strip()
     if acao == "aprovar":
         if not solicitacao.guarda_chuva and not solicitacao.evento_set.exists():
             messages.error(request, "Cadastre ao menos um evento antes de aprovar esta solicitação.")
@@ -5101,26 +6572,31 @@ def aprovar_solicitacao(request, pk, acao):
         solicitacao.status = "Aprovada pelo suprimento"
         solicitacao.aprovado = True
     elif acao == "reprovar":
-        solicitacao.status = "Reprovada pelo suprimento"
-        solicitacao.aprovado = False
+        if request.method != "POST" or not justificativa:
+            messages.error(request, "A justificativa é obrigatória para reprovar.")
+            return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+        solicitacao.status = "Solicitação de prospecção"
+        solicitacao.aprovado = None
+        solicitacao.justificativa_gerencia = justificativa
 
-        coordenador = solicitacao.coordenador
-        assunto = "Solicitação reprovada"
+        responsavel = solicitacao.lider_contrato or solicitacao.coordenador
+        nome_responsavel = (
+            responsavel.get_full_name() or responsavel.username
+            if responsavel and hasattr(responsavel, "username")
+            else "responsável"
+        )
+        assunto = f"Solicitação de prospecção #{solicitacao.id} - Ajustes solicitados"
         mensagem = (
-            f"Olá, {coordenador.username}\n\n"
-            f"A solicitação de prospecção foi reprovada. \n\n"
-            "Por favor, entre no sistema HIDROGestão para mais informações.\n"
+            f"Olá, {nome_responsavel}!\n\n"
+            f"A solicitação de prospecção #{solicitacao.id} retornou para a etapa anterior após reprovação do Suprimento.\n\n"
+            f"Justificativa: {justificativa}\n\n"
+            "A próxima ação é revisar a solicitação e providenciar os ajustes necessários no sistema.\n"
             "https://hidrogestao.pythonanywhere.com/"
         )
         try:
-            send_mail(
-                assunto, mensagem,
-                FROM_EMAIL,
-                [coordenador.email],
-                fail_silently=False,
-            )
+            _send_stage_return_notification(assunto, mensagem, [_safe_user_email(responsavel)])
         except Exception as e:
-            messages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
+            messages.warning(request, f"Erro ao enviar e-mail de reprovação: {e}")
 
     solicitacao.data_aprovacao = timezone.now()
     solicitacao.aprovado_por = request.user
@@ -5204,35 +6680,25 @@ def triagem_fornecedores(request, pk):
                         proposta_obj.condicao_pagamento = condicao
                     proposta_obj.save()
 
-            # Notifica coordenador
-            coordenador = solicitacao.coordenador
-            #lider = solicitacao.lider_contrato
+            # Notifica liderança responsável pelo fluxo
+            destinatario = solicitacao.lider_contrato
             assunto = "Triagem de fornecedores realizada"
             mensagem = (
-                f"Olá, {coordenador.username}\n\n"
+                f"Olá, {destinatario.username}\n\n"
                 f"A equipe de suprimentos realizou uma triagem de fornecedores para você. \n\n"
                 "Por favor, entre no sistema HIDROGestão para selecionar sua escolha.\n"
                 "https://hidrogestao.pythonanywhere.com/"
             )
-            try:
-                send_mail(
-                    assunto, mensagem,
-                    FROM_EMAIL,
-                    [coordenador.email],
-                    fail_silently=False,
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para {coordenador.username}: {e}")
-
-            #try:
-            #    send_mail(
-            #        assunto, mensagem,
-            #        FROM_EMAIL,
-            #        [lider.email],
-            #        fail_silently=False,
-            #    )
-            #except Exception as e:
-            #    messages.warning(request, f"Erro ao enviar e-mail para {lider.username}: {e}")
+            if destinatario and destinatario.email:
+                try:
+                    send_mail(
+                        assunto, mensagem,
+                        FROM_EMAIL,
+                        [destinatario.email],
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para {destinatario.username}: {e}")
             messages.success(request, "Triagem e propostas salvas com sucesso!")
             return redirect("lista_solicitacoes")
 
@@ -5379,7 +6845,7 @@ def aprovar_fornecedor_gerente(request, pk):
 
     if request.method == "POST":
         acao = request.POST.get("acao")
-        justificativa = request.POST.get("justificativa", "")
+        justificativa = request.POST.get("justificativa", "").strip()
 
         # Busca todos os usuários do grupo 'suprimento'
         emails_suprimentos = list(
@@ -5441,8 +6907,12 @@ def aprovar_fornecedor_gerente(request, pk):
 
         # --- Caso REPROVADO ---
         elif acao == "reprovar":
-            solicitacao.status = "Fornecedor reprovado pela gerência"
-            solicitacao.aprovacao_fornecedor_gerente = "reprovado"
+            if not justificativa:
+                messages.warning(request, "A justificativa e obrigatoria para reprovar o fornecedor.")
+                return redirect('detalhes_triagem_fornecedores', pk=pk)
+            solicitacao.status = "Aprovada pelo suprimento"
+            solicitacao.aprovacao_fornecedor_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_diretor = "pendente"
             solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
             solicitacao.fornecedor_escolhido = None
             solicitacao.triagem_realizada = False
@@ -5450,31 +6920,22 @@ def aprovar_fornecedor_gerente(request, pk):
             solicitacao.justificativa_gerencia = justificativa
             solicitacao.save()
 
-            messages.warning(request, "Fornecedor reprovado. Nova triagem necessária pelo suprimento.")
+            messages.warning(request, "Fornecedor reprovado. Nova triagem necessaria pelo suprimento.")
 
-            assunto = f"Fornecedor reprovado pela gerência de contrato"
-            mensagem = (
-                f"Prezados,\n\n"
-                f"O gerente {request.user.get_full_name() or request.user.username} "
-                f"reprovou o fornecedor selecionado na solicitação #{solicitacao.id}.\n\n"
-                f"Contrato: {solicitacao.contrato.cod_projeto}\n"
-                f"Cliente: {solicitacao.contrato.cliente.nome}\n\n"
-                f"Uma nova triagem será necessária pelo setor de suprimentos.\n\n"
-                f"Acesse o sistema para mais detalhes."
-            )
-
-            # Envia o e-mail para todos os destinatários (se houver)
-            if emails_suprimentos:
-                try:
-                    send_mail(
-                        assunto,
-                        mensagem,
-                        FROM_EMAIL,
-                        list(set(emails_suprimentos)),  # remove duplicados
-                        fail_silently=False,
-                    )
-                except Exception as e:
-                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+            try:
+                _send_stage_return_notification(
+                    f"Solicitação #{solicitacao.id} - Triagem reenviada ao suprimento",
+                    (
+                        f"Olá, equipe de Suprimentos!\n\n"
+                        f"O fornecedor selecionado na solicitação #{solicitacao.id} foi reprovado pela Gerência de Contratos.\n\n"
+                        f"Justificativa: {justificativa}\n\n"
+                        "A proxima etapa e realizar uma nova triagem e selecionar outro fornecedor no sistema.\n"
+                        "https://hidrogestao.pythonanywhere.com/"
+                    ),
+                    emails_suprimentos,
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
 
         else:
             messages.error(request, "Ação inválida.")
@@ -5501,7 +6962,7 @@ def aprovar_fornecedor_diretor(request, pk):
 
     if request.method == "POST":
         acao = request.POST.get("acao")
-        justificativa = request.POST.get("justificativa", "")
+        justificativa = request.POST.get("justificativa", "").strip()
 
         # Busca todos os usuários do grupo 'suprimento'
         emails_suprimentos = list(
@@ -5561,8 +7022,12 @@ def aprovar_fornecedor_diretor(request, pk):
 
         # --- Caso REPROVADO ---
         elif acao == "reprovar":
-            solicitacao.status = "Fornecedor reprovado"
-            solicitacao.aprovacao_fornecedor_diretor = "reprovado"
+            if not justificativa:
+                messages.warning(request, "A justificativa e obrigatoria para reprovar o fornecedor.")
+                return redirect('detalhes_triagem_fornecedores', pk=pk)
+            solicitacao.status = "Aprovada pelo suprimento"
+            solicitacao.aprovacao_fornecedor_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_diretor = "pendente"
             solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
             solicitacao.fornecedor_escolhido = None
             solicitacao.triagem_realizada = False
@@ -5570,31 +7035,22 @@ def aprovar_fornecedor_diretor(request, pk):
             solicitacao.justificativa_diretoria = justificativa
             solicitacao.save()
 
-            messages.warning(request, "Fornecedor reprovado. Nova triagem necessária pelo suprimento.")
+            messages.warning(request, "Fornecedor reprovado. Nova triagem necessaria pelo suprimento.")
 
-            assunto = f"Fornecedor reprovado pela diretoria de contrato"
-            mensagem = (
-                f"Prezados,\n\n"
-                f"O diretor {request.user.get_full_name() or request.user.username} "
-                f"reprovou o fornecedor selecionado na solicitação #{solicitacao.id}.\n\n"
-                f"Contrato: {solicitacao.contrato.cod_projeto}\n"
-                f"Cliente: {solicitacao.contrato.cliente.nome}\n\n"
-                f"Uma nova triagem será necessária pelo setor de suprimentos.\n\n"
-                f"Acesse o sistema para mais detalhes."
-            )
-
-            # Envia o e-mail para todos os destinatários (se houver)
-            if emails_suprimentos:
-                try:
-                    send_mail(
-                        assunto,
-                        mensagem,
-                        FROM_EMAIL,
-                        list(set(emails_suprimentos)),  # remove duplicados
-                        fail_silently=False,
-                    )
-                except Exception as e:
-                    messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
+            try:
+                _send_stage_return_notification(
+                    f"Solicitação #{solicitacao.id} - Triagem reenviada ao suprimento",
+                    (
+                        f"Olá, equipe de Suprimentos!\n\n"
+                        f"O fornecedor selecionado na solicitação #{solicitacao.id} foi reprovado pela Diretoria.\n\n"
+                        f"Justificativa: {justificativa}\n\n"
+                        "A proxima etapa e realizar uma nova triagem e selecionar outro fornecedor no sistema.\n"
+                        "https://hidrogestao.pythonanywhere.com/"
+                    ),
+                    emails_suprimentos,
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
 
         else:
             messages.error(request, "Ação inválida.")
@@ -5625,7 +7081,7 @@ def detalhes_solicitacao_contrato(request, pk):
 
     if request.method == "POST":
         acao = request.POST.get("acao")
-        justificativa = request.POST.get("justificativa", "")
+        justificativa = request.POST.get("justificativa", "").strip()
 
         if acao == "aprovar" and not solicitacao.guarda_chuva and not solicitacao.evento_set.exists():
             messages.error(request, "Cadastre ao menos um evento antes de avançar esta solicitação.")
@@ -5638,7 +7094,7 @@ def detalhes_solicitacao_contrato(request, pk):
                 solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
             elif acao == "reprovar":
                 if not justificativa:
-                    messages.error(request, "A justificativa é obrigatÃ³ria para reprovar.")
+                    messages.error(request, "A justificativa e obrigatoria para reprovar.")
                     return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
                 solicitacao.aprovacao_fornecedor_gerente = "reprovado"
                 solicitacao.aprocacao_fornecedor_gerente_em = timezone.now()
@@ -5651,7 +7107,7 @@ def detalhes_solicitacao_contrato(request, pk):
                 solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
             elif acao == "reprovar":
                 if not justificativa:
-                    messages.error(request, "A justificativa é obrigatÃ³ria para reprovar.")
+                    messages.error(request, "A justificativa e obrigatoria para reprovar.")
                     return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
                 solicitacao.aprovacao_fornecedor_diretor = "reprovado"
                 solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
@@ -5686,6 +7142,26 @@ def detalhes_solicitacao_contrato(request, pk):
                     messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
         elif solicitacao.aprovacao_fornecedor_gerente == "reprovado" or solicitacao.aprovacao_fornecedor_diretor == "reprovado":
             solicitacao.status = "Solicitação de contratação"
+            responsavel = solicitacao.lider_contrato or solicitacao.coordenador
+            nome_responsavel = (
+                responsavel.get_full_name() or responsavel.username
+                if responsavel and hasattr(responsavel, "username")
+                else "responsável"
+            )
+            try:
+                _send_stage_return_notification(
+                    f"Solicitação de contratação #{solicitacao.id} - Ajustes solicitados",
+                    (
+                        f"Olá, {nome_responsavel}!\n\n"
+                        f"A solicitação de contratação #{solicitacao.id} retornou para a etapa anterior após reprovação.\n\n"
+                        f"Justificativa: {justificativa or '-'}\n\n"
+                        "A próxima ação é revisar a solicitação e providenciar os ajustes necessários no sistema.\n"
+                        "https://hidrogestao.pythonanywhere.com/"
+                    ),
+                    [_safe_user_email(responsavel)],
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail de reprovação: {e}")
         solicitacao.save()
         return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
 
@@ -5717,6 +7193,10 @@ def detalhes_solicitacao_contrato(request, pk):
         "current_index": current_index,
         "progress_percent": progress_percent,
         "eventos": eventos,
+        "sla_display": build_request_sla_display(
+            solicitacao,
+            contratacao_audit_map=build_latest_audit_map(SolicitacaoContrato, [solicitacao.pk]),
+        ),
     }
 
     return render(request, "gestao_contratos/detalhes_solicitacao_contratacao.html", context)
@@ -5794,6 +7274,10 @@ def detalhes_solicitacao(request, pk):
         "current_index": current_index,
         "progress_percent": progress_percent,
         "eventos": eventos,
+        "sla_display": build_request_sla_display(
+            solicitacao,
+            prospeccao_audit_map=build_latest_audit_map(SolicitacaoProspeccao, [solicitacao.pk]),
+        ),
     }
 
     return render(request, "gestao_contratos/detalhes_solicitacao.html", context)
@@ -5853,6 +7337,10 @@ def detalhe_os(request, pk):
         'current_index': current_index,
         'total_steps': len(status_order),
         'progress_percent': progress_percent,
+        'sla_display': build_request_sla_display(
+            os,
+            os_audit_map=build_latest_audit_map(SolicitacaoOrdemServico, [os.pk]),
+        ),
     }
 
     return render(request, 'gestao_contratos/detalhe_os.html', context)
@@ -6517,7 +8005,7 @@ def detalhes_contrato(request, pk):
 
     if request.method == "POST" and request.user.grupo == "gerente_contrato" and contrato_doc:
         acao = request.POST.get("acao")
-        justificativa = request.POST.get("justificativa", "")
+        justificativa = request.POST.get("justificativa", "").strip()
 
         if acao == "aprovar":
             solicitacao.aprovacao_gerencia = True
@@ -6525,10 +8013,33 @@ def detalhes_contrato(request, pk):
             solicitacao.justificativa_gerencia = ""
             messages.success(request, "Documento do contrato aprovado pela gerência.")
         elif acao == "reprovar":
+            if not justificativa:
+                messages.warning(request, "Por favor, insira uma justificativa para a reprovação.")
+                return redirect('detalhes_contrato', pk=pk)
             solicitacao.aprovacao_gerencia = False
             solicitacao.reprovacao_gerencia = True
             solicitacao.justificativa_gerencia = justificativa
+            solicitacao.status = "Planejamento do Contrato"
             messages.warning(request, "Documento do contrato reprovado pela gerência.")
+            lista_emails = _group_emails("suprimento")
+            if lista_emails:
+                try:
+                    send_mail(
+                        f"Solicitação #{solicitacao.id} - Minuta de Contrato Reprovada",
+                        (
+                            f"Olá, equipe de Suprimentos!\n\n"
+                            f"A Gerência de Contratos reprovou a minuta do contrato da solicitação #{solicitacao.id}.\n\n"
+                            f"Fornecedor: {solicitacao.fornecedor_escolhido}\n"
+                            f"Justificativa da reprovação: {justificativa}\n\n"
+                            "A próxima etapa é revisar a minuta e reenviá-la no sistema.\n"
+                            "https://hidrogestao.pythonanywhere.com/"
+                        ),
+                        FROM_EMAIL,
+                        lista_emails,
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    messages.warning(request, f"Erro ao enviar e-mail para suprimento: {e}")
         else:
             messages.error(request, "Ação inválida.")
 
@@ -6568,7 +8079,7 @@ def detalhes_minuta_contrato(request, pk):
 
     if request.method == "POST" and request.user.grupo == "gerente_contrato" and contrato_doc:
         acao = request.POST.get("acao")
-        justificativa = request.POST.get("justificativa", "")
+        justificativa = request.POST.get("justificativa", "").strip()
 
         if acao == "aprovar":
             solicitacao.aprovacao_gerencia = True
@@ -6582,6 +8093,7 @@ def detalhes_minuta_contrato(request, pk):
             solicitacao.aprovacao_gerencia = False
             solicitacao.reprovacao_gerencia = True
             solicitacao.justificativa_gerencia = justificativa
+            solicitacao.status = "Planejamento do Contrato"
             messages.warning(request, "Documento do contrato reprovado pela gerência.")
 
             suprimentos = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email__exact="")
@@ -6818,6 +8330,7 @@ def detalhe_bm(request, pk):
 
     if request.method == "POST":
         acao = request.POST.get("acao")
+        justificativa = request.POST.get("justificativa", "").strip()
 
         # Avaliação do coordenador
         if usuario.grupo == "lider_contrato" or (
@@ -6829,10 +8342,17 @@ def detalhe_bm(request, pk):
             if acao == "aprovar":
                 bm.status_coordenador = "aprovado"
                 bm.data_aprovacao_coordenador = timezone.now()
+                bm.justificativa_reprovacao_coordenador = None
                 messages.success(request, "Minuta BM aprovada pelo coordenador.")
             elif acao == "reprovar":
+                if not justificativa:
+                    messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
+                    return redirect("detalhe_bm", pk=pk)
                 bm.status_coordenador = "reprovado"
                 bm.data_aprovacao_coordenador = timezone.now()
+                bm.justificativa_reprovacao_coordenador = justificativa
+                solicitacao.status = "Planejamento do Contrato"
+                solicitacao.save(update_fields=["status"])
                 messages.warning(request, "Minuta BM reprovada pelo coordenador.")
 
         # Avaliação do gerente
@@ -6840,15 +8360,35 @@ def detalhe_bm(request, pk):
             if acao == "aprovar":
                 bm.status_gerente = "aprovado"
                 bm.data_aprovacao_gerente = timezone.now()
+                bm.justificativa_reprovacao_gerente = None
                 messages.success(request, "Minuta BM aprovada pelo gerente.")
             elif acao == "reprovar":
+                if not justificativa:
+                    messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
+                    return redirect("detalhe_bm", pk=pk)
                 bm.status_gerente = "reprovado"
                 bm.data_aprovacao_gerente = timezone.now()
+                bm.justificativa_reprovacao_gerente = justificativa
                 solicitacao.status = "Planejamento do Contrato"
                 solicitacao.save()
                 messages.warning(request, "Minuta BM reprovada pelo gerente.")
 
         bm.save()
+        if acao == "reprovar":
+            try:
+                _send_stage_return_notification(
+                    f"Solicitação #{solicitacao.id} - Minuta de BM reprovada",
+                    (
+                        f"Olá, equipe de Suprimentos!\n\n"
+                        f"A minuta do BM da solicitação #{solicitacao.id} foi reprovada.\n\n"
+                        f"Justificativa: {justificativa}\n\n"
+                        "A próxima etapa é revisar a minuta e reenviá-la no sistema.\n"
+                        "https://hidrogestao.pythonanywhere.com/"
+                    ),
+                    _group_emails("suprimento"),
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para suprimento: {e}")
         # Tenta criar o contrato caso BM e documento do contrato estejam aprovados
         criar_contrato_se_aprovado(solicitacao)
 
@@ -6875,6 +8415,7 @@ def detalhe_bm_contrato(request, pk):
 
     if request.method == "POST":
         acao = request.POST.get("acao")
+        justificativa = request.POST.get("justificativa", "").strip()
 
         if usuario.grupo == "lider_contrato" or (
             usuario.grupo == "gerente_lider" and user_shares_center_with_coordinator(usuario, solicitacao.coordenador)
@@ -6885,23 +8426,52 @@ def detalhe_bm_contrato(request, pk):
             if acao == "aprovar":
                 bm.status_coordenador = "aprovado"
                 bm.data_aprovacao_coordenador = timezone.now()
+                bm.justificativa_reprovacao_coordenador = None
                 messages.success(request, "Minuta BM aprovada pelo líder.")
             elif acao == "reprovar":
+                if not justificativa:
+                    messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
+                    return redirect("detalhe_bm_contrato", pk=pk)
                 bm.status_coordenador = "reprovado"
                 bm.data_aprovacao_coordenador = timezone.now()
+                bm.justificativa_reprovacao_coordenador = justificativa
+                solicitacao.status = "Planejamento do Contrato"
+                solicitacao.save(update_fields=["status"])
                 messages.warning(request, "Minuta BM reprovada pelo líder.")
 
         elif usuario.grupo == "gerente_contrato":
             if acao == "aprovar":
                 bm.status_gerente = "aprovado"
                 bm.data_aprovacao_gerente = timezone.now()
+                bm.justificativa_reprovacao_gerente = None
                 messages.success(request, "Minuta BM aprovada pelo gerente.")
             elif acao == "reprovar":
+                if not justificativa:
+                    messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
+                    return redirect("detalhe_bm_contrato", pk=pk)
                 bm.status_gerente = "reprovado"
                 bm.data_aprovacao_gerente = timezone.now()
+                bm.justificativa_reprovacao_gerente = justificativa
+                solicitacao.status = "Planejamento do Contrato"
+                solicitacao.save(update_fields=["status"])
                 messages.warning(request, "Minuta BM reprovada pelo gerente.")
 
         bm.save()
+        if acao == "reprovar":
+            try:
+                _send_stage_return_notification(
+                    f"Solicitação #{solicitacao.id} - Minuta de BM reprovada",
+                    (
+                        f"Olá, equipe de Suprimentos!\n\n"
+                        f"A minuta do BM da solicitação #{solicitacao.id} foi reprovada.\n\n"
+                        f"Justificativa: {justificativa}\n\n"
+                        "A próxima etapa é revisar a minuta e reenviá-la no sistema.\n"
+                        "https://hidrogestao.pythonanywhere.com/"
+                    ),
+                    _group_emails("suprimento"),
+                )
+            except Exception as e:
+                messages.warning(request, f"Erro ao enviar e-mail para suprimento: {e}")
         criar_contrato_se_aprovado_minuta(solicitacao)
 
         return redirect("lista_solicitacoes")
@@ -6935,12 +8505,24 @@ def reprovar_bm(request, pk, papel):
     bm = get_object_or_404(DocumentoBM, pk=pk)
 
     if papel == "coordenador" and request.user.groups.filter(name="Coordenador de Contrato").exists():
-        bm.status_coordenador = "reprovado"
+        campo = "coordenador"
     elif papel == "gerente" and request.user.groups.filter(name="Gerente de Contrato").exists():
-        bm.status_gerente = "reprovado"
+        campo = "gerente"
     else:
         messages.error(request, "Você não tem permissão para reprovar este documento.")
         return redirect("lista_solicitacoes")
+
+    justificativa = request.POST.get("justificativa", "").strip()
+    if request.method != "POST" or not justificativa:
+        messages.error(request, "A justificativa é obrigatória para reprovar o BM.")
+        return redirect("detalhe_bm", pk=bm.pk)
+
+    if campo == "coordenador":
+        bm.status_coordenador = "reprovado"
+        bm.justificativa_reprovacao_coordenador = justificativa
+    else:
+        bm.status_gerente = "reprovado"
+        bm.justificativa_reprovacao_gerente = justificativa
 
     bm.save()
 
@@ -7373,7 +8955,12 @@ def avaliar_bm(request, bm_id):
         bm.data_aprovacao_coordenador = timezone.now()
 
         if acao == "reprovar":
-            bm.justificativa_reprovacao_coordenador = justificativa or "Sem justificativa informada."
+            if not justificativa:
+                return JsonResponse({
+                    "success": False,
+                    "error": "A justificativa é obrigatória para reprovar o BM."
+                }, status=400)
+            bm.justificativa_reprovacao_coordenador = justificativa
         else:
             bm.justificativa_reprovacao_coordenador = None
 
@@ -7417,7 +9004,12 @@ def avaliar_bm(request, bm_id):
         bm.data_aprovacao_gerente = timezone.now()
 
         if acao == "reprovar":
-            bm.justificativa_reprovacao_gerente = justificativa or "Sem justificativa informada."
+            if not justificativa:
+                return JsonResponse({
+                    "success": False,
+                    "error": "A justificativa é obrigatória para reprovar o BM."
+                }, status=400)
+            bm.justificativa_reprovacao_gerente = justificativa
         else:
             bm.justificativa_reprovacao_gerente = None
 
@@ -7464,9 +9056,14 @@ def avaliar_bm(request, bm_id):
                 )
 
         elif acao == "reprovar_pagamento":
+            if not justificativa:
+                return JsonResponse({
+                    "success": False,
+                    "error": "A justificativa é obrigatória para reprovar o pagamento do BM."
+                }, status=400)
             bm.aprovacao_pagamento = "reprovado"
             bm.data_aprovacao_diretor = timezone.now()
-            bm.justificativa_reprovacao_diretor = justificativa or "Sem justificativa informada."
+            bm.justificativa_reprovacao_diretor = justificativa
 
     bm.save()
 
@@ -7514,9 +9111,24 @@ def avaliar_bm(request, bm_id):
                         lista_emails,
                         fail_silently=False,
                     )
-
         except Exception as e:
             print("Erro ao enviar e-mail de avaliação:", e)
+    elif usuario.grupo == "diretoria" and bm.aprovacao_pagamento == "reprovado":
+        try:
+            _send_stage_return_notification(
+                f"Pagamento de BM reprovado - Contrato {bm.contrato.num_contrato}",
+                (
+                    f"Olá!\n\n"
+                    f"O pagamento do BM foi reprovado pela Diretoria.\n\n"
+                    f"{referencia_bm}\n"
+                    f"Justificativa: {bm.justificativa_reprovacao_diretor or '-'}\n\n"
+                    "A próxima ação é revisar a informação de pagamento e providenciar os ajustes necessários.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                ),
+                _group_emails("suprimento", "financeiro"),
+            )
+        except Exception as e:
+            print("Erro ao enviar e-mail de reprovação de pagamento:", e)
             messages.error(request, "⚠ Não foi possível enviar o e-mail para Suprimentos.")
 
     return JsonResponse({
@@ -8915,6 +10527,58 @@ def avaliar_evento_fornecedor(request, evento_id):
 
 
 @login_required
+def avaliar_os_fornecedor(request, os_id):
+    os = get_object_or_404(OS, id=os_id)
+
+    if request.user.grupo not in ["lider_contrato", "gerente_contrato"]:
+        messages.error(request, "Você não tem permissão para avaliar esta OS.")
+        return redirect("detalhes_os", pk=os.id)
+
+    if request.user.grupo == "lider_contrato" and request.user != os.lider_contrato:
+        messages.error(request, "Você não tem permissão para avaliar esta OS.")
+        return redirect("detalhes_os", pk=os.id)
+
+    if not os.realizado:
+        messages.error(request, "A OS precisa estar realizada para ser avaliada.")
+        return redirect("detalhes_os", pk=os.id)
+
+    fornecedor = os.contrato.empresa_terceira
+    contrato = os.contrato
+    avaliacao_existente = AvaliacaoFornecedor.objects.filter(os=os).first()
+
+    if request.method == "POST":
+        if avaliacao_existente:
+            messages.info(request, "Esta OS já foi avaliada.")
+            return redirect("detalhes_os", pk=os.id)
+
+        nota_gestao = request.POST.get("nota_gestao")
+        nota_tecnica = request.POST.get("nota_tecnica")
+        nota_entrega = request.POST.get("nota_entrega")
+        comentario = request.POST.get("comentario")
+
+        AvaliacaoFornecedor.objects.create(
+            empresa_terceira=fornecedor,
+            contrato_terceiro=contrato,
+            os=os,
+            area_avaliadora="OS",
+            avaliador=request.user,
+            nota_gestao=nota_gestao,
+            nota_tecnica=nota_tecnica,
+            nota_entrega=nota_entrega,
+            comentario=comentario,
+        )
+
+        return redirect("detalhes_os", pk=os.id)
+
+    return render(request, "gestao_contratos/avaliar_os.html", {
+        "os": os,
+        "contrato": contrato,
+        "fornecedor": fornecedor,
+        "avaliacao": avaliacao_existente,
+    })
+
+
+@login_required
 def detalhes_os(request, pk):
     if request.user.grupo not in ['suprimento', 'lider_contrato', 'coordenador', 'gerente', 'gerente_lider', 'gerente_contrato']:
         messages.error(request, "Você não tem permissão para isso.")
@@ -8939,10 +10603,21 @@ def detalhes_os(request, pk):
     indicadores, _ = Indicadores.objects.get_or_create(
         empresa_terceira=fornecedor
     )
+    avaliacao_os = os.avaliacoes.first()
+    can_evaluate_os = (
+        os.realizado
+        and not avaliacao_os
+        and (
+            request.user.grupo == "gerente_contrato"
+            or (request.user.grupo == "lider_contrato" and request.user == os.lider_contrato)
+        )
+    )
 
     context = {
         'os': os,
         'indicadores': indicadores,
+        'avaliacao_os': avaliacao_os,
+        'can_evaluate_os': can_evaluate_os,
     }
 
     return render(request, "gestao_contratos/os.html", context)
@@ -8999,9 +10674,6 @@ def registrar_entrega_os(request, pk):
         form = RegistroEntregaOSForm(request.POST, instance=os, user=request.user)
         if form.is_valid():
             entrega = form.save(commit=False)
-
-            if entrega.data_entrega and os.prazo_execucao:
-                entrega.com_atraso = entrega.data_entrega > os.prazo_execucao
 
             entrega.realizado = True
             entrega.status = "finalizada"

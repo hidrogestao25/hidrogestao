@@ -320,6 +320,7 @@
             <th>Prazo da Execução</th>
             <th>Valor Previsto</th>
             <th>Status</th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -336,7 +337,11 @@
               </td>
               <td>{{ os.valor }}</td>
               <td>
-                {% if os.status == 'em_execucao' %}
+                {% if os.realizado and os.valor_pago is not None and os.data_pagamento %}
+                  <span class="badge bg-success">Finalizada</span>
+                {% elif os.realizado %}
+                  <span class="badge bg-warning text-dark">Faltando Pagamento</span>
+                {% elif os.status == 'em_execucao' %}
                   <span class="badge bg-primary">Em execução</span>
                 {% elif os.status == 'paralizada' %}
                   <span class="badge bg-warning">Paralisada</span>
@@ -344,6 +349,21 @@
                   <span class="badge bg-danger">Cancelada</span>
                 {% elif os.status == 'finalizada' %}
                   <span class="badge bg-success">Finalizada</span>
+                {% endif %}
+              </td>
+              <td onclick="event.stopPropagation();">
+                {% if request.user.grupo == 'lider_contrato' and request.user == os.lider_contrato or request.user.grupo == 'gerente_contrato' %}
+                  {% if os.realizado %}
+                    {% with avaliacao=os.avaliacoes.first %}
+                      {% if avaliacao %}
+                        <button class="btn btn-sm btn-secondary" disabled>Avaliado</button>
+                      {% else %}
+                        <a href="{% url 'avaliar_os_fornecedor' os.id %}" class="btn btn-sm btn-outline-primary">
+                          Avaliar OS
+                        </a>
+                      {% endif %}
+                    {% endwith %}
+                  {% endif %}
                 {% endif %}
               </td>
             </tr>

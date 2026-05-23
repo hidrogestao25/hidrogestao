@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container mt-4">
+  <div class="card shadow">
+    <div class="card-header bg-primary">
+        <h5 class="m-0">
+            <a href="{% url 'detalhes_os' os.id %}" class="text-white text-decoration-none">
+                Avaliar OS do Fornecedor
+            </a>
+        </h5>
+    </div>
+    <div class="card-body">
+
+      <p><strong>Fornecedor:</strong> {{ fornecedor }}</p>
+      <p><strong>OS:</strong> {{ os.titulo }}</p>
+
+      {% if avaliacao %}
+        <div class="alert alert-success">
+          OS ja avaliada anteriormente.
+        </div>
+      {% else %}
+
+      <form method="post">
+        {% csrf_token %}
+
+        <h6><strong>Criterio: Gestao</strong></h6>
+        <select name="nota_gestao" class="form-select" required>
+          <option value="">Selecione...</option>
+          <option value="5">5 - Excelente: Fornecedor apresenta pro-atividade, facilidade de contato, flexibilidade e baixa necessidade de supervisao.</option>
+          <option value="4">4 - Bom: Interesse na relacao, flexibilidade moderada, baixa supervisao.</option>
+          <option value="3">3 - Regular: Indiferenca comercial, pouca flexibilidade, demanda maior supervisao.</option>
+          <option value="2">2 - Ruim: Dificuldade na relacao, alta necessidade de supervisao.</option>
+          <option value="1">1 - Pessimo: Conflitos, supervisao acima do normal.</option>
+        </select>
+
+        <hr>
+
+        <h6><strong>Criterio: Tecnica</strong></h6>
+        <select name="nota_tecnica" class="form-select" required>
+          <option value="">Selecione...</option>
+          <option value="5">5 - Excelente: Dominio tecnico destacado, certificacoes, equipamentos de destaque.</option>
+          <option value="4">4 - Bom: Capacidade tecnica adequada, estrutura e certificacao dentro da media.</option>
+          <option value="3">3 - Regular: Capacidade tecnica adequada e suficiente ao escopo.</option>
+          <option value="2">2 - Ruim: Insuficiencia em tecnica, estrutura ou certificacoes.</option>
+          <option value="1">1 - Pessimo: Fragilidade tecnica relevante, risco a qualidade.</option>
+        </select>
+
+        <hr>
+
+        <h6><strong>Criterio: Entrega</strong></h6>
+        <select name="nota_entrega" class="form-select" required>
+          <option value="">Selecione...</option>
+          <option value="5">5 - Excelente: Alta qualidade tecnica, sem revisao, entregue no prazo.</option>
+          <option value="4">4 - Bom: Qualidade ok, pouca revisao, entregue no prazo.</option>
+          <option value="3">3 - Regular: Exige revisao tecnica, entregue no prazo com cobranca.</option>
+          <option value="2">2 - Ruim: Baixa qualidade, formatos errados, entrega fora do solicitado.</option>
+          <option value="1">1 - Pessimo: Totalmente em desacordo com o padrao.</option>
+        </select>
+
+        <hr>
+
+        <label><strong>Comentario (opcional):</strong></label>
+        <textarea name="comentario" class="form-control" rows="3"></textarea>
+
+        <button class="btn btn-success mt-3">Salvar Avaliacao</button>
+      </form>
+
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+
+{% endblock %}

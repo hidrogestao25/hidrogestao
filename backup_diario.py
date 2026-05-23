@@ -56,24 +56,37 @@ eventos_hoje = Evento.objects.filter(data_prevista=hoje)
 for evento in eventos_hoje:
     contrato = evento.contrato_terceiro
     if contrato.status != "encerrado":
+        destinatarios = []
+
         if contrato and contrato.coordenador and contrato.coordenador.email:
+            destinatarios.append(contrato.coordenador.email)
+        if contrato and contrato.lider_contrato and contrato.lider_contrato.email:
+            destinatarios.append(contrato.lider_contrato.email)
+
+        destinatarios = list(set(destinatarios))
+
+        if destinatarios:
             coordenador = contrato.coordenador
-            email_destino = coordenador.email
-            print(f"Usuario coordenador: {email_destino}")
+            nome_destino = (
+                coordenador.first_name or coordenador.username
+                if coordenador
+                else "responsavel"
+            )
+            print(f"Usuarios notificados do evento: {destinatarios}")
             assunto = f"Lembrete de entrega - Evento #{evento.id}"
             mensagem = (
-                f"Olá {coordenador.first_name or coordenador.username},\n\n"
-                f"Este é um lembrete automático para a entrega prevista hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
+                f"Ola {nome_destino},\n\n"
+                f"Este e um lembrete automatico para a entrega prevista hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
                 f"Fornecedor: {evento.empresa_terceira}\n"
-                f"Descrição: {evento.descricao}\n"
+                f"Descricao: {evento.descricao}\n"
                 f"Contrato: {contrato.num_contrato or 'N/A'}\n\n"
-                f"Atenciosamente,\nSistema HIDROGestão"
+                f"Atenciosamente,\nSistema HIDROGestao"
             )
             try:
-                send_mail(assunto, mensagem, get_from_email(), [email_destino])
-                print(f"E-mail enviado para {email_destino} (Evento {evento.id})")
+                send_mail(assunto, mensagem, get_from_email(), destinatarios)
+                print(f"E-mail enviado para {destinatarios} (Evento {evento.id})")
             except Exception as e:
-                print(f"Erro ao enviar e-mail para {email_destino}: {e}")
+                print(f"Erro ao enviar e-mail para {destinatarios}: {e}")
 
 
 # --- 5. VERIFICACAO DE CONTRATOS (data_fim = hoje) ---
@@ -89,21 +102,23 @@ for contrato in contratos_hoje:
 
         if contrato.coordenador and contrato.coordenador.email:
             destinatarios.append(contrato.coordenador.email)
+        if contrato.lider_contrato and contrato.lider_contrato.email:
+            destinatarios.append(contrato.lider_contrato.email)
 
         destinatarios.extend(emails_suprimento)
         destinatarios = list(set(destinatarios))
 
         if not destinatarios:
-            print(f"Nenhum destinatário encontrado para contrato {contrato.id}")
+            print(f"Nenhum destinatario encontrado para contrato {contrato.id}")
             continue
 
         assunto = f"Encerramento de contrato - {contrato.empresa_terceira}"
         mensagem = (
-            f"Olá,\n\n"
-            f"O contrato nº {contrato.num_contrato or 'N/A'} referente ao projeto {contrato.cod_projeto} "
+            f"Ola,\n\n"
+            f"O contrato n {contrato.num_contrato or 'N/A'} referente ao projeto {contrato.cod_projeto} "
             f"com a empresa {contrato.empresa_terceira} encerra hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
-            f"Por favor, verifique as providências necessárias.\n\n"
-            f"Atenciosamente,\nSistema HIDROGestão"
+            f"Por favor, verifique as providencias necessarias.\n\n"
+            f"Atenciosamente,\nSistema HIDROGestao"
         )
         try:
             send_mail(assunto, mensagem, get_from_email(), destinatarios)
@@ -114,7 +129,6 @@ for contrato in contratos_hoje:
 
 # --- 6. REPORT SEMANAL AUTOMATICO (SEGUNDA-FEIRA) ---
 if hoje.weekday() == 0:
-    email_report = "frederico.viana@hidrobr.com"
     usuario_report = (
         User.objects.filter(grupo="suprimento", is_active=True)
         .exclude(email__isnull=True)
@@ -122,8 +136,19 @@ if hoje.weekday() == 0:
         .order_by("id")
         .first()
     )
+    emails_report = sorted(
+        set(
+            User.objects.filter(
+                grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
+                is_active=True,
+            )
+            .exclude(email__isnull=True)
+            .exclude(email="")
+            .values_list("email", flat=True)
+        )
+    )
 
-    if usuario_report:
+    if usuario_report and emails_report:
         try:
             html_content = build_weekly_supply_report(usuario_report)
             mensagem = strip_tags(html_content)
@@ -131,15 +156,17 @@ if hoje.weekday() == 0:
                 subject="Report Semanal de Suprimentos",
                 body=mensagem,
                 from_email=get_from_email(),
-                to=[email_report],
+                to=emails_report,
             )
             email.attach_alternative(html_content, "text/html")
             email.send()
-            print(f"Report semanal enviado para {email_report}")
+            print("Report semanal enviado para: " + ", ".join(emails_report))
         except Exception as e:
-            print(f"Erro ao enviar report semanal para {email_report}: {e}")
+            print(f"Erro ao enviar report semanal: {e}")
+    elif not usuario_report:
+        print("Nenhum usuario de suprimento ativo encontrado para montar o report semanal.")
     else:
-        print("Nenhum usuário de suprimento ativo encontrado para montar o report semanal.")
+        print("Nenhum destinatario ativo encontrado para o report semanal.")
 
 
-print("Rotina concluída com sucesso.")
+print("Rotina concluida com sucesso.")

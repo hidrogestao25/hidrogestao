@@ -19,6 +19,27 @@
       <p><strong>Data fim anterior:</strong> {{ aditivo.data_fim_anterior|date:"d/m/Y"|default:"-" }}</p>
       <p><strong>Nova data fim:</strong> {{ aditivo.nova_data_fim|date:"d/m/Y"|default:"-" }}</p>
       <p><strong>Etapa atual:</strong> {{ aditivo.etapa_atual }}</p>
+      {% if sla_display %}
+      <p>
+        <strong>SLA da etapa atual:</strong>
+        <span class="badge {{ sla_display.badge_class }}">{{ sla_display.badge_label }}</span>
+        <span class="ms-2 text-muted">
+          {{ sla_display.etapa }}
+          {% if sla_display.owner_label %}
+            | dono {{ sla_display.owner_label }}
+          {% endif %}
+          {% if sla_display.owner_since %}
+            | desde {{ sla_display.owner_since|date:"d/m/Y" }}
+          {% endif %}
+          {% if sla_display.prazo_dias_uteis is not None %}
+            | {{ sla_display.dias_uteis_decorridos }} / {{ sla_display.prazo_dias_uteis }} dias uteis
+          {% endif %}
+          {% if sla_display.data_limite %}
+            | limite em {{ sla_display.data_limite|date:"d/m/Y" }}
+          {% endif %}
+        </span>
+      </p>
+      {% endif %}
 
       <hr>
 

@@ -941,7 +941,7 @@ class EventoEntregaForm(forms.ModelForm):
         model = Evento
         fields = [
             "observacao", "caminho_evidencia", "avaliacao",
-            "data_entrega", "realizado", "com_atraso", "valor_pago", "data_pagamento",
+            "data_entrega", "realizado", "valor_pago", "data_pagamento",
         ]
         widgets = {
             "caminho_evidencia": forms.Textarea(attrs={"class": "form-control", "rows": 1}),
@@ -966,6 +966,17 @@ class EventoEntregaForm(forms.ModelForm):
         if "valor_pago" not in self.fields:
             return self.instance.valor_pago
         return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
+
+    def save(self, commit=True):
+        entrega = super().save(commit=False)
+        entrega.com_atraso = bool(
+            entrega.data_entrega
+            and entrega.data_prevista
+            and entrega.data_entrega > entrega.data_prevista
+        )
+        if commit:
+            entrega.save()
+        return entrega
 
 
 
@@ -1141,7 +1152,6 @@ class RegistroEntregaOSForm(forms.ModelForm):
             "avaliacao",
             "data_entrega",
             "realizado",
-            "com_atraso",
             "valor_pago",
             "data_pagamento",
             "observacao",
@@ -1167,6 +1177,17 @@ class RegistroEntregaOSForm(forms.ModelForm):
         if "valor_pago" not in self.fields:
             return self.instance.valor_pago
         return parse_decimal_from_form_value(self.cleaned_data.get("valor_pago"))
+
+    def save(self, commit=True):
+        entrega = super().save(commit=False)
+        entrega.com_atraso = bool(
+            entrega.data_entrega
+            and entrega.prazo_execucao
+            and entrega.data_entrega > entrega.prazo_execucao
+        )
+        if commit:
+            entrega.save()
+        return entrega
 
 
 class OrdemServicoForm(forms.ModelForm):
@@ -1204,6 +1225,19 @@ class OrdemServicoForm(forms.ModelForm):
         user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
 
+        def include_instance_value(field_name):
+            instance_value = getattr(self.instance, field_name, None)
+            if not instance_value:
+                return
+
+            field = self.fields[field_name]
+            if field.queryset.filter(pk=instance_value.pk).exists():
+                return
+
+            current_ids = list(field.queryset.values_list("pk", flat=True))
+            current_ids.append(instance_value.pk)
+            field.queryset = field.queryset.model.objects.filter(pk__in=current_ids).distinct()
+
         self.fields['coordenador'].queryset = User.objects.filter(grupo__in=['gerente', 'coordenador'], is_active=True)
         self.fields['coordenador'].required = False
         self.fields['contrato'].queryset = ContratoTerceiros.objects.filter(guarda_chuva=True)
@@ -1211,6 +1245,11 @@ class OrdemServicoForm(forms.ModelForm):
         self.fields['lider_contrato'].queryset = User.objects.filter(grupo__in=['gerente_contrato', 'lider_contrato', 'gerente_lider'], is_active=True)
         self.fields['lider_contrato'].required = False
         self.fields['cod_projeto'].queryset = Contrato.objects.filter(status='ativo')
+        include_instance_value('contrato')
+        include_instance_value('solicitacao')
+        include_instance_value('cod_projeto')
+        include_instance_value('coordenador')
+        include_instance_value('lider_contrato')
         if self.instance and self.instance.valor is not None:
             self.initial["valor"] = format_decimal_for_br_input(self.instance.valor)
 

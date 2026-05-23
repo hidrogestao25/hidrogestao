@@ -44,7 +44,7 @@
             <form method="post">
                 {% csrf_token %}
                 <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
-                <button name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarBMLider">Reprovar</button>
             </form>
         {% endif %}
     {% endif %}
@@ -54,9 +54,55 @@
             <form method="post">
                 {% csrf_token %}
                 <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
-                <button name="acao" value="reprovar" class="btn btn-danger">Reprovar</button>
+                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarBMGerente">Reprovar</button>
             </form>
         {% endif %}
     {% endif %}
+</div>
+
+<div class="modal fade" id="modalReprovarBMLider" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="reprovar">
+        <div class="modal-header">
+          <h5 class="modal-title">Reprovar minuta de BM</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <label for="justificativaBMLider" class="form-label">Justificativa da reprovacao</label>
+          <textarea class="form-control" id="justificativaBMLider" name="justificativa" rows="4" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-danger">Confirmar reprovacao</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modalReprovarBMGerente" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="reprovar">
+        <div class="modal-header">
+          <h5 class="modal-title">Reprovar minuta de BM</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <label for="justificativaBMGerente" class="form-label">Justificativa da reprovacao</label>
+          <textarea class="form-control" id="justificativaBMGerente" name="justificativa" rows="4" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-danger">Confirmar reprovacao</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 {% endblock %}

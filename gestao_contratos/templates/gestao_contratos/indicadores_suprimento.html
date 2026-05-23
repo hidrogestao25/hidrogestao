@@ -5,246 +5,223 @@
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
     <div>
       <h2 class="mb-1">Indicadores de Suprimento</h2>
-      <p class="text-muted mb-0">Visao consolidada do fluxo de solicitacoes, contratos e pendencias operacionais.</p>
+      <p class="text-muted mb-0">Visao consolidada do fluxo de solicitacoes, contratos e pendências operacionais.</p>
     </div>
   </div>
 
-  <div class="row g-3 mb-4">
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Prazo medio geral</h6>
-          <div class="display-6 fw-bold">
-            {% if media_prazo_geral is not None %}{{ media_prazo_geral }} dias{% else %}-{% endif %}
-          </div>
-          <small class="text-muted">Da solicitacao at&eacute; a entrada em onboarding.</small>
-        </div>
-      </div>
+  <div class="card shadow-sm mb-4">
+    <div class="card-header card-header-custom">
+      <strong>Prazos e Backlog</strong>
     </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Prazo medio prospeccao</h6>
-          <div class="display-6 fw-bold">
-            {% if media_prazo_prospeccao is not None %}{{ media_prazo_prospeccao }} dias{% else %}-{% endif %}
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Prazo medio geral</h6>
+            <div class="fs-3 fw-bold">{% if media_prazo_geral is not None %}{{ media_prazo_geral }} dias{% else %}-{% endif %}</div>
           </div>
-          <small class="text-muted">Solicitacoes de prospeccao conclu&iacute;das.</small>
         </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Prazo medio contratacao</h6>
-          <div class="display-6 fw-bold">
-            {% if media_prazo_contratacao is not None %}{{ media_prazo_contratacao }} dias{% else %}-{% endif %}
+        <div class="col-md-4 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Prazo medio prospeccao</h6>
+            <div class="fs-3 fw-bold">{% if media_prazo_prospeccao is not None %}{{ media_prazo_prospeccao }} dias{% else %}-{% endif %}</div>
           </div>
-          <small class="text-muted">Solicitacoes de contratacao conclu&iacute;das.</small>
         </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Prazo medio de OS</h6>
-          <div class="display-6 fw-bold">
-            {% if media_prazo_os is not None %}{{ media_prazo_os }} dias{% else %}-{% endif %}
+        <div class="col-md-4 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Prazo medio contratacao</h6>
+            <div class="fs-3 fw-bold">{% if media_prazo_contratacao is not None %}{{ media_prazo_contratacao }} dias{% else %}-{% endif %}</div>
           </div>
-          <small class="text-muted">Da abertura da solicitacao de OS at&eacute; a conclusao do fluxo.</small>
         </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Prazo medio guarda-chuva</h6>
-          <div class="display-6 fw-bold">
-            {% if media_prazo_guarda_chuva is not None %}{{ media_prazo_guarda_chuva }} dias{% else %}-{% endif %}
+        <div class="col-md-4 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Prazo medio de OS</h6>
+            <div class="fs-3 fw-bold">{% if media_prazo_os is not None %}{{ media_prazo_os }} dias{% else %}-{% endif %}</div>
           </div>
-          <small class="text-muted">Da solicitacao guarda-chuva at&eacute; a entrada em onboarding.</small>
         </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Backlog atual</h6>
-          <div class="display-6 fw-bold">{{ backlog_total }}</div>
-          <small class="text-muted">Solicitacoes ainda nao conclu&iacute;das.</small>
+        <div class="col-md-4 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Prazo medio Guarda-chuva</h6>
+            <div class="fs-3 fw-bold">{% if media_prazo_guarda_chuva is not None %}{{ media_prazo_guarda_chuva }} dias{% else %}-{% endif %}</div>
+          </div>
+        </div>
+        <div class="col-md-4 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Backlog atual</h6>
+            <div class="fs-3 fw-bold">{{ backlog_total }}</div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-
-  <div class="row g-3 mb-4">
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Retrabalho</h6>
-          <div class="display-6 fw-bold">{{ percentual_retrabalho }}%</div>
-          <small class="text-muted">{{ total_retrabalho }} solicitacoes com retorno ou reprova&ccedil;&atilde;o.</small>
-        </div>
-      </div>
+  <div class="card shadow-sm mb-4">
+    <div class="card-header card-header-custom">
+      <strong>Contratos e Pendências</strong>
     </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Contratos ativos</h6>
-          <div class="display-6 fw-bold">{{ contratos_ativos_total }}</div>
-          <small class="text-muted">Valor total: R$ {{ valor_total_contratos_ativos|floatformat:2 }}</small>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6 col-xl-3">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Número de contratos ativos</h6>
+            <div class="fs-3 fw-bold">{{ contratos_ativos_total }}</div>
+          </div>
         </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">Eventos sem NF</h6>
-          <div class="display-6 fw-bold">{{ eventos_sem_nf_count }}</div>
-          <small class="text-muted">Pagamento aprovado e NF ainda n&atilde;o cadastrada.</small>
+        <div class="col-md-6 col-xl-3">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Eventos atrasados</h6>
+            <div class="fs-3 fw-bold">{{ eventos_atrasados_count }}</div>
+          </div>
         </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h6 class="text-muted">BMs pendentes</h6>
-          <div class="fw-bold mb-2">Operacional: {{ bms_pendentes_operacionais }}</div>
-          <div class="fw-bold">Diretoria: {{ bms_pendentes_diretoria }}</div>
+        <div class="col-md-6 col-xl-3">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Eventos sem NF</h6>
+            <div class="fs-3 fw-bold">{{ eventos_sem_nf_count }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-3">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">BMs pendentes</h6>
+            <div class="fs-3 fw-bold">{{ bms_pendentes_total }}</div>
+            <small class="text-muted">Operacional: {{ bms_pendentes_operacionais }} | Diretoria: {{ bms_pendentes_diretoria }}</small>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Valor total dos contratos ativos</h6>
+            <div class="fs-4 fw-bold">R$ {{ valor_total_contratos_ativos|floatformat:2 }}</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Valor pago dos contratos ativos</h6>
+            <div class="fs-4 fw-bold">R$ {{ valor_pago_contratos_ativos|floatformat:2 }}</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Valor ainda previsto dos contratos ativos</h6>
+            <div class="fs-4 fw-bold">R$ {{ valor_previsto_contratos_ativos|floatformat:2 }}</div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="row g-3 mb-4">
-    <div class="col-md-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-header card-header-custom">
-          <strong>Status das solicitacoes de prospeccao</strong>
+  <div class="card shadow-sm mb-4">
+    <div class="card-header card-header-custom">
+      <strong>SLA</strong>
+    </div>
+    <div class="card-body">
+      <div class="row g-3 mb-4">
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Itens ativos</h6>
+            <div class="fs-3 fw-bold">{{ sla_summary.ativos_total }}</div>
+          </div>
         </div>
-        <div class="card-body">
-          <p class="mb-3"><strong>Total:</strong> {{ total_solicitacoes_prospeccao }}</p>
-          {% if prospeccao_status_rows %}
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100 border-success">
+            <h6 class="text-muted">Dentro do SLA</h6>
+            <div class="fs-3 fw-bold text-success">{{ sla_summary.dentro_sla }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100 border-warning">
+            <h6 class="text-muted">Em alerta</h6>
+            <div class="fs-3 fw-bold text-warning">{{ sla_summary.em_alerta }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100 border-danger">
+            <h6 class="text-muted">Vencidos</h6>
+            <div class="fs-3 fw-bold text-danger">{{ sla_summary.vencidos }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Sem configuracao</h6>
+            <div class="fs-3 fw-bold">{{ sla_summary.sem_configuracao }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Taxa dentro do SLA</h6>
+            <div class="fs-3 fw-bold">{{ sla_summary.taxa_dentro_sla }}%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-xl-7">
+          <h6 class="mb-3">Resumo por etapa</h6>
+          {% if sla_stage_rows %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead>
+            <table class="table table-bordered table-sm align-middle">
+              <thead class="table-light">
                 <tr>
-                  <th>Status</th>
-                  <th class="text-end">Quantidade</th>
+                  <th>Fluxo</th>
+                  <th>Etapa</th>
+                  <th>Responsável atual</th>
+                  <th class="text-end">Prazo</th>
+                  <th class="text-end">Ativos</th>
+                  <th class="text-end">Dentro</th>
+                  <th class="text-end">Alerta</th>
+                  <th class="text-end">Vencidos</th>
+                  <th class="text-end">Media decorrida</th>
                 </tr>
               </thead>
               <tbody>
-                {% for status, quantidade in prospeccao_status_rows %}
+                {% for row in sla_stage_rows %}
                 <tr>
-                  <td>{{ status }}</td>
-                  <td class="text-end">{{ quantidade }}</td>
+                  <td>{{ row.fluxo_label }}</td>
+                  <td>{{ row.etapa }}</td>
+                  <td>{{ row.owner_label }}</td>
+                  <td class="text-end">
+                    {% if row.prazo_dias_uteis is not None %}{{ row.prazo_dias_uteis }} dias uteis{% else %}-{% endif %}
+                  </td>
+                  <td class="text-end">{{ row.itens_ativos }}</td>
+                  <td class="text-end">{{ row.dentro_sla }}</td>
+                  <td class="text-end">{{ row.em_alerta }}</td>
+                  <td class="text-end">{{ row.vencidos }}</td>
+                  <td class="text-end">
+                    {% if row.media_dias_decorridos is not None %}{{ row.media_dias_decorridos }} dias{% else %}-{% endif %}
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
           {% else %}
-          <p class="text-muted mb-0">Sem dados de prospeccao.</p>
+          <p class="text-muted mb-0">Ainda nao ha itens ativos suficientes para resumir o SLA por etapa.</p>
           {% endif %}
         </div>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-header card-header-custom">
-          <strong>Status das solicitacoes de contratacao</strong>
-        </div>
-        <div class="card-body">
-          <p class="mb-3"><strong>Total:</strong> {{ total_solicitacoes_contratacao }}</p>
-          {% if contratacao_status_rows %}
+        <div class="col-xl-5">
+          <h6 class="mb-3">Mapa de etapas configuradas</h6>
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead>
+            <table class="table table-bordered table-sm align-middle">
+              <thead class="table-light">
                 <tr>
-                  <th>Status</th>
-                  <th class="text-end">Quantidade</th>
+                  <th>Fluxo</th>
+                  <th>Etapa</th>
+                  <th>Status cobertos</th>
+                  <th class="text-end">Prazo</th>
                 </tr>
               </thead>
               <tbody>
-                {% for status, quantidade in contratacao_status_rows %}
+                {% for row in sla_stage_mapping_rows %}
                 <tr>
-                  <td>{{ status }}</td>
-                  <td class="text-end">{{ quantidade }}</td>
+                  <td>{{ row.fluxo_label }}</td>
+                  <td>{{ row.etapa }}</td>
+                  <td>{{ row.statuses }}</td>
+                  <td class="text-end">
+                    {% if row.prazo_dias_uteis is not None %}{{ row.prazo_dias_uteis }} dias uteis{% else %}-{% endif %}
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
-          {% else %}
-          <p class="text-muted mb-0">Sem dados de contratacao.</p>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="row g-3 mb-4">
-    <div class="col-md-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-header card-header-custom">
-          <strong>Status das solicitacoes guarda-chuva</strong>
-        </div>
-        <div class="card-body">
-          <p class="mb-3"><strong>Total:</strong> {{ total_solicitacoes_guarda_chuva }}</p>
-          {% if guarda_chuva_status_rows %}
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th class="text-end">Quantidade</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for status, quantidade in guarda_chuva_status_rows %}
-                <tr>
-                  <td>{{ status }}</td>
-                  <td class="text-end">{{ quantidade }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-          <p class="text-muted mb-0">Sem dados de guarda-chuva.</p>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-header card-header-custom">
-          <strong>Status das solicitacoes de OS</strong>
-        </div>
-        <div class="card-body">
-          <p class="mb-3"><strong>Total:</strong> {{ total_solicitacoes_os }}</p>
-          {% if os_status_rows %}
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th class="text-end">Quantidade</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for status, quantidade in os_status_rows %}
-                <tr>
-                  <td>{{ status }}</td>
-                  <td class="text-end">{{ quantidade }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-          <p class="text-muted mb-0">Sem dados de OS.</p>
-          {% endif %}
         </div>
       </div>
     </div>
@@ -255,35 +232,196 @@
       <strong>Indicadores por usuario</strong>
     </div>
     <div class="card-body">
-      <p class="text-muted mb-3">Visao por usuario envolvido no fluxo das solicitacoes, com volume, backlog, retrabalho e prazo medio at&eacute; onboarding.</p>
-      {% if user_indicator_rows %}
+      <form method="get" class="row g-3 align-items-end mb-4">
+        <div class="col-md-6">
+          <label for="usuario" class="form-label fw-bold">Escolha um usuario</label>
+          <select name="usuario" id="usuario" class="form-select">
+            {% for item in user_options %}
+            <option value="{{ item.id }}" {% if selected_user and item.id == selected_user.id %}selected{% endif %}>
+              {{ item.nome }} - {{ item.grupo }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-auto">
+          <button type="submit" class="btn btn-primary">Atualizar</button>
+        </div>
+      </form>
+
+      {% if selected_user_metrics %}
+      <div class="mb-4">
+        <h5 class="mb-1">{{ selected_user_metrics.usuario.get_full_name|default:selected_user_metrics.usuario.username }}</h5>
+        <p class="text-muted mb-0">{{ selected_user_metrics.usuario.get_grupo_display }}</p>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6 col-xl-3">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Numero de solicitacoes</h6>
+            <div class="fs-3 fw-bold">{{ selected_user_metrics.numero_solicitacoes }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-3">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Tempo medio para aprovacao de BM</h6>
+            <div class="fs-3 fw-bold">
+              {% if selected_user_metrics.tempo_medio_aprovacao_bm is not None %}
+                {{ selected_user_metrics.tempo_medio_aprovacao_bm }} dias
+              {% else %}
+                -
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Contratos ativos</h6>
+            <div class="fs-3 fw-bold">{{ selected_user_metrics.contratos_ativos_total }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-4">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Valor total dos contratos ativos dele</h6>
+            <div class="fs-4 fw-bold">R$ {{ selected_user_metrics.valor_total_contratos_ativos|floatformat:2 }}</div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Valor pago dos contratos ativos dele</h6>
+            <div class="fs-4 fw-bold">R$ {{ selected_user_metrics.valor_pago_contratos_ativos|floatformat:2 }}</div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Valor ainda previsto dos contratos ativos dele</h6>
+            <div class="fs-4 fw-bold">R$ {{ selected_user_metrics.valor_previsto_contratos_ativos|floatformat:2 }}</div>
+          </div>
+        </div>
+      </div>
+
+      <h6 class="mb-3">SLA do responsavel</h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Itens ativos</h6>
+            <div class="fs-3 fw-bold">{{ selected_user_metrics.sla_summary.ativos_total }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100 border-success">
+            <h6 class="text-muted">Dentro do SLA</h6>
+            <div class="fs-3 fw-bold text-success">{{ selected_user_metrics.sla_summary.dentro_sla }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100 border-warning">
+            <h6 class="text-muted">Em alerta</h6>
+            <div class="fs-3 fw-bold text-warning">{{ selected_user_metrics.sla_summary.em_alerta }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100 border-danger">
+            <h6 class="text-muted">Vencidos</h6>
+            <div class="fs-3 fw-bold text-danger">{{ selected_user_metrics.sla_summary.vencidos }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Sem configuracao</h6>
+            <div class="fs-3 fw-bold">{{ selected_user_metrics.sla_summary.sem_configuracao }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-2">
+          <div class="border rounded p-3 h-100">
+            <h6 class="text-muted">Taxa dentro do SLA</h6>
+            <div class="fs-3 fw-bold">{{ selected_user_metrics.sla_summary.taxa_dentro_sla }}%</div>
+          </div>
+        </div>
+      </div>
+
       <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Etapa</th>
+              <th class="text-end">Tempo medio</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for label, value in selected_user_metrics.etapa_rows %}
+            <tr>
+              <td>{{ label }}</td>
+              <td class="text-end">
+                {% if value is not None %}{{ value }} dias{% else %}-{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-responsive mt-4">
+        <table class="table table-bordered table-sm align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Fluxo</th>
+              <th>Etapa</th>
+              <th>Responsável atual</th>
+              <th class="text-end">Prazo</th>
+              <th class="text-end">Ativos</th>
+              <th class="text-end">Dentro</th>
+              <th class="text-end">Alerta</th>
+              <th class="text-end">Vencidos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in selected_user_metrics.sla_stage_rows %}
+            <tr>
+              <td>{{ row.fluxo_label }}</td>
+              <td>{{ row.etapa }}</td>
+              <td>{{ row.owner_label }}</td>
+              <td class="text-end">{% if row.prazo_dias_uteis is not None %}{{ row.prazo_dias_uteis }} dias uteis{% else %}-{% endif %}</td>
+              <td class="text-end">{{ row.itens_ativos }}</td>
+              <td class="text-end">{{ row.dentro_sla }}</td>
+              <td class="text-end">{{ row.em_alerta }}</td>
+              <td class="text-end">{{ row.vencidos }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7" class="text-center text-muted">Esse usuario nao tem itens de SLA sob responsabilidade no momento.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-responsive mt-4">
         <table class="table table-bordered table-sm align-middle">
           <thead class="table-light">
             <tr>
               <th>Usuario</th>
               <th>Grupo</th>
-              <th>Papeis</th>
               <th class="text-end">Solicitacoes</th>
               <th class="text-end">Em aberto</th>
               <th class="text-end">Concluidas</th>
-              <th class="text-end">Retrabalho</th>
-              <th class="text-end">Prazo medio</th>
+              <th class="text-end">SLA ativos</th>
+              <th class="text-end">Alerta</th>
+              <th class="text-end">Vencidos</th>
+              <th class="text-end">% SLA</th>
             </tr>
           </thead>
           <tbody>
-            {% for item in user_indicator_rows %}
+            {% for row in user_indicator_rows %}
             <tr>
-              <td>{{ item.usuario_nome }}</td>
-              <td>{{ item.grupo }}</td>
-              <td>{{ item.papeis }}</td>
-              <td class="text-end">{{ item.solicitacoes_vinculadas }}</td>
-              <td class="text-end">{{ item.em_aberto }}</td>
-              <td class="text-end">{{ item.concluidas }}</td>
-              <td class="text-end">{{ item.retrabalho }}</td>
-              <td class="text-end">
-                {% if item.media_prazo is not None %}{{ item.media_prazo }} dias{% else %}-{% endif %}
-              </td>
+              <td>{{ row.usuario_nome }}</td>
+              <td>{{ row.grupo }}</td>
+              <td class="text-end">{{ row.solicitacoes_vinculadas }}</td>
+              <td class="text-end">{{ row.em_aberto }}</td>
+              <td class="text-end">{{ row.concluidas }}</td>
+              <td class="text-end">{{ row.sla_ativos }}</td>
+              <td class="text-end">{{ row.sla_alerta }}</td>
+              <td class="text-end">{{ row.sla_vencidos }}</td>
+              <td class="text-end">{{ row.sla_taxa_dentro }}%</td>
             </tr>
             {% endfor %}
           </tbody>

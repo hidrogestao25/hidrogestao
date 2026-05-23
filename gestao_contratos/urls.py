@@ -117,6 +117,9 @@ path('aditivos_fornecedor/<int:pk>/gerar-documento/', views.gerar_aditivo_contra
     path('ordem-servico/<int:pk>/diretoria/<str:acao>/', views.aprovar_os_diretoria, name='aprovar_os_diretoria'),
     path('ordens-servico/', views.lista_ordens_servico, name='lista_ordens_servico'),
     path("ordem-servicos/<int:pk>/", views.detalhes_os, name="detalhes_os"),
+    path("ordem-servicos/<int:pk>/editar/", views.editar_os_cadastrada, name="editar_os_cadastrada"),
+    path("ordem-servicos/<int:pk>/duplicar/", views.duplicar_os_cadastrada, name="duplicar_os_cadastrada"),
+    path("ordem-servicos/<int:os_id>/avaliar/", views.avaliar_os_fornecedor, name="avaliar_os_fornecedor"),
     path('ordem-servicos/novo/', OSCreateView.as_view(), name='nova_os'),
     path("ordem-servico/<int:pk>/registrar-entrega/", views.registrar_entrega_os, name="registrar_entrega_os"),
 

@@ -5,7 +5,7 @@
 <div class="container mt-4">
     <div class="card shadow-sm">
         <div class="card-header card-header-custom text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">{% if direct_guarda_chuva %}Cadastrar OS{% else %}Nova Ordem de Servico{% endif %}</h5>
+            <h5 class="mb-0">{% if is_editing_os %}Editar OS{% elif direct_guarda_chuva %}Cadastrar OS{% else %}Nova Ordem de Servico{% endif %}</h5>
         </div>
 
         <div class="card-body">
@@ -36,7 +36,7 @@
                         {% endif %}
                         {% if form.solicitacao %}
                             <div class="col-md-6">
-                                <label class="form-label">Solicitacao de OS</label>
+                                <label class="form-label">Solicitação de OS</label>
                                 {{ form.solicitacao }}
                                 {{ form.solicitacao.errors }}
                             </div>
@@ -47,7 +47,7 @@
                 {% if form.cod_projeto %}
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label class="form-label">Codigo do Projeto</label>
+                            <label class="form-label">Código do Projeto</label>
                             {{ form.cod_projeto }}
                             {{ form.cod_projeto.errors }}
                         </div>
@@ -58,14 +58,14 @@
                     <div class="row mb-3">
                         {% if form.coordenador %}
                             <div class="col-md-6">
-                                <label class="form-label">Coordenador</label>
+                                <label class="form-label">Líder Técnico</label>
                                 {{ form.coordenador }}
                                 {{ form.coordenador.errors }}
                             </div>
                         {% endif %}
                         {% if form.lider_contrato %}
                             <div class="col-md-6">
-                                <label class="form-label">Lider do Contrato</label>
+                                <label class="form-label">Líder do Contrato</label>
                                 {{ form.lider_contrato }}
                                 {{ form.lider_contrato.errors }}
                             </div>
@@ -74,13 +74,13 @@
                 {% endif %}
 
                 <div class="mb-3">
-                    <label class="form-label">Titulo</label>
+                    <label class="form-label">Título</label>
                     {{ form.titulo }}
                     {{ form.titulo.errors }}
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Descricao</label>
+                    <label class="form-label">Descrição</label>
                     {{ form.descricao }}
                     {{ form.descricao.errors }}
                 </div>
@@ -97,7 +97,7 @@
                         {{ form.data_prevista_pagamento.errors }}
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label">Prazo de Execucao</label>
+                        <label class="form-label">Prazo de Execução</label>
                         {{ form.prazo_execucao }}
                         {{ form.prazo_execucao.errors }}
                     </div>
@@ -117,15 +117,26 @@
                 </div>
 
                 <div class="d-flex justify-content-end gap-2">
-                    <a href="{% url 'lista_ordens_servico' %}" class="btn btn-secondary">
+                    <a href="{{ cancel_url|default:request.META.HTTP_REFERER|default:'' }}" class="btn btn-secondary">
                         Cancelar
                     </a>
                     <button type="submit" class="btn btn-success">
-                        {% if direct_guarda_chuwa %}Cadastrar OS{% else %}Salvar Ordem de Servico{% endif %}
+                        {% if direct_guarda_chuwa %}Cadastrar OS{% else %}Salvar Ordem de Serviço{% endif %}
                     </button>
                 </div>
             </form>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ block.super }}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
+<script>
+$(document).ready(function () {
+    $('.money').mask('000.000.000.000.000,00', {reverse: true});
+});
+</script>
 {% endblock %}

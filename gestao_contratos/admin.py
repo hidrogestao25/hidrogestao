@@ -8,7 +8,8 @@ from .models import (
     AvaliacaoFornecedor, Indicadores, NFCliente,
     BM, DocumentoContrato, DocumentoContratoTerceiro,
     SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM, CalendarioPagamento, NF,
-    SolicitacaoOrdemServico, OS, SolicitacaoContrato, RegistroAuditoria, AditivoContratoTerceiro
+    SolicitacaoOrdemServico, OS, SolicitacaoContrato, RegistroAuditoria, AditivoContratoTerceiro,
+    ConfiguracaoSLA, Feriado
 )
 
 
@@ -150,7 +151,7 @@ MODELOS_PADRAO = [
     BM, DocumentoContrato, DocumentoContratoTerceiro, NFCliente,
     SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM, CalendarioPagamento, NF,
     SolicitacaoOrdemServico, OS, SolicitacaoContrato, RegistroAuditoria,
-    AditivoContratoTerceiro
+    AditivoContratoTerceiro, ConfiguracaoSLA, Feriado
 ]
 
 for modelo in MODELOS_PADRAO:

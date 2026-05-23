@@ -9,6 +9,27 @@
       <h5>Avaliar minuta do aditivo</h5>
     </div>
     <div class="card-body">
+      {% if sla_display %}
+      <p>
+        <strong>SLA da etapa atual:</strong>
+        <span class="badge {{ sla_display.badge_class }}">{{ sla_display.badge_label }}</span>
+        <span class="ms-2 text-muted">
+          {{ sla_display.etapa }}
+          {% if sla_display.owner_label %}
+            | dono {{ sla_display.owner_label }}
+          {% endif %}
+          {% if sla_display.owner_since %}
+            | desde {{ sla_display.owner_since|date:"d/m/Y" }}
+          {% endif %}
+          {% if sla_display.prazo_dias_uteis is not None %}
+            | {{ sla_display.dias_uteis_decorridos }} / {{ sla_display.prazo_dias_uteis }} dias uteis
+          {% endif %}
+          {% if sla_display.data_limite %}
+            | limite em {{ sla_display.data_limite|date:"d/m/Y" }}
+          {% endif %}
+        </span>
+      </p>
+      {% endif %}
       <p><strong>Contrato:</strong> {{ contrato.num_contrato }} - {{ contrato.empresa_terceira }}</p>
       <p><strong>Motivo:</strong> {{ aditivo.motivo }}</p>
       {% if aditivo.arquivo_aditivo %}
@@ -17,16 +38,33 @@
 
       <form method="post">
         {% csrf_token %}
-        <div class="mb-3">
-          <label class="form-label" for="id_justificativa">Justificativa</label>
-          <textarea class="form-control" id="id_justificativa" name="justificativa" rows="4"></textarea>
-          <small class="text-muted">Obrigatoria apenas em caso de reprovacao.</small>
-        </div>
-
         <div class="d-flex gap-2 flex-wrap">
           <button type="submit" name="acao" value="aprovar_minuta" class="btn btn-success">Aprovar minuta</button>
-          <button type="submit" name="acao" value="reprovar_minuta" class="btn btn-danger">Reprovar minuta</button>
+          <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarMinutaAditivo">Reprovar minuta</button>
           <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-outline-secondary">Voltar</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modalReprovarMinutaAditivo" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="reprovar_minuta">
+        <div class="modal-header">
+          <h5 class="modal-title">Reprovar minuta de aditivo</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <label for="justificativaMinutaAditivo" class="form-label">Justificativa da reprovacao</label>
+          <textarea class="form-control" id="justificativaMinutaAditivo" name="justificativa" rows="4" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-danger">Confirmar reprovacao</button>
         </div>
       </form>
     </div>

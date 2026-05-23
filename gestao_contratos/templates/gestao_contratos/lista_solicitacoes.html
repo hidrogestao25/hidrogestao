@@ -22,6 +22,7 @@
                     <th>Previsto no Orçamento</th>
                     <th>Valor Disponível</th>
                     <th>Status</th>
+                    <th>SLA</th>
                     <th>Aprovação do Fornecedor - Gerência</th>
                     <th>Aprovação do Fornecedor - Diretoria</th>
                     {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria,gerente_lider' %}
@@ -58,6 +59,13 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if solicitacao.sla_display %}
+                                <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
                                 <span class="badge bg-success">Aprovado</span>
                             {% elif solicitacao.aprovacao_fornecedor_gerente == "reprovado" %}
@@ -82,7 +90,28 @@
                             {% if request.user.grupo == 'suprimento' %}
                                 {% if solicitacao.aprovado == None %}
                                     <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success btn-sm">Aprovar</a>
-                                    <a href="{% url 'aprovar_solicitacao' solicitacao.id 'reprovar' %}" class="btn btn-danger btn-sm">Reprovar</a>
+                                    <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalReprovarSolicitacao{{ solicitacao.id }}">Reprovar</button>
+                                    <div class="modal fade" id="modalReprovarSolicitacao{{ solicitacao.id }}" tabindex="-1" aria-hidden="true">
+                                      <div class="modal-dialog">
+                                        <div class="modal-content" onclick="event.stopPropagation();">
+                                          <form method="post" action="{% url 'aprovar_solicitacao' solicitacao.id 'reprovar' %}">
+                                            {% csrf_token %}
+                                            <div class="modal-header">
+                                              <h5 class="modal-title">Reprovar solicitacao</h5>
+                                              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                              <label for="justificativaSolicitacao{{ solicitacao.id }}" class="form-label">Justificativa da reprovacao</label>
+                                              <textarea class="form-control" id="justificativaSolicitacao{{ solicitacao.id }}" name="justificativa" rows="4" required></textarea>
+                                            </div>
+                                            <div class="modal-footer">
+                                              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                              <button type="submit" class="btn btn-danger">Confirmar reprovacao</button>
+                                            </div>
+                                          </form>
+                                        </div>
+                                      </div>
+                                    </div>
                                 {% endif %}
 
                                 {% if solicitacao.aprovado %}
@@ -168,7 +197,7 @@
                                         </a>
                                     {% else %}
                                         <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning btn-sm">
-                                            Revisar Minuta BM
+
                                         </a>
                                     {% endif %}
                                 {% endif %}
@@ -185,7 +214,7 @@
                                       </a>
                                   {% else %}
                                       <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning btn-sm">
-                                          Revisar Minuta BM
+
                                       </a>
                                   {% endif %}
                               {% endif %}
@@ -230,6 +259,7 @@
                   <th>Previsto no Orçamento</th>
                   <th>Valor Provisionado</th>
                   <th>Status</th>
+                  <th>SLA</th>
 
                   {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato, gerente_lider' %}
                       <th>Ações</th>
@@ -270,6 +300,13 @@
 
                   <td>
                       {{ solicitacao.status }}
+                  </td>
+                  <td>
+                    {% if solicitacao.sla_display %}
+                        <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
+                    {% else %}
+                        <span class="text-muted">-</span>
+                    {% endif %}
                   </td>
 
                     <!-- AÇÕES -->
@@ -347,7 +384,7 @@
                                   </a>
                               {% else %}
                                   <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-warning btn-sm">
-                                      Revisar Minuta BM
+                                      
                                   </a>
                               {% endif %}
                           {% endif %}
@@ -447,6 +484,7 @@
                 <th>Valor Previsto</th>
                 <th>Prazo</th>
                 <th>Status</th>
+                <th>SLA</th>
                 <th>Ações</th>
             </tr>
         </thead>
@@ -491,6 +529,13 @@
                         <span class="badge bg-danger">Reprovada</span>
                     {% elif os.status == 'finalizada' %}
                         <span class="badge bg-dark">Finalizada</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if os.sla_display %}
+                        <span class="badge {{ os.sla_display.badge_class }}">{{ os.sla_display.badge_label }}</span>
+                    {% else %}
+                        <span class="text-muted">-</span>
                     {% endif %}
                 </td>
                 <td>
@@ -567,6 +612,7 @@
                 <th>Novo valor total</th>
                 <th>Nova data fim</th>
                 <th>Etapa atual</th>
+                <th>SLA</th>
                 <th>Acoes</th>
             </tr>
         </thead>
@@ -580,6 +626,13 @@
                 <td>{% if aditivo.novo_valor_total %}R$ {{ aditivo.novo_valor_total|floatformat:2 }}{% else %}-{% endif %}</td>
                 <td>{{ aditivo.nova_data_fim|date:"d/m/Y"|default:"-" }}</td>
                 <td>{{ aditivo.etapa_atual }}</td>
+                <td>
+                    {% if aditivo.sla_display %}
+                        <span class="badge {{ aditivo.sla_display.badge_class }}">{{ aditivo.sla_display.badge_label }}</span>
+                    {% else %}
+                        <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
                 <td onclick="event.stopPropagation();">
                     <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
                         Detalhes

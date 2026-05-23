@@ -9,6 +9,27 @@
       <h5>Inserir documento do aditivo assinado</h5>
     </div>
     <div class="card-body">
+      {% if sla_display %}
+      <p>
+        <strong>SLA da etapa atual:</strong>
+        <span class="badge {{ sla_display.badge_class }}">{{ sla_display.badge_label }}</span>
+        <span class="ms-2 text-muted">
+          {{ sla_display.etapa }}
+          {% if sla_display.owner_label %}
+            | dono {{ sla_display.owner_label }}
+          {% endif %}
+          {% if sla_display.owner_since %}
+            | desde {{ sla_display.owner_since|date:"d/m/Y" }}
+          {% endif %}
+          {% if sla_display.prazo_dias_uteis is not None %}
+            | {{ sla_display.dias_uteis_decorridos }} / {{ sla_display.prazo_dias_uteis }} dias uteis
+          {% endif %}
+          {% if sla_display.data_limite %}
+            | limite em {{ sla_display.data_limite|date:"d/m/Y" }}
+          {% endif %}
+        </span>
+      </p>
+      {% endif %}
       <p><strong>Contrato:</strong> {{ contrato.num_contrato }} - {{ contrato.empresa_terceira }}</p>
       <p><strong>Motivo:</strong> {{ aditivo.motivo }}</p>
 

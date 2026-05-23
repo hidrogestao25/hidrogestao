@@ -45,13 +45,6 @@
           {% endif %}
         </div>
 
-        <div class="mb-3 form-check">
-          {{ form.com_atraso }}
-          <label class="form-check-label fw-bold" for="id_com_atraso">Servico com Atraso</label>
-          {% if form.com_atraso.errors %}
-            <div class="text-danger small">{{ form.com_atraso.errors }}</div>
-          {% endif %}
-        </div>
 
         <div class="mb-3">
           <label class="form-label fw-bold">Valor Previsto</label>
@@ -96,7 +89,7 @@
 
       <hr>
       <div class="mb-4">
-        <h5>Boletins de Medicao Cadastrados</h5>
+        <h5>Boletins de Medição Cadastrados</h5>
 
         {% if boletins_detalhados %}
         <table class="table table-bordered table-striped align-middle">
@@ -362,7 +355,7 @@
         <div class="modal-dialog modal-lg">
           <div class="modal-content">
             <div class="modal-header bg-primary text-white">
-              <h5 class="modal-title">Cadastrar Boletim de Medicao</h5>
+              <h5 class="modal-title">Cadastrar Boletim de Medição</h5>
               <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="bmModalBody">

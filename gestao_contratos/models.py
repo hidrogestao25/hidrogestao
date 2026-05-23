@@ -874,6 +874,7 @@ class AvaliacaoFornecedor(models.Model):
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
     contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE)
     evento = models.ForeignKey(Evento, on_delete=models.CASCADE, blank=True, null=True, related_name="avaliacoes")
+    os = models.ForeignKey(OS, on_delete=models.CASCADE, blank=True, null=True, related_name="avaliacoes")
     area_avaliadora = models.CharField(max_length=100)
     avaliador = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     nota_gestao = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)], null=True, blank=True)
@@ -1266,6 +1267,45 @@ class RegistroAuditoria(models.Model):
 
     def __str__(self):
         return f"{self.get_acao_display()} - {self.modelo} #{self.object_id}"
+
+
+class ConfiguracaoSLA(models.Model):
+    TIPO_FLUXO_CHOICES = [
+        ("prospeccao", "Prospeccao"),
+        ("contratacao", "Contratacao"),
+        ("aditivo", "Aditivo"),
+        ("os", "Ordem de Servico"),
+    ]
+
+    tipo_fluxo = models.CharField(max_length=30, choices=TIPO_FLUXO_CHOICES)
+    etapa = models.CharField(max_length=100)
+    nome_etapa = models.CharField(max_length=150)
+    ordem = models.PositiveIntegerField(default=1)
+    prazo_dias_uteis = models.PositiveIntegerField(default=1)
+    ativo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["tipo_fluxo", "ordem", "nome_etapa"]
+        unique_together = ("tipo_fluxo", "etapa")
+        verbose_name = "Configuracao de SLA"
+        verbose_name_plural = "Configuracoes de SLA"
+
+    def __str__(self):
+        return f"{self.get_tipo_fluxo_display()} - {self.nome_etapa} ({self.prazo_dias_uteis} dias uteis)"
+
+
+class Feriado(models.Model):
+    nome = models.CharField(max_length=150)
+    data = models.DateField(unique=True)
+    ativo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["data", "nome"]
+        verbose_name = "Feriado"
+        verbose_name_plural = "Feriados"
+
+    def __str__(self):
+        return f"{self.nome} - {self.data.strftime('%d/%m/%Y')}"
 
 
 class AditivoContratoTerceiro(models.Model):

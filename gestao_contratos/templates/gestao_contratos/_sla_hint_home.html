@@ -1,0 +1,17 @@
+{% if sla %}
+<small class="text-muted d-block mt-1">
+    Etapa: {{ sla.etapa }}
+    {% if sla.owner_label %}
+        | Dono: {{ sla.owner_label }}
+    {% endif %}
+    {% if sla.owner_since %}
+        | Desde: {{ sla.owner_since|date:"d/m/Y" }}
+    {% endif %}
+    {% if sla.data_limite %}
+        | Limite: {{ sla.data_limite|date:"d/m/Y" }}
+    {% endif %}
+    {% if sla.sla_status != "sem_configuracao" %}
+        | Dias úteis decorridos: {{ sla.dias_uteis_decorridos }}
+    {% endif %}
+</small>
+{% endif %}

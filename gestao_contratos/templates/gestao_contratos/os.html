@@ -48,10 +48,10 @@
         <p><strong>Descrição:</strong><br>{{ os.descricao|linebreaks }}</p>
       {% endif %}
 
-      {% if os.valor_previsto %}
+      {% if os.valor %}
         <p>
           <strong>Valor Previsto:</strong>
-          R$ {{ os.valor_previsto|floatformat:2 }}
+          R$ {{ os.valor|floatformat:2 }}
         </p>
       {% endif %}
 
@@ -183,6 +183,15 @@
                     {{ os.observacao }}
                 </p>
                 {% endif %}
+                <hr>
+                <p class="mb-0">
+                    <strong>Avaliacao do fornecedor:</strong><br>
+                    {% if avaliacao_os %}
+                        Avaliado
+                    {% else %}
+                        -
+                    {% endif %}
+                </p>
             </div>
         </div>
         {% endif %}
@@ -193,6 +202,15 @@
     <!-- FOOTER -->
     <div class="card-footer text-end">
       <div class="d-flex justify-content-end gap-2">
+        {% if request.user.grupo == "suprimento" %}
+        <a href="{% url 'editar_os_cadastrada' os.id %}" class="btn btn-warning">
+          Editar OS
+        </a>
+        <form method="post" action="{% url 'duplicar_os_cadastrada' os.id %}" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-outline-primary">Duplicar OS</button>
+        </form>
+        {% endif %}
         {% if request.user.grupo == "lider_contrato" and request.user == os.lider_contrato or request.user.grupo == "gerente_contrato" or request.user.grupo == "gerente_lider" or request.user.grupo == "suprimento" %}
         <a href="{% url 'registrar_entrega_os' os.id %}" class="btn btn-success">
           {% if os.realizado or os.avaliacao %}
@@ -201,6 +219,15 @@
             Registrar Entrega
           {% endif %}
         </a>
+        {% endif %}
+        {% if os.realizado %}
+          {% if avaliacao_os %}
+            <button type="button" class="btn btn-secondary" disabled>Avaliado</button>
+          {% elif can_evaluate_os %}
+            <a href="{% url 'avaliar_os_fornecedor' os.id %}" class="btn btn-outline-primary">
+              Avaliar OS
+            </a>
+          {% endif %}
         {% endif %}
         <a href="{% url 'lista_ordens_servico' %}" class="btn btn-secondary">
             Voltar
