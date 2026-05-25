@@ -221,7 +221,11 @@
                                                         <span class="badge bg-danger">Diretoria</span>
                                                     {% endif %}
                                                 {% endif %}
+                                                {% if bm.sla_display %}
+                                                    <span class="badge {{ bm.sla_display.badge_class }}">{{ bm.sla_display.badge_label }}</span>
+                                                {% endif %}
                                             </div>
+                                            {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
                                         </div>
 
                                         {% if bm.evento %}
@@ -726,7 +730,11 @@
                                                           <span class="badge bg-danger">Diretoria</span>
                                                       {% endif %}
                                                   {% endif %}
+                                                  {% if bm.sla_display %}
+                                                      <span class="badge {{ bm.sla_display.badge_class }}">{{ bm.sla_display.badge_label }}</span>
+                                                  {% endif %}
                                               </div>
+                                              {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
                                           </div>
 
                                           {% if bm.evento %}
@@ -1027,18 +1035,22 @@
                                                   <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
                                                   <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
 
-                                                  <div class="mt-1">
-                                                      {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
-                                                          <span class="badge bg-secondary">Liderança</span>
-                                                          <span class="badge bg-info text-dark">Gerência de Contrato</span>
-                                                      {% endif %}
+                                              <div class="mt-1">
+                                                  {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
+                                                      <span class="badge bg-secondary">Liderança</span>
+                                                      <span class="badge bg-info text-dark">Gerência de Contrato</span>
+                                                  {% endif %}
                                                       {% if bm.aprovacao_pagamento == "pendente" %}
                                                           {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
-                                                              <span class="badge bg-danger">Diretoria</span>
-                                                          {% endif %}
+                                                          <span class="badge bg-danger">Diretoria</span>
                                                       {% endif %}
-                                                  </div>
+                                                  {% endif %}
+                                                  {% if bm.sla_display %}
+                                                      <span class="badge {{ bm.sla_display.badge_class }}">{{ bm.sla_display.badge_label }}</span>
+                                                  {% endif %}
                                               </div>
+                                              {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
+                                          </div>
 
                                               {% if bm.evento %}
                                               <a href="{% url 'detalhes_entrega' bm.evento.id %}"
@@ -2238,18 +2250,22 @@
                                                   <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
 
                                                   <!-- STATUS VISUAL -->
-                                                  <div class="mt-1">
-                                                      {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
-                                                          <span class="badge bg-secondary">Liderança</span>
-                                                          <span class="badge bg-info text-dark">Gerência de Contrato</span>
-                                                      {% endif %}
+                                              <div class="mt-1">
+                                                  {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
+                                                      <span class="badge bg-secondary">Liderança</span>
+                                                      <span class="badge bg-info text-dark">Gerência de Contrato</span>
+                                                  {% endif %}
                                                       {% if bm.aprovacao_pagamento == "pendente" %}
                                                           {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
-                                                              <span class="badge bg-danger">Diretoria</span>
-                                                          {% endif %}
+                                                          <span class="badge bg-danger">Diretoria</span>
                                                       {% endif %}
-                                                  </div>
+                                                  {% endif %}
+                                                  {% if bm.sla_display %}
+                                                      <span class="badge {{ bm.sla_display.badge_class }}">{{ bm.sla_display.badge_label }}</span>
+                                                  {% endif %}
                                               </div>
+                                              {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
+                                          </div>
 
                                               {% if bm.evento %}
                                               <a href="{% url 'detalhes_entrega' bm.evento.id %}"

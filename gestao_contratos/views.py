@@ -10,7 +10,7 @@ from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max, Mi
 from decimal import Decimal
 from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.html import escape, strip_tags
@@ -67,6 +67,10 @@ SLA_STAGE_DEFINITIONS = {
         {"slug": "minuta_os", "label": "Minuta da OS", "statuses": ["pendente_suprimento"]},
         {"slug": "aprovacao_minuta", "label": "Aprovação da minuta", "statuses": ["pendente_minuta_gerente"]},
     ],
+    "bm": [
+        {"slug": "aprovacao_operacional", "label": "Aprovação operacional do BM", "statuses": ["Pendente de liderança/gerência"]},
+        {"slug": "aprovacao_pagamento", "label": "Aprovação de pagamento do BM", "statuses": ["Pendente de diretoria"]},
+    ],
     "aditivo": [
         {"slug": "aprovacao_solicitacao", "label": "Aprovação da solicitação", "statuses": ["Aguardando Aprovacao da Solicitacao"]},
         {"slug": "minuta_aditivo", "label": "Minuta do aditivo", "statuses": ["Aguardando Minuta do Aditivo"]},
@@ -96,6 +100,10 @@ SLA_DEFAULT_CONFIG = {
         ("aprovacao_diretoria", "Aprovação da diretoria", 2),
         ("minuta_os", "Minuta da OS", 2),
         ("aprovacao_minuta", "Aprovação da minuta", 2),
+    ],
+    "bm": [
+        ("aprovacao_operacional", "Aprovação operacional do BM", 2),
+        ("aprovacao_pagamento", "Aprovação de pagamento do BM", 2),
     ],
     "aditivo": [
         ("aprovacao_solicitacao", "Aprovação da solicitação", 2),
@@ -717,6 +725,16 @@ def build_latest_audit_map(model_class, object_ids):
     return latest_audits
 
 
+def get_sla_flow_label(tipo_fluxo):
+    labels = {
+        "bm": "Boletim de Medicao",
+    }
+    return labels.get(
+        tipo_fluxo,
+        dict(ConfiguracaoSLA.TIPO_FLUXO_CHOICES).get(tipo_fluxo, tipo_fluxo.title()),
+    )
+
+
 def build_bm_approval_audit_map(bms):
     if not bms:
         return {}
@@ -836,21 +854,22 @@ def get_sla_config_map():
         ConfiguracaoSLA.objects.filter(ativo=True).order_by("tipo_fluxo", "ordem", "nome_etapa")
     )
     config_map = {}
-    if config_rows:
-        for item in config_rows:
-            config_map[(item.tipo_fluxo, item.etapa)] = item
-        return config_map
+    for item in config_rows:
+        config_map[(item.tipo_fluxo, item.etapa)] = item
 
     for tipo_fluxo, stage_rows in SLA_DEFAULT_CONFIG.items():
         for ordem, (slug, nome_etapa, prazo) in enumerate(stage_rows, start=1):
-            config_map[(tipo_fluxo, slug)] = {
-                "tipo_fluxo": tipo_fluxo,
-                "etapa": slug,
-                "nome_etapa": nome_etapa,
-                "ordem": ordem,
-                "prazo_dias_uteis": prazo,
-                "ativo": True,
-            }
+            config_map.setdefault(
+                (tipo_fluxo, slug),
+                {
+                    "tipo_fluxo": tipo_fluxo,
+                    "etapa": slug,
+                    "nome_etapa": nome_etapa,
+                    "ordem": ordem,
+                    "prazo_dias_uteis": prazo,
+                    "ativo": True,
+                },
+            )
     return config_map
 
 
@@ -872,7 +891,7 @@ def get_sla_stage_mapping_rows(config_map):
             rows.append(
                 {
                     "tipo_fluxo": tipo_fluxo,
-                    "fluxo_label": dict(ConfiguracaoSLA.TIPO_FLUXO_CHOICES).get(tipo_fluxo, tipo_fluxo.title()),
+                    "fluxo_label": get_sla_flow_label(tipo_fluxo),
                     "ordem": ordem,
                     "etapa": stage["label"],
                     "statuses": ", ".join(stage["statuses"]),
@@ -983,6 +1002,47 @@ def get_open_sla_stage_for_os(solicitacao_os, audit_map):
     }
 
 
+def get_open_sla_stage_for_bm(bm, audit_map):
+    if not bm:
+        return None
+
+    latest_audit = get_latest_audit_datetime(audit_map, bm.pk)
+    started_operational_at = latest_audit
+    if not started_operational_at:
+        if bm.evento:
+            started_operational_at = bm.evento.data_entrega or bm.evento.data_prevista
+        elif bm.os:
+            started_operational_at = bm.os.data_entrega or bm.os.prazo_execucao
+
+    if bm_is_operationally_pending(bm):
+        return {
+            "tipo_fluxo": "bm",
+            "stage_slug": "aprovacao_operacional",
+            "stage_label": get_sla_stage_label("bm", "aprovacao_operacional"),
+            "started_at": started_operational_at,
+            "status_atual": "Pendente de liderança/gerência",
+            "objeto": bm,
+        }
+
+    if bm.aprovacao_pagamento == "pendente" and bm_has_operational_approval(bm):
+        approval_datetimes = [
+            dt
+            for dt in [bm.data_aprovacao_coordenador, bm.data_aprovacao_gerente]
+            if dt
+        ]
+        started_payment_at = min(approval_datetimes) if approval_datetimes else latest_audit
+        return {
+            "tipo_fluxo": "bm",
+            "stage_slug": "aprovacao_pagamento",
+            "stage_label": get_sla_stage_label("bm", "aprovacao_pagamento"),
+            "started_at": started_payment_at,
+            "status_atual": "Pendente de diretoria",
+            "objeto": bm,
+        }
+
+    return None
+
+
 def get_open_sla_stage_for_aditivo(aditivo):
     if not aditivo or aditivo.aprovado_totalmente or aditivo.reprovado_por_alguem:
         return None
@@ -1019,7 +1079,17 @@ def classify_sla_status(days_elapsed, prazo_dias_uteis):
     return "dentro"
 
 
-def build_sla_dashboard(solicitacoes_prospeccao, solicitacoes_contratacao, os_queryset, aditivos, prospeccao_audit_map, contratacao_audit_map, os_audit_map):
+def build_sla_dashboard(
+    solicitacoes_prospeccao,
+    solicitacoes_contratacao,
+    os_queryset,
+    aditivos,
+    bms,
+    prospeccao_audit_map,
+    contratacao_audit_map,
+    os_audit_map,
+    bm_audit_map,
+):
     holiday_dates = build_holiday_date_set()
     config_map = get_sla_config_map()
     today = timezone.localdate()
@@ -1039,6 +1109,10 @@ def build_sla_dashboard(solicitacoes_prospeccao, solicitacoes_contratacao, os_qu
             active_items.append(stage)
     for aditivo in aditivos:
         stage = get_open_sla_stage_for_aditivo(aditivo)
+        if stage:
+            active_items.append(stage)
+    for bm in bms:
+        stage = get_open_sla_stage_for_bm(bm, bm_audit_map)
         if stage:
             active_items.append(stage)
 
@@ -1092,10 +1166,10 @@ def build_sla_dashboard(solicitacoes_prospeccao, solicitacoes_contratacao, os_qu
     stage_rows = []
     for (tipo_fluxo, stage_slug, stage_label, prazo_dias_uteis), items in stage_groups.items():
         stage_rows.append(
-            {
-                "tipo_fluxo": tipo_fluxo,
-                "fluxo_label": dict(ConfiguracaoSLA.TIPO_FLUXO_CHOICES).get(tipo_fluxo, tipo_fluxo.title()),
-                "etapa": stage_label,
+                {
+                    "tipo_fluxo": tipo_fluxo,
+                    "fluxo_label": get_sla_flow_label(tipo_fluxo),
+                    "etapa": stage_label,
                 "etapa_slug": stage_slug,
                 "owner_label": ", ".join(sorted({item.get("owner_label") for item in items if item.get("owner_label")})) or "-",
                 "prazo_dias_uteis": prazo_dias_uteis,
@@ -1177,6 +1251,12 @@ def get_sla_stage_owner_label(stage):
         if stage_slug == "aprovacao_minuta":
             return "Gerência de Contrato"
 
+    if isinstance(objeto, BM):
+        if stage_slug == "aprovacao_operacional":
+            return "Liderança / Gerência de Contrato"
+        if stage_slug == "aprovacao_pagamento":
+            return "Diretoria"
+
     if isinstance(objeto, AditivoContratoTerceiro):
         if stage_slug == "aprovacao_solicitacao":
             gerente_pendente = objeto.status_gerente != "aprovado"
@@ -1230,7 +1310,15 @@ def build_sla_display_from_stage(stage, config_map=None, holiday_dates=None):
     }
 
 
-def build_request_sla_display(objeto, prospeccao_audit_map=None, contratacao_audit_map=None, os_audit_map=None, config_map=None, holiday_dates=None):
+def build_request_sla_display(
+    objeto,
+    prospeccao_audit_map=None,
+    contratacao_audit_map=None,
+    os_audit_map=None,
+    bm_audit_map=None,
+    config_map=None,
+    holiday_dates=None,
+):
     stage = None
     if isinstance(objeto, SolicitacaoProspeccao):
         stage = get_open_sla_stage_for_prospeccao(objeto, prospeccao_audit_map or {})
@@ -1238,6 +1326,8 @@ def build_request_sla_display(objeto, prospeccao_audit_map=None, contratacao_aud
         stage = get_open_sla_stage_for_contratacao(objeto, contratacao_audit_map or {})
     elif isinstance(objeto, SolicitacaoOrdemServico):
         stage = get_open_sla_stage_for_os(objeto, os_audit_map or {})
+    elif isinstance(objeto, BM):
+        stage = get_open_sla_stage_for_bm(objeto, bm_audit_map or {})
     elif isinstance(objeto, AditivoContratoTerceiro):
         stage = get_open_sla_stage_for_aditivo(objeto)
 
@@ -1292,6 +1382,26 @@ def attach_home_sla_displays(solicitacoes_prospeccao=None, solicitacoes_contrato
             config_map=sla_config_map,
             holiday_dates=holiday_dates,
         )
+
+
+def attach_bm_home_sla_displays(bms_pendentes=None):
+    bms_pendentes = list(bms_pendentes or [])
+    if not bms_pendentes:
+        return bms_pendentes
+
+    sla_config_map = get_sla_config_map()
+    holiday_dates = build_holiday_date_set()
+    bm_audit_map = build_latest_audit_map(BM, [item.pk for item in bms_pendentes])
+
+    for bm in bms_pendentes:
+        bm.sla_display = build_request_sla_display(
+            bm,
+            bm_audit_map=bm_audit_map,
+            config_map=sla_config_map,
+            holiday_dates=holiday_dates,
+        )
+
+    return sort_home_items_by_sla_priority(bms_pendentes)
 
 
 def sort_home_items_by_sla_priority(items):
@@ -1742,7 +1852,56 @@ def get_responsible_groups_for_sla_item(objeto):
             return {"gerente_contrato"}
         if objeto.etapa_atual == "Aguardando Documento Assinado":
             return {"suprimento"}
+    if isinstance(objeto, BM):
+        if bm_is_operationally_pending(objeto):
+            return {"lider_contrato", "gerente_lider", "gerente_contrato"}
+        if objeto.aprovacao_pagamento == "pendente" and bm_has_operational_approval(objeto):
+            return {"diretoria"}
     return set()
+
+
+def get_responsible_users_for_sla_item(objeto):
+    if not isinstance(objeto, BM):
+        return None
+
+    if bm_is_operationally_pending(objeto):
+        users = []
+        contrato = objeto.contrato
+        lider = getattr(contrato, "referencia_lider_contrato", None) or contrato.lider_contrato
+        if lider and lider.is_active:
+            users.append(lider)
+
+        gerente_contrato_qs = User.objects.filter(grupo="gerente_contrato", is_active=True)
+        users.extend(list(gerente_contrato_qs))
+
+        gerente_lider_qs = User.objects.filter(grupo="gerente_lider", is_active=True)
+        contrato_coordenador = getattr(contrato, "referencia_coordenador", None)
+        contrato_coordenadores = getattr(contrato, "referencia_todos_coordenadores", []) or []
+        if contrato_coordenador:
+            gerente_lider_qs = gerente_lider_qs.filter(
+                Q(centros__in=contrato_coordenador.centros.all())
+                | Q(
+                    centros__in=[
+                        centro.id
+                        for coordenador in contrato_coordenadores
+                        for centro in coordenador.centros.all()
+                    ]
+                )
+            ).distinct()
+            users.extend(list(gerente_lider_qs))
+
+        unique_users = []
+        seen_ids = set()
+        for user in users:
+            if user and user.pk not in seen_ids:
+                unique_users.append(user)
+                seen_ids.add(user.pk)
+        return unique_users
+
+    if objeto.aprovacao_pagamento == "pendente" and bm_has_operational_approval(objeto):
+        return list(User.objects.filter(grupo="diretoria", is_active=True))
+
+    return []
 
 
 def build_user_sla_responsibility_map(
@@ -1751,9 +1910,11 @@ def build_user_sla_responsibility_map(
     solicitacoes_contratacao,
     os_queryset,
     aditivos_queryset,
+    bms_queryset,
     prospeccao_audit_map,
     contratacao_audit_map,
     os_audit_map,
+    bm_audit_map,
 ):
     users = list(users or [])
     users_by_group = defaultdict(list)
@@ -1776,32 +1937,42 @@ def build_user_sla_responsibility_map(
     def register_item(objeto, sla_display):
         if not sla_display:
             return
-        responsible_groups = get_responsible_groups_for_sla_item(objeto)
-        if not responsible_groups:
-            return
+        direct_users = get_responsible_users_for_sla_item(objeto)
+        if direct_users is not None:
+            target_users = [user for user in direct_users if user and user.pk in user_map]
+        else:
+            responsible_groups = get_responsible_groups_for_sla_item(objeto)
+            if not responsible_groups:
+                return
+            target_users = []
+            for group in responsible_groups:
+                target_users.extend(users_by_group.get(group, []))
 
-        for group in responsible_groups:
-            for user in users_by_group.get(group, []):
-                row = user_map[user.pk]
-                summary = row["summary"]
-                summary["ativos_total"] += 1
-                sla_status = sla_display["sla_status"]
-                if sla_status == "dentro":
-                    summary["dentro_sla"] += 1
-                elif sla_status == "alerta":
-                    summary["em_alerta"] += 1
-                elif sla_status == "vencido":
-                    summary["vencidos"] += 1
-                else:
-                    summary["sem_configuracao"] += 1
+        seen_target_ids = set()
+        for user in target_users:
+            if user.pk in seen_target_ids:
+                continue
+            seen_target_ids.add(user.pk)
+            row = user_map[user.pk]
+            summary = row["summary"]
+            summary["ativos_total"] += 1
+            sla_status = sla_display["sla_status"]
+            if sla_status == "dentro":
+                summary["dentro_sla"] += 1
+            elif sla_status == "alerta":
+                summary["em_alerta"] += 1
+            elif sla_status == "vencido":
+                summary["vencidos"] += 1
+            else:
+                summary["sem_configuracao"] += 1
 
-                row["stage_groups"][
-                    (
-                        sla_display["tipo_fluxo"],
-                        sla_display["etapa"],
-                        sla_display["prazo_dias_uteis"],
-                    )
-                ].append(sla_display)
+            row["stage_groups"][
+                (
+                    sla_display["tipo_fluxo"],
+                    sla_display["etapa"],
+                    sla_display["prazo_dias_uteis"],
+                )
+            ].append(sla_display)
 
     for solicitacao in solicitacoes_prospeccao:
         register_item(
@@ -1829,6 +2000,14 @@ def build_user_sla_responsibility_map(
         )
     for aditivo in aditivos_queryset:
         register_item(aditivo, build_request_sla_display(aditivo))
+    for bm in bms_queryset:
+        register_item(
+            bm,
+            build_request_sla_display(
+                bm,
+                bm_audit_map=bm_audit_map,
+            ),
+        )
 
     for row in user_map.values():
         considered = row["summary"]["ativos_total"] - row["summary"]["sem_configuracao"]
@@ -1840,7 +2019,7 @@ def build_user_sla_responsibility_map(
             stage_rows.append(
                 {
                     "tipo_fluxo": tipo_fluxo,
-                    "fluxo_label": dict(ConfiguracaoSLA.TIPO_FLUXO_CHOICES).get(tipo_fluxo, tipo_fluxo.title()),
+                    "fluxo_label": get_sla_flow_label(tipo_fluxo),
                     "etapa": etapa,
                     "owner_label": ", ".join(sorted({entry.get("owner_label") for entry in entries if entry.get("owner_label")})) or "-",
                     "prazo_dias_uteis": prazo,
@@ -2059,6 +2238,7 @@ def indicadores_suprimento(request):
     ).distinct().count()
 
     bms = list(BM.objects.all())
+    bm_audit_map = build_latest_audit_map(BM, [bm.pk for bm in bms])
     bms_pendentes_operacionais = sum(1 for bm in bms if bm_is_operationally_pending(bm))
     bms_pendentes_diretoria = sum(
         1
@@ -2115,9 +2295,11 @@ def indicadores_suprimento(request):
         list(solicitacoes_contratacao),
         list(os_queryset),
         list(aditivos_queryset),
+        bms,
         prospeccao_audit_map,
         contratacao_audit_map,
         os_audit_map,
+        bm_audit_map,
     )
     selected_user_id = request.GET.get("usuario")
     selected_user = None
@@ -2160,9 +2342,11 @@ def indicadores_suprimento(request):
         list(solicitacoes_contratacao),
         list(os_queryset),
         list(aditivos_queryset),
+        bms,
         prospeccao_audit_map,
         contratacao_audit_map,
         os_audit_map,
+        bm_audit_map,
     )
 
     user_indicator_rows_map = {row["usuario_id"]: row for row in user_indicator_rows}
@@ -2327,6 +2511,7 @@ def render_section(title, rows):
 def build_weekly_supply_report(user):
     today = timezone.localdate()
     weeks = get_week_ranges(today)
+    excluded_supply_rejected_statuses = ["Reprovada pelo suprimento"]
 
     previous_week_requests = []
 
@@ -2338,7 +2523,7 @@ def build_weekly_supply_report(user):
                     weeks["previous_week_start"],
                     weeks["previous_week_end"],
                 )
-            ).order_by("data_solicitacao"),
+            ).exclude(status__in=excluded_supply_rejected_statuses).order_by("data_solicitacao"),
         ),
         (
             "Contratação",
@@ -2347,7 +2532,7 @@ def build_weekly_supply_report(user):
                     weeks["previous_week_start"],
                     weeks["previous_week_end"],
                 )
-            ).order_by("data_solicitacao"),
+            ).exclude(status__in=excluded_supply_rejected_statuses).order_by("data_solicitacao"),
         ),
         (
             "Ordem de Serviço",
@@ -2375,11 +2560,15 @@ def build_weekly_supply_report(user):
     for tipo, queryset in [
         (
             "Prospecção",
-            SolicitacaoProspeccao.objects.all().order_by("data_solicitacao"),
+            SolicitacaoProspeccao.objects.exclude(
+                status__in=excluded_supply_rejected_statuses
+            ).order_by("data_solicitacao"),
         ),
         (
             "Contratação",
-            SolicitacaoContrato.objects.all().order_by("data_solicitacao"),
+            SolicitacaoContrato.objects.exclude(
+                status__in=excluded_supply_rejected_statuses
+            ).order_by("data_solicitacao"),
         ),
         (
             "Ordem de Serviço",
@@ -3442,6 +3631,7 @@ def home(request):
         solicitacoes_contratos = sort_home_items_by_sla_priority(solicitacoes_contratos)
         solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
         aditivos_pendentes = sort_home_items_by_sla_priority(aditivos_pendentes)
+        bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
 
         context.update({
             "painel_titulo": "Painel de Suprimentos",
@@ -3525,6 +3715,7 @@ def home(request):
         solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
         solicitacoes_contrato = sort_home_items_by_sla_priority(solicitacoes_contrato)
         solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
+        bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
 
         context.update({
             "painel_titulo": "Painel do Coordenador",
@@ -3614,6 +3805,7 @@ def home(request):
         solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
         solicitacoes_contrato = sort_home_items_by_sla_priority(solicitacoes_contrato)
         solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
+        bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
 
         context.update({
             "painel_titulo": "Painel do Lider de Contratos",
@@ -3679,6 +3871,7 @@ def home(request):
         solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
         solicitacoes_contratos = sort_home_items_by_sla_priority(solicitacoes_contratos)
         solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
+        bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
 
         contratos_vencendo = ContratoTerceiros.objects.filter(
             coordenador__centros__in=centros_ids,
@@ -3771,6 +3964,7 @@ def home(request):
         solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
         solicitacoes_contratos = sort_home_items_by_sla_priority(solicitacoes_contratos)
         solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
+        bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
 
         contratos_vencendo = ContratoTerceiros.objects.filter(
             coordenador__centros__in=centros_ids,
@@ -3879,10 +4073,21 @@ def home(request):
             "empresa_terceira"
         ).order_by("data_fim")
 
-        """bms_pendentes = BM.objects.filter(
-            contrato__lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
-            status_gerente="pendente"
-        ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento").distinct()"""
+        bms_pendentes = BM.objects.filter(
+            Q(status_coordenador="pendente", status_gerente="pendente")
+            | (Q(aprovacao_pagamento="pendente") & bm_operational_approval_query())
+        ).filter(
+            Q(contrato__lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"])
+            | Q(
+                contrato__guarda_chuva=True,
+                contrato__cod_projeto__lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
+            )
+        ).exclude(
+            Q(status_coordenador="reprovado") | Q(status_gerente="reprovado")
+        ).select_related(
+            "contrato",
+            "contrato__empresa_terceira",
+        ).order_by("-data_pagamento").distinct()
 
         os_em_aberto = OS.objects.filter(
             status__in=["em_execucao", "paralizada"],
@@ -3897,6 +4102,7 @@ def home(request):
         solicitacoes_contrato = sort_home_items_by_sla_priority(solicitacoes_contrato)
         solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
         aditivos_pendentes = sort_home_items_by_sla_priority(aditivos_pendentes)
+        bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
 
         context.update({
             "painel_titulo": "Painel da Gerência de Contratos",
@@ -3904,7 +4110,7 @@ def home(request):
             "solicitacoes_contrato": solicitacoes_contrato,
             "solicitacoes_os": solicitacoes_os,
             "aditivos_pendentes": aditivos_pendentes,
-            #"bms_pendentes": bms_pendentes,
+            "bms_pendentes": bms_pendentes,
             "eventos_proximos": eventos_proximos,
             "entregas_atrasadas": entregas_atrasadas,
             "is_gerente_contrato": is_gerente_contrato,
@@ -3990,6 +4196,7 @@ def home(request):
         solicitacoes_contratos = sort_home_items_by_sla_priority(solicitacoes_contratos)
         solicitacoes_os = sort_home_items_by_sla_priority(solicitacoes_os)
         aditivos_pendentes = sort_home_items_by_sla_priority(aditivos_pendentes)
+        bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
 
         context.update({
             "painel_titulo": "Painel da Diretoria",

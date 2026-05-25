@@ -911,9 +911,10 @@ class IndicadoresSuprimentoTests(BaseUserTestCase):
         self.assertEqual(response.context["valor_total_contratos_ativos"], Decimal("3000"))
         self.assertEqual(response.context["valor_pago_contratos_ativos"], Decimal("0"))
         self.assertEqual(response.context["valor_previsto_contratos_ativos"], Decimal("3000"))
-        self.assertEqual(response.context["sla_summary"]["ativos_total"], 2)
+        self.assertEqual(response.context["sla_summary"]["ativos_total"], 4)
         self.assertTrue(response.context["sla_stage_rows"])
         self.assertTrue(response.context["sla_stage_mapping_rows"])
+        self.assertTrue(any(row["tipo_fluxo"] == "bm" for row in response.context["sla_stage_rows"]))
         self.assertContains(response, "Indicadores por usuario")
         self.assertTrue(response.context["user_options"])
         self.assertIsNotNone(response.context["selected_user_metrics"])
@@ -975,7 +976,7 @@ class IndicadoresSuprimentoTests(BaseUserTestCase):
         self.assertTrue(selected_metrics["sla_stage_rows"])
         self.assertContains(response, "SLA do responsavel")
         self.assertContains(response, "Solicitação de contratação")
-        self.assertContains(response, "Dono atual")
+        self.assertContains(response, "Responsável atual")
 
         user_rows = {item["usuario_id"]: item for item in response.context["user_indicator_rows"]}
         self.assertGreaterEqual(user_rows[self.gerente_contrato.pk]["sla_ativos"], 1)
@@ -1042,6 +1043,7 @@ class IndicadoresSuprimentoTests(BaseUserTestCase):
         self.assertTrue(any(row["tipo_fluxo"] == "prospeccao" for row in mapping_rows))
         self.assertTrue(any(row["tipo_fluxo"] == "contratacao" for row in mapping_rows))
         self.assertTrue(any(row["tipo_fluxo"] == "os" for row in mapping_rows))
+        self.assertTrue(any(row["tipo_fluxo"] == "bm" for row in mapping_rows))
         self.assertTrue(any(row["tipo_fluxo"] == "aditivo" for row in mapping_rows))
 
     def test_indicadores_por_usuario_ignoram_solicitacoes_sem_data_solicitacao(self):
@@ -1847,6 +1849,53 @@ class WeeklyReportBuilderTests(BaseUserTestCase):
         self.assertIn("Contratos com data fim vencida e ainda não encerrados", html)
         self.assertIn("Contratos previstos para finalizar na próxima semana", html)
         self.assertIn("Ativo", html)
+
+    def test_build_weekly_supply_report_excludes_requests_rejected_by_supply(self):
+        reference_date = date(2026, 4, 24)
+        weeks = get_week_ranges(reference_date)
+
+        suprimento = self.create_user("supri", "suprimento", email="supri@example.com")
+        coordenador = self.create_user("coord", "coordenador")
+        lider = self.create_user("lider", "lider_contrato")
+        cliente = self.create_client("Cliente Report", "22.222.222/0001-22")
+        contrato = self.create_contract(
+            codigo="PRJ-REPORT",
+            cliente=cliente,
+            coordenador=coordenador,
+            lider_contrato=lider,
+        )
+
+        prospeccao_reprovada = SolicitacaoProspeccao.objects.create(
+            contrato=contrato,
+            coordenador=coordenador,
+            lider_contrato=lider,
+            descricao="Prospecção reprovada pelo suprimento",
+            status="Reprovada pelo suprimento",
+        )
+        SolicitacaoProspeccao.objects.filter(pk=prospeccao_reprovada.pk).update(
+            data_solicitacao=timezone.make_aware(
+                datetime.combine(weeks["previous_week_start"], datetime.min.time())
+            )
+        )
+
+        contratacao_reprovada = SolicitacaoContrato.objects.create(
+            contrato=contrato,
+            coordenador=coordenador,
+            lider_contrato=lider,
+            descricao="Contratação reprovada pelo suprimento",
+            status="Reprovada pelo suprimento",
+        )
+        SolicitacaoContrato.objects.filter(pk=contratacao_reprovada.pk).update(
+            data_solicitacao=timezone.make_aware(
+                datetime.combine(weeks["previous_week_start"], datetime.min.time())
+            )
+        )
+
+        with patch("gestao_contratos.views.timezone.localdate", return_value=reference_date):
+            html = build_weekly_supply_report(suprimento)
+
+        self.assertNotIn("Prospecção reprovada pelo suprimento", html)
+        self.assertNotIn("Contratação reprovada pelo suprimento", html)
 
 
 class ApproveFornecedorGerenteTests(BaseUserTestCase):
@@ -3081,6 +3130,8 @@ class LiderHomeDashboardTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Boletins Pendentes de Aprovação")
         self.assertIn(bm_pendente, list(response.context["bms_pendentes"]))
+        self.assertEqual(response.context["bms_pendentes"][0].sla_display["tipo_fluxo"], "bm")
+        self.assertContains(response, "Aprovação operacional do BM")
         self.assertContains(response, self.contrato_terceiro.empresa_terceira.nome)
 
     def test_home_lider_exibe_os_em_execucao_no_card_de_os_em_aberto(self):

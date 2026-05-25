@@ -1275,6 +1275,7 @@ class ConfiguracaoSLA(models.Model):
         ("contratacao", "Contratacao"),
         ("aditivo", "Aditivo"),
         ("os", "Ordem de Servico"),
+        ("bm", "Boletim de Medicao"),
     ]
 
     tipo_fluxo = models.CharField(max_length=30, choices=TIPO_FLUXO_CHOICES)

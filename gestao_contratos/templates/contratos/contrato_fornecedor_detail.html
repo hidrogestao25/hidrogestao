@@ -12,10 +12,11 @@
           <a href="{% url 'cliente_detalhe' contrato.cod_projeto.cliente.id %}" class="text-decoration-none">
             {{ contrato.cod_projeto.cliente }}
           </a></p>
-      {% endif %}
+
       <p><strong>Líder Técnico Principal:</strong> {{ contrato.coordenador.get_full_name|default:contrato.coordenador }}</p>
       <p><strong>Demais Líderes Técnicos:</strong> {{ contrato.coordenadores_display|default:"-" }}</p>
       <p><strong>Líder de Contrato:</strong> {{ contrato.lider_contrato.get_full_name|default:contrato.lider_contrato }}</p>
+      {% endif %}
       <p><strong>Fornecedor:</strong> {{ contrato.empresa_terceira }}</p>
       <p><strong>Contrato com Fornecedor:</strong> {{ contrato.num_contrato }}</p>
       {% if contrato.guarda_chuva == True %}
