@@ -18,10 +18,12 @@ path('contratos_fornecedores/<int:pk>/solicitar-aditivo/', views.solicitar_aditi
 path('aditivos_fornecedor/<int:pk>/', views.detalhes_aditivo_contrato, name='detalhes_aditivo_contrato'),
 path('aditivos_fornecedor/<int:pk>/avaliar-solicitacao/', views.avaliar_solicitacao_aditivo_contrato, name='avaliar_solicitacao_aditivo_contrato'),
 path('aditivos_fornecedor/<int:pk>/enviar-documento/', views.enviar_documento_aditivo_contrato, name='enviar_documento_aditivo_contrato'),
+path('aditivos_fornecedor/<int:pk>/eventos/novo/', views.cadastrar_evento_aditivo, name='cadastrar_evento_aditivo'),
 path('aditivos_fornecedor/<int:pk>/avaliar/', views.avaliar_aditivo_contrato, name='avaliar_aditivo_contrato'),
 path('aditivos_fornecedor/<int:pk>/avaliar-minuta/', views.avaliar_minuta_aditivo_contrato, name='avaliar_minuta_aditivo_contrato'),
 path('aditivos_fornecedor/<int:pk>/enviar-assinado/', views.enviar_aditivo_assinado_contrato, name='enviar_aditivo_assinado_contrato'),
 path('aditivos_fornecedor/<int:pk>/gerar-documento/', views.gerar_aditivo_contrato_docm, name='gerar_aditivo_contrato_docm'),
+path('aditivos_fornecedor/eventos/<int:pk>/editar/', views.editar_evento_aditivo, name='editar_evento_aditivo'),
 
     path('contratos_guarda_chuva/', views.lista_contratos_guarda_chuva, name='lista_contratos_guarda_chuva'),
 

@@ -3153,6 +3153,14 @@ def can_user_upload_signed_addendum(user, aditivo):
     )
 
 
+def can_user_manage_addendum_events(user, aditivo):
+    if not user or not aditivo or aditivo.aprovado_totalmente:
+        return False
+    if user.grupo == "suprimento":
+        return True
+    return can_user_request_contract_addendum(user, aditivo.contrato)
+
+
 def build_addendum_timeline(aditivo):
     labels = [
         "Solicitacao do Aditivo",
@@ -5166,6 +5174,7 @@ def detalhes_aditivo_contrato(request, pk):
         {
             "aditivo": aditivo,
             "contrato": aditivo.contrato,
+            "eventos_aditivo": aditivo.eventos.order_by("data_prevista", "id"),
             "timeline_steps": build_addendum_timeline(aditivo),
             "sla_display": build_request_sla_display(aditivo),
             "can_approve_request_as_gerente": can_user_approve_addendum_request_as_gerente(request.user, aditivo),
@@ -5173,6 +5182,7 @@ def detalhes_aditivo_contrato(request, pk):
             "can_upload_draft": can_user_upload_addendum_draft(request.user, aditivo),
             "can_approve_draft": can_user_approve_addendum_draft(request.user, aditivo),
             "can_upload_signed": can_user_upload_signed_addendum(request.user, aditivo),
+            "can_manage_events": can_user_manage_addendum_events(request.user, aditivo),
         },
     )
 
@@ -5351,6 +5361,69 @@ def enviar_documento_aditivo_contrato(request, pk):
 
 
 @login_required
+def cadastrar_evento_aditivo(request, pk):
+    aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
+
+    if not can_user_manage_addendum_events(request.user, aditivo):
+        messages.error(request, "Você não tem permissão para cadastrar eventos neste aditivo.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    if request.method == "POST":
+        form = EventoPrevisaoForm(request.POST)
+        if form.is_valid():
+            evento = form.save(commit=False)
+            evento.aditivo = aditivo
+            evento.empresa_terceira = None
+            evento.contrato_terceiro = None
+            evento.save()
+            messages.success(request, "Evento do aditivo cadastrado com sucesso.")
+            return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+    else:
+        form = EventoPrevisaoForm()
+
+    return render(
+        request,
+        "gestao_contratos/cadastrar_evento_contrato.html",
+        {
+            "form": form,
+            "contrato": aditivo.contrato,
+            "titulo_pagina": f"Cadastrar Evento - Aditivo #{aditivo.id}",
+            "cancel_url": reverse("detalhes_aditivo_contrato", kwargs={"pk": aditivo.pk}),
+        },
+    )
+
+
+@login_required
+def editar_evento_aditivo(request, pk):
+    evento = get_object_or_404(Evento, pk=pk, aditivo__isnull=False)
+    aditivo = evento.aditivo
+
+    if not can_user_manage_addendum_events(request.user, aditivo):
+        messages.error(request, "Você não tem permissão para editar eventos deste aditivo.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    if request.method == "POST":
+        form = EventoPrevisaoForm(request.POST, request.FILES, instance=evento)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Evento do aditivo atualizado com sucesso.")
+            return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+    else:
+        form = EventoPrevisaoForm(instance=evento)
+
+    return render(
+        request,
+        "gestao_contratos/editar_evento_contrato.html",
+        {
+            "form": form,
+            "evento": evento,
+            "titulo_pagina": f"Editar Evento - Aditivo #{aditivo.id}",
+            "cancel_url": reverse("detalhes_aditivo_contrato", kwargs={"pk": aditivo.pk}),
+        },
+    )
+
+
+@login_required
 def avaliar_aditivo_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
     return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
@@ -5459,6 +5532,11 @@ def enviar_aditivo_assinado_contrato(request, pk):
             if aditivo.novo_valor_total is not None:
                 aditivo.contrato.valor_total = aditivo.novo_valor_total
             aditivo.contrato.save(update_fields=["data_fim", "valor_total"])
+
+            aditivo.eventos.filter(contrato_terceiro__isnull=True).update(
+                contrato_terceiro=aditivo.contrato,
+                empresa_terceira=aditivo.contrato.empresa_terceira,
+            )
 
             destinatarios = get_addendum_completion_notification_emails(aditivo)
             if destinatarios:
@@ -7596,6 +7674,7 @@ def lista_ordens_servico(request):
 
     context = {
         'page_obj': page_obj,
+        'today': timezone.localdate(),
     }
 
     return render(request, 'gestao_contratos/lista_ordens_servico.html', context)

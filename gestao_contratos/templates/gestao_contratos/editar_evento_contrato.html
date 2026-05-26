@@ -4,7 +4,13 @@
 <div class="container mt-4">
     <div class="card shadow-sm">
         <div class="card-header bg-primary text-white">
-            <h4 class="mb-0">Editar Evento - Solicitação {{ evento.contrato_terceiro.pk }}</h4>
+            <h4 class="mb-0">
+                {% if titulo_pagina %}
+                    {{ titulo_pagina }}
+                {% else %}
+                    Editar Evento - Contrato {{ evento.contrato_terceiro.pk }}
+                {% endif %}
+            </h4>
         </div>
         <div class="card-body">
             <form method="post" enctype="multipart/form-data">
@@ -15,29 +21,23 @@
                         <label class="form-label"><strong>Descrição</strong></label>
                         {{ form.descricao }}
                         {% if form.descricao.errors %}
-                            <div class="text-danger">
-                                {{ form.descricao.errors }}
-                            </div>
+                            <div class="text-danger">{{ form.descricao.errors }}</div>
                         {% endif %}
                     </div>
 
                     <div class="col-md-6 mb-3">
-                        <label class="form-label"><strong>Data Prevista para a entrega</strong></label>
+                        <label class="form-label"><strong>Data prevista para a entrega</strong></label>
                         {{ form.data_prevista }}
                         {% if form.data_prevista.errors %}
-                            <div class="text-danger">
-                                {{ form.data_prevista.errors }}
-                            </div>
+                            <div class="text-danger">{{ form.data_prevista.errors }}</div>
                         {% endif %}
                     </div>
 
                     <div class="col-md-6 mb-3">
-                        <label class="form-label"><strong>Valor Previsto</strong></label>
+                        <label class="form-label"><strong>Valor previsto</strong></label>
                         {{ form.valor_previsto }}
                         {% if form.valor_previsto.errors %}
-                            <div class="text-danger">
-                                {{ form.valor_previsto.errors }}
-                            </div>
+                            <div class="text-danger">{{ form.valor_previsto.errors }}</div>
                         {% endif %}
                     </div>
 
@@ -45,9 +45,7 @@
                         <label class="form-label"><strong>Data prevista para o pagamento</strong></label>
                         {{ form.data_prevista_pagamento }}
                         {% if form.data_prevista_pagamento.errors %}
-                            <div class="text-danger">
-                                {{ form.data_prevista_pagamento.errors }}
-                            </div>
+                            <div class="text-danger">{{ form.data_prevista_pagamento.errors }}</div>
                         {% endif %}
                     </div>
                 </div>
@@ -56,14 +54,12 @@
                     <label class="form-label"><strong>Observações</strong></label>
                     {{ form.observacao }}
                     {% if form.observacao.errors %}
-                        <div class="text-danger">
-                            {{ form.observacao.errors }}
-                        </div>
+                        <div class="text-danger">{{ form.observacao.errors }}</div>
                     {% endif %}
                 </div>
 
                 <div class="d-flex justify-content-between">
-                    <a href="{% url 'contrato_fornecedor_detalhe' evento.contrato_terceiro.pk %}" class="btn btn-secondary">
+                    <a href="{{ cancel_url|default:''|default_if_none:'' }}{% if not cancel_url %}{% url 'contrato_fornecedor_detalhe' evento.contrato_terceiro.pk %}{% endif %}" class="btn btn-secondary">
                         Cancelar
                     </a>
                     <button type="submit" class="btn btn-success">
@@ -75,33 +71,20 @@
     </div>
 </div>
 
-
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-
     const moneyFields = document.querySelectorAll(".money");
 
-    moneyFields.forEach(function(field){
-
-        field.addEventListener("input", function(e){
-
+    moneyFields.forEach(function(field) {
+        field.addEventListener("input", function(e) {
             let value = e.target.value;
-
-            // remove tudo que não for número
             value = value.replace(/\D/g, "");
-
-            value = (value/100).toFixed(2) + "";
-
+            value = (value / 100).toFixed(2) + "";
             value = value.replace(".", ",");
-
             value = value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-
             e.target.value = value;
-
         });
-
     });
-
 });
 </script>
 

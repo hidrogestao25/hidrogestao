@@ -1993,8 +1993,9 @@ class ApproveFornecedorGerenteTests(BaseUserTestCase):
 
         self.assertRedirects(response, reverse("lista_solicitacoes"))
         self.solicitacao.refresh_from_db()
-        self.assertEqual(self.solicitacao.aprovacao_fornecedor_gerente, "reprovado")
-        self.assertEqual(self.solicitacao.status, "Fornecedor reprovado pela gerência")
+        self.assertEqual(self.solicitacao.aprovacao_fornecedor_gerente, "pendente")
+        self.assertEqual(self.solicitacao.aprovacao_fornecedor_diretor, "pendente")
+        self.assertEqual(self.solicitacao.status, "Aprovada pelo suprimento")
         self.assertFalse(self.solicitacao.triagem_realizada)
         self.assertIsNone(self.solicitacao.fornecedor_escolhido)
         self.assertEqual(self.solicitacao.justificativa_gerencia, "Fornecedor fora do escopo")
@@ -2068,8 +2069,9 @@ class ApproveFornecedorDiretoriaTests(BaseUserTestCase):
 
         self.assertRedirects(response, reverse("lista_solicitacoes"))
         self.solicitacao.refresh_from_db()
-        self.assertEqual(self.solicitacao.aprovacao_fornecedor_diretor, "reprovado")
-        self.assertEqual(self.solicitacao.status, "Fornecedor reprovado")
+        self.assertEqual(self.solicitacao.aprovacao_fornecedor_gerente, "pendente")
+        self.assertEqual(self.solicitacao.aprovacao_fornecedor_diretor, "pendente")
+        self.assertEqual(self.solicitacao.status, "Aprovada pelo suprimento")
         self.assertFalse(self.solicitacao.triagem_realizada)
         self.assertIsNone(self.solicitacao.fornecedor_escolhido)
         self.assertEqual(self.solicitacao.justificativa_diretoria, "Fornecedor fora da estratégia.")
@@ -3837,7 +3839,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         response = self.client.get(
             reverse("exportar_previsao_pagamentos_excel"),
             {
-                "data_inicial": timezone.localdate().strftime("%Y-%m-%d"),
+                "data_inicial": date(2026, 5, 1).strftime("%Y-%m-%d"),
                 "data_limite": date(2026, 5, 31).strftime("%Y-%m-%d"),
             },
         )
@@ -4763,6 +4765,41 @@ class CenterScopedViewTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         os_ids = {item.pk for item in response.context["page_obj"].object_list}
         self.assertEqual(os_ids, {self.os_visivel.pk})
+
+    def test_lista_ordens_servico_mostra_faltando_pagamento_para_os_realizada_sem_pagamento(self):
+        self.os_visivel.realizado = True
+        self.os_visivel.valor_pago = None
+        self.os_visivel.data_pagamento = None
+        self.os_visivel.save(update_fields=["realizado", "valor_pago", "data_pagamento"])
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("lista_ordens_servico"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Faltando Pagamento")
+
+    def test_lista_ordens_servico_mostra_em_atraso_quando_prazo_expirou_sem_entrega(self):
+        self.os_visivel.realizado = False
+        self.os_visivel.prazo_execucao = timezone.localdate() - timedelta(days=1)
+        self.os_visivel.save(update_fields=["realizado", "prazo_execucao"])
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("lista_ordens_servico"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Em atraso")
+
+    def test_lista_ordens_servico_mostra_em_execucao_quando_esta_dentro_do_prazo_sem_entrega(self):
+        self.os_visivel.realizado = False
+        self.os_visivel.status = "em_execucao"
+        self.os_visivel.prazo_execucao = timezone.localdate() + timedelta(days=1)
+        self.os_visivel.save(update_fields=["realizado", "status", "prazo_execucao"])
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("lista_ordens_servico"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Em execucao")
 
 
 class ListaSolicitacoesOSTests(BaseUserTestCase):
@@ -6598,6 +6635,209 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
         self.assertIn(self.diretoria.email, mail.outbox[0].to)
 
+    def test_lider_pode_cadastrar_evento_no_aditivo(self):
+        aditivo = self.create_aditivo()
+        self.client.force_login(self.lider)
+
+        response = self.client.post(
+            reverse("cadastrar_evento_aditivo", args=[aditivo.pk]),
+            {
+                "descricao": "Evento novo do aditivo",
+                "data_prevista": "2026-06-10",
+                "valor_previsto": "450,00",
+                "data_prevista_pagamento": "2026-06-15",
+                "observacao": "Escopo adicional",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        evento = Evento.objects.get(aditivo=aditivo)
+        self.assertEqual(evento.descricao, "Evento novo do aditivo")
+        self.assertIsNone(evento.contrato_terceiro)
+        self.assertIsNone(evento.empresa_terceira)
+
+    def test_gerente_lider_pode_cadastrar_evento_no_aditivo(self):
+        aditivo = self.create_aditivo()
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.post(
+            reverse("cadastrar_evento_aditivo", args=[aditivo.pk]),
+            {
+                "descricao": "Evento do gerente lider",
+                "data_prevista": "2026-06-11",
+                "valor_previsto": "250,00",
+                "data_prevista_pagamento": "2026-06-18",
+                "observacao": "Centro compartilhado",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Evento.objects.filter(aditivo=aditivo, descricao="Evento do gerente lider").exists())
+
+    def test_gerente_contrato_pode_cadastrar_e_editar_evento_no_aditivo(self):
+        aditivo = self.create_aditivo()
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.post(
+            reverse("cadastrar_evento_aditivo", args=[aditivo.pk]),
+            {
+                "descricao": "Evento da gerencia",
+                "data_prevista": "2026-06-09",
+                "valor_previsto": "200,00",
+                "data_prevista_pagamento": "2026-06-16",
+                "observacao": "Criado pela gerencia",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        evento = Evento.objects.get(aditivo=aditivo, descricao="Evento da gerencia")
+
+        response = self.client.post(
+            reverse("editar_evento_aditivo", args=[evento.pk]),
+            {
+                "descricao": "Evento da gerencia ajustado",
+                "data_prevista": "2026-06-14",
+                "valor_previsto": "275,00",
+                "data_prevista_pagamento": "2026-06-19",
+                "observacao": "Ajustado pela gerencia",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        evento.refresh_from_db()
+        self.assertEqual(evento.descricao, "Evento da gerencia ajustado")
+        self.assertEqual(evento.valor_previsto, Decimal("275.00"))
+
+    def test_suprimento_pode_editar_evento_do_aditivo(self):
+        aditivo = self.create_aditivo()
+        evento = Evento.objects.create(
+            aditivo=aditivo,
+            descricao="Evento original",
+            data_prevista=date(2026, 6, 10),
+            valor_previsto=Decimal("300.00"),
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("editar_evento_aditivo", args=[evento.pk]),
+            {
+                "descricao": "Evento ajustado",
+                "data_prevista": "2026-06-12",
+                "valor_previsto": "525,00",
+                "data_prevista_pagamento": "2026-06-20",
+                "observacao": "Ajustado pelo suprimento",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        evento.refresh_from_db()
+        self.assertEqual(evento.descricao, "Evento ajustado")
+        self.assertEqual(evento.data_prevista, date(2026, 6, 12))
+        self.assertEqual(evento.valor_previsto, Decimal("525.00"))
+
+    def test_diretoria_nao_pode_cadastrar_evento_no_aditivo(self):
+        aditivo = self.create_aditivo()
+        self.client.force_login(self.diretoria)
+
+        response = self.client.post(
+            reverse("cadastrar_evento_aditivo", args=[aditivo.pk]),
+            {
+                "descricao": "Evento bloqueado",
+                "data_prevista": "2026-06-10",
+                "valor_previsto": "150,00",
+                "data_prevista_pagamento": "2026-06-15",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("detalhes_aditivo_contrato", args=[aditivo.pk]))
+        self.assertFalse(Evento.objects.filter(aditivo=aditivo, descricao="Evento bloqueado").exists())
+
+    def test_coordenador_nao_pode_editar_evento_do_aditivo(self):
+        aditivo = self.create_aditivo()
+        evento = Evento.objects.create(
+            aditivo=aditivo,
+            descricao="Evento protegido",
+            data_prevista=date(2026, 6, 10),
+            valor_previsto=Decimal("320.00"),
+        )
+        self.client.force_login(self.coordenador)
+
+        response = self.client.post(
+            reverse("editar_evento_aditivo", args=[evento.pk]),
+            {
+                "descricao": "Tentativa invalida",
+                "data_prevista": "2026-06-12",
+                "valor_previsto": "500,00",
+                "data_prevista_pagamento": "2026-06-18",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("detalhes_aditivo_contrato", args=[aditivo.pk]))
+        evento.refresh_from_db()
+        self.assertEqual(evento.descricao, "Evento protegido")
+
+    def test_detalhes_aditivo_exibe_botao_adicionar_evento_somente_para_perfis_corretos(self):
+        aditivo = self.create_aditivo()
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("detalhes_aditivo_contrato", args=[aditivo.pk]))
+        self.assertContains(response, reverse("cadastrar_evento_aditivo", args=[aditivo.pk]))
+
+        self.client.force_login(self.suprimento)
+        response = self.client.get(reverse("detalhes_aditivo_contrato", args=[aditivo.pk]))
+        self.assertContains(response, reverse("cadastrar_evento_aditivo", args=[aditivo.pk]))
+
+        self.client.force_login(self.diretoria)
+        response = self.client.get(reverse("detalhes_aditivo_contrato", args=[aditivo.pk]))
+        self.assertNotContains(response, reverse("cadastrar_evento_aditivo", args=[aditivo.pk]))
+
+    def test_edicao_do_evento_do_aditivo_reflete_no_detalhe(self):
+        aditivo = self.create_aditivo()
+        evento = Evento.objects.create(
+            aditivo=aditivo,
+            descricao="Evento antigo",
+            data_prevista=date(2026, 6, 10),
+            valor_previsto=Decimal("320.00"),
+        )
+        self.client.force_login(self.suprimento)
+        self.client.post(
+            reverse("editar_evento_aditivo", args=[evento.pk]),
+            {
+                "descricao": "Evento atualizado no detalhe",
+                "data_prevista": "2026-06-13",
+                "valor_previsto": "330,00",
+                "data_prevista_pagamento": "2026-06-21",
+                "observacao": "Atualizacao visual",
+            },
+            follow=False,
+        )
+
+        response = self.client.get(reverse("detalhes_aditivo_contrato", args=[aditivo.pk]))
+        self.assertContains(response, "Evento atualizado no detalhe")
+
+    def test_evento_do_aditivo_nao_aparece_no_contrato_antes_da_conclusao(self):
+        aditivo = self.create_aditivo()
+        Evento.objects.create(
+            aditivo=aditivo,
+            descricao="Evento ainda nao incorporado",
+            data_prevista=date(2026, 6, 18),
+            valor_previsto=Decimal("700.00"),
+            data_prevista_pagamento=date(2026, 6, 25),
+        )
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", args=[self.contrato_terceiro.pk]))
+        self.assertNotContains(response, "Evento ainda nao incorporado")
+
     def test_aprovacao_da_solicitacao_notifica_suprimento_para_inserir_minuta(self):
         aditivo = self.create_aditivo()
         self.client.force_login(self.gerente_contrato)
@@ -6690,6 +6930,13 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
 
     def test_inserir_documento_assinado_atualiza_contrato(self):
         aditivo = self.create_aditivo()
+        evento_aditivo = Evento.objects.create(
+            aditivo=aditivo,
+            descricao="Evento incorporado pelo aditivo",
+            data_prevista=date(2026, 6, 18),
+            valor_previsto=Decimal("700.00"),
+            data_prevista_pagamento=date(2026, 6, 25),
+        )
         aditivo.status_gerente = "aprovado"
         aditivo.status_diretoria = "aprovado"
         aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
@@ -6709,11 +6956,18 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertTrue(bool(aditivo.arquivo_aditivo_assinado))
         self.assertEqual(self.contrato_terceiro.valor_total, Decimal("1500.00"))
         self.assertEqual(self.contrato_terceiro.data_fim, date(2026, 6, 30))
+        evento_aditivo.refresh_from_db()
+        self.assertEqual(evento_aditivo.contrato_terceiro, self.contrato_terceiro)
+        self.assertEqual(evento_aditivo.empresa_terceira, self.contrato_terceiro.empresa_terceira)
+        self.assertEqual(Evento.objects.filter(pk=evento_aditivo.pk, contrato_terceiro=self.contrato_terceiro).count(), 1)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("Aditivo concluido", mail.outbox[0].subject)
         self.assertIn(self.suprimento.email, mail.outbox[0].to)
         self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
         self.assertIn(self.diretoria.email, mail.outbox[0].to)
+
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", args=[self.contrato_terceiro.pk]))
+        self.assertContains(response, "Evento incorporado pelo aditivo", count=1)
 
     def test_detalhe_contrato_exibe_download_do_aditivo_aprovado(self):
         aditivo = self.create_aditivo()

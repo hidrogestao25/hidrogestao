@@ -824,6 +824,7 @@ class Evento(models.Model):
     prospeccao = models.ForeignKey(SolicitacaoProspeccao, on_delete=models.CASCADE, null=True, blank=True)
     solicitacao_contrato = models.ForeignKey(SolicitacaoContrato, on_delete=models.CASCADE, null=True, blank=True)
     contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, null=True, blank=True)
+    aditivo = models.ForeignKey("AditivoContratoTerceiro", on_delete=models.CASCADE, null=True, blank=True, related_name="eventos")
     arquivo = models.FileField(
         upload_to='produto_do_fornecedor/',
         verbose_name='Inserir arquivo para comprovação de entrega',

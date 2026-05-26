@@ -99,6 +99,54 @@
         {% endif %}
       </p>
 
+      <hr>
+
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0">Eventos previstos no aditivo</h6>
+        {% if can_manage_events %}
+          <a href="{% url 'cadastrar_evento_aditivo' aditivo.id %}" class="btn btn-sm btn-outline-primary">
+            Adicionar evento
+          </a>
+        {% endif %}
+      </div>
+
+      {% if eventos_aditivo %}
+        <div class="table-responsive mt-3">
+          <table class="table table-bordered table-sm align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Descricao</th>
+                <th>Entrega prevista</th>
+                <th>Valor previsto</th>
+                <th>Pagamento previsto</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for evento in eventos_aditivo %}
+                <tr>
+                  <td>{{ evento.descricao }}</td>
+                  <td>{{ evento.data_prevista|date:"d/m/Y"|default:"-" }}</td>
+                  <td>{% if evento.valor_previsto is not None %}R$ {{ evento.valor_previsto|floatformat:2 }}{% else %}-{% endif %}</td>
+                  <td>{{ evento.data_prevista_pagamento|date:"d/m/Y"|default:"-" }}</td>
+                  <td>
+                    {% if can_manage_events %}
+                      <a href="{% url 'editar_evento_aditivo' evento.id %}" class="btn btn-sm btn-outline-secondary">
+                        Editar
+                      </a>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-muted mt-3 mb-0">Nenhum evento foi adicionado a este aditivo ainda.</p>
+      {% endif %}
+
       <div class="d-flex gap-2 flex-wrap mt-4">
         {% if can_approve_request_as_gerente or can_approve_request_as_diretoria %}
           <a href="{% url 'avaliar_solicitacao_aditivo_contrato' aditivo.id %}" class="btn btn-primary">

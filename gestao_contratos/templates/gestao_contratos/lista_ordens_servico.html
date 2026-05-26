@@ -2,14 +2,14 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Ordens de Serviço Cadastradas</h2>
+    <h2>Ordens de Servico Cadastradas</h2>
 
     {% if user.grupo == "lider_contrato" or user.grupo == "gerente_lider" or user.grupo == "gerente_contrato" %}
       <a href="{% url 'solicitar_os_com_contrato' %}" class="btn btn-custom">+ Solicitar Nova OS</a>
     {% endif %}
 
     {% if user.grupo == "suprimento" %}
-      <a href="{% url 'nova_os' %}" class="btn btn-custom">+ Adicionar Ordem de Serviço</a>
+      <a href="{% url 'nova_os' %}" class="btn btn-custom">+ Adicionar Ordem de Servico</a>
     {% endif %}
 </div>
 
@@ -29,11 +29,11 @@
         <tr>
             <th>#</th>
             <th>Projeto</th>
-            <th>Título</th>
-            <th>Líder</th>
+            <th>Titulo</th>
+            <th>Lider</th>
             <th>Valor Previsto</th>
             <th>Status</th>
-            <th>Prazo de Execução</th>
+            <th>Prazo de Execucao</th>
         </tr>
     </thead>
 
@@ -55,14 +55,18 @@
                 </td>
                 <td>{{ os.valor }}</td>
                 <td>
-                    {% if os.status == 'paralizada' %}
-                        <span class="badge bg-warning text-dark">Paralizada</span>
+                    {% if os.realizado and os.valor_pago is not None and os.data_pagamento %}
+                        <span class="badge bg-success">Finalizada</span>
+                    {% elif os.realizado %}
+                        <span class="badge bg-warning text-dark">Faltando Pagamento</span>
+                    {% elif os.prazo_execucao and os.prazo_execucao|date:'Y-m-d' < today|date:'Y-m-d' %}
+                        <span class="badge bg-danger">Em atraso</span>
                     {% elif os.status == 'em_execucao' %}
-                        <span class="badge bg-success">Em execução</span>
+                        <span class="badge bg-success">Em execucao</span>
+                    {% elif os.status == 'paralizada' %}
+                        <span class="badge bg-warning text-dark">Paralizada</span>
                     {% elif os.status == 'cancelada' %}
                         <span class="badge bg-danger">Cancelada</span>
-                    {% elif os.status == 'finalizada' %}
-                        <span class="badge bg-dark">Finalizada</span>
                     {% endif %}
                 </td>
                 <td>{{ os.prazo_execucao|date:"d/m/Y" }}</td>
@@ -70,15 +74,14 @@
         {% empty %}
             <tr>
                 <td colspan="7" class="text-center">
-                    Nenhuma Ordem de Serviço cadastrada.
+                    Nenhuma Ordem de Servico cadastrada.
                 </td>
             </tr>
         {% endfor %}
     </tbody>
 </table>
 
-    <!-- Paginação -->
-<nav aria-label="Navegação de páginas">
+<nav aria-label="Navegacao de paginas">
     <ul class="pagination">
 
         {% if page_obj.has_previous %}
@@ -94,19 +97,19 @@
 
         <li class="page-item disabled">
             <span class="page-link">
-                Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+                Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
             </span>
         </li>
 
         {% if page_obj.has_next %}
             <li class="page-item">
                 <a class="page-link" href="?page={{ page_obj.next_page_number }}">
-                    Próxima
+                    Proxima
                 </a>
             </li>
             <li class="page-item">
                 <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">
-                        Ãšltima &raquo;
+                    Ultima &raquo;
                 </a>
             </li>
         {% endif %}
