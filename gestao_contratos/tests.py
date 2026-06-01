@@ -3345,6 +3345,11 @@ class LiderHomeDashboardTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Boletins Pendentes de Aprovação")
+        content = response.content.decode()
+        self.assertLess(
+            content.index("Solicitações Pendentes"),
+            content.index("Boletins Pendentes de Aprovação"),
+        )
         self.assertIn(bm_pendente, list(response.context["bms_pendentes"]))
         self.assertEqual(response.context["bms_pendentes"][0].sla_display["tipo_fluxo"], "bm")
         self.assertContains(response, "Aprovação operacional do BM")
@@ -3538,6 +3543,28 @@ class GerenteContratoHomeDashboardTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["solicitacoes_contrato"][0].id, solicitacao_vencida.id)
+
+    def test_home_gerente_contrato_exibe_card_de_bms_pendentes(self):
+        evento = self.create_event(contrato=self.contrato_terceiro)
+        bm_pendente = BM.objects.create(
+            contrato=self.contrato_terceiro,
+            evento=evento,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("100.00"),
+            status_coordenador="pendente",
+            status_gerente="pendente",
+        )
+
+        self.client.force_login(self.gerente_contrato)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Boletins Pendentes de Aprovação")
+        self.assertIn(bm_pendente, list(response.context["bms_pendentes"]))
+        self.assertEqual(response.context["bms_pendentes"][0].sla_display["tipo_fluxo"], "bm")
+        self.assertContains(response, "Aprovação operacional do BM")
+        self.assertContains(response, self.contrato_terceiro.empresa_terceira.nome)
 
 
 class PrevisaoPagamentosTests(BaseUserTestCase):
