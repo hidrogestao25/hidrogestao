@@ -5386,6 +5386,59 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         self.assertEqual(delete_response.url, reverse("detalhes_entrega", args=[self.evento.id]))
         self.assertFalse(BM.objects.filter(id=bm.id).exists())
 
+    def test_detalhes_entrega_exibe_nome_de_quem_aprovou_bm(self):
+        lider_aprovador = self.lider
+        gerente_aprovador = self.gerente_contrato
+        diretor_aprovador = self.create_user("diretorbm", "diretoria")
+        lider_aprovador.first_name = "Lider"
+        lider_aprovador.last_name = "Aprovador"
+        lider_aprovador.save(update_fields=["first_name", "last_name"])
+        gerente_aprovador.first_name = "Gerente"
+        gerente_aprovador.last_name = "Contrato"
+        gerente_aprovador.save(update_fields=["first_name", "last_name"])
+        diretor_aprovador.first_name = "Diretora"
+        diretor_aprovador.last_name = "Financeira"
+        diretor_aprovador.save(update_fields=["first_name", "last_name"])
+
+        aprovado_em = timezone.now()
+        bm = BM.objects.create(
+            contrato=self.contrato_terceiro,
+            evento=self.evento,
+            numero_bm=41,
+            parcela_paga=1,
+            valor_pago=Decimal("500.00"),
+            data_pagamento=date(2026, 4, 22),
+            status_coordenador="aprovado",
+            data_aprovacao_coordenador=aprovado_em,
+            status_gerente="aprovado",
+            data_aprovacao_gerente=aprovado_em + timedelta(seconds=1),
+            aprovacao_pagamento="aprovado",
+            data_aprovacao_diretor=aprovado_em + timedelta(seconds=2),
+        )
+        content_type = ContentType.objects.get_for_model(BM)
+        for usuario, data_hora in [
+            (lider_aprovador, bm.data_aprovacao_coordenador),
+            (gerente_aprovador, bm.data_aprovacao_gerente),
+            (diretor_aprovador, bm.data_aprovacao_diretor),
+        ]:
+            RegistroAuditoria.objects.create(
+                content_type=content_type,
+                object_id=bm.pk,
+                acao="atualizado",
+                usuario=usuario,
+                modelo="BM",
+                representacao_objeto=str(bm),
+                data_hora=data_hora,
+            )
+
+        self.client.force_login(self.financeiro)
+        response = self.client.get(reverse("detalhes_entrega", args=[self.evento.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "por Lider Aprovador")
+        self.assertContains(response, "por Gerente Contrato")
+        self.assertContains(response, "por Diretora Financeira")
+
     def test_registrar_entrega_evento_como_gerente_contrato_atualiza_campos(self):
         self.client.force_login(self.gerente_contrato)
 

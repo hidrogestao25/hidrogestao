@@ -814,6 +814,7 @@ def build_bm_approval_audit_map(bms):
         approval_map[bm.id] = {
             "coordenador": resolve_nearest_audit(audit_list, bm.data_aprovacao_coordenador),
             "gerente": resolve_nearest_audit(audit_list, bm.data_aprovacao_gerente),
+            "diretor": resolve_nearest_audit(audit_list, bm.data_aprovacao_diretor),
         }
 
     return approval_map
@@ -10999,8 +11000,9 @@ def detalhes_entrega(request, evento_id):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
-    bms = BM.objects.filter(evento=evento).order_by('-data_pagamento')
+    bms = list(BM.objects.filter(evento=evento).order_by('-data_pagamento'))
     notas_fiscais = evento.nota_fiscal.all()
+    bm_approval_audit_map = build_bm_approval_audit_map(bms)
 
     for bm in bms:
         bm.operational_pending = bm_is_operationally_pending(bm)
@@ -11008,14 +11010,18 @@ def detalhes_entrega(request, evento_id):
             request.user.grupo == "diretoria"
             and bm_has_operational_approval(bm)
         )
+        approval_info = bm_approval_audit_map.get(bm.id, {})
+        bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
+        bm.aprovacao_gerente_audit = approval_info.get("gerente")
+        bm.aprovacao_diretor_audit = approval_info.get("diretor")
 
     fornecedor = None
     if hasattr(evento, 'contrato_terceiro') and evento.contrato_terceiro.empresa_terceira:
         fornecedor = evento.contrato_terceiro.empresa_terceira
 
-    tem_reprovacao_coordenador = bms.filter(status_coordenador='reprovado').exists()
-    tem_reprovacao_gerente = bms.filter(status_gerente='reprovado').exists()
-    tem_reprovacao_diretor = bms.filter(aprovacao_pagamento='reprovado').exists()
+    tem_reprovacao_coordenador = any(bm.status_coordenador == "reprovado" for bm in bms)
+    tem_reprovacao_gerente = any(bm.status_gerente == "reprovado" for bm in bms)
+    tem_reprovacao_diretor = any(bm.aprovacao_pagamento == "reprovado" for bm in bms)
 
     return render(request, 'contratos/detalhes_entrega.html', {
         'evento': evento,

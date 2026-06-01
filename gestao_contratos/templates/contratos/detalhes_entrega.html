@@ -76,7 +76,14 @@
                   <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
                   <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
                   {% if bm.status_coordenador == "aprovado" %}
-                    <td><span class="badge bg-success">Aprovado</span></td>
+                    <td>
+                      <span class="badge bg-success">Aprovado</span>
+                      {% if bm.aprovacao_coordenador_audit %}
+                        <small class="d-block text-muted mt-1">
+                          por {{ bm.aprovacao_coordenador_audit.usuario.get_full_name|default:bm.aprovacao_coordenador_audit.usuario.username }}
+                        </small>
+                      {% endif %}
+                    </td>
                   {% elif bm.status_coordenador == "reprovado" %}
                     <td><span class="badge bg-danger">Reprovado</span></td>
                   {% else %}
@@ -94,7 +101,14 @@
                   {% endif %}
 
                   {% if bm.status_gerente == "aprovado" %}
-                    <td><span class="badge bg-success">Aprovado</span></td>
+                    <td>
+                      <span class="badge bg-success">Aprovado</span>
+                      {% if bm.aprovacao_gerente_audit %}
+                        <small class="d-block text-muted mt-1">
+                          por {{ bm.aprovacao_gerente_audit.usuario.get_full_name|default:bm.aprovacao_gerente_audit.usuario.username }}
+                        </small>
+                      {% endif %}
+                    </td>
                   {% elif bm.status_gerente == "reprovado" %}
                     <td><span class="badge bg-danger">Reprovado</span></td>
                   {% else %}
@@ -111,7 +125,14 @@
                     </td>
                   {% endif %}
                   {% if bm.aprovacao_pagamento == "aprovado" %}
-                    <td><span class="badge bg-success">Aprovado</span></td>
+                    <td>
+                      <span class="badge bg-success">Aprovado</span>
+                      {% if bm.aprovacao_diretor_audit %}
+                        <small class="d-block text-muted mt-1">
+                          por {{ bm.aprovacao_diretor_audit.usuario.get_full_name|default:bm.aprovacao_diretor_audit.usuario.username }}
+                        </small>
+                      {% endif %}
+                    </td>
                   {% elif bm.aprovacao_pagamento == "reprovado" %}
                     <td><span class="badge bg-danger">Reprovado</span></td>
                   {% else %}
