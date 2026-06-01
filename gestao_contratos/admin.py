@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 from django.db import models
+
 from .models import (
     User, Cliente, EmpresaTerceira, Proposta, Contrato, PropostaFornecedor,
     ContratoTerceiros, Evento,
@@ -9,13 +10,10 @@ from .models import (
     BM, DocumentoContrato, DocumentoContratoTerceiro,
     SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM, CalendarioPagamento, NF,
     SolicitacaoOrdemServico, OS, SolicitacaoContrato, RegistroAuditoria, AditivoContratoTerceiro,
-    ConfiguracaoSLA, Feriado
+    ConfiguracaoSLA, Feriado,
 )
 
 
-# ==============================
-# USER CUSTOMIZADO
-# ==============================
 class CustomUserCreationForm(UserCreationForm):
     class Meta(UserCreationForm.Meta):
         model = User
@@ -26,8 +24,16 @@ class CustomUserChangeForm(UserChangeForm):
     class Meta(UserChangeForm.Meta):
         model = User
         fields = (
-            "username", "email", "first_name", "last_name",
-            "is_active", "is_staff", "is_superuser", "grupo", "centros"
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+            "grupo",
+            "gerente_contrato_ausente",
+            "centros",
         )
 
 
@@ -36,23 +42,41 @@ class CustomUserAdmin(UserAdmin):
     form = CustomUserChangeForm
     model = User
 
-    list_display = ("username", "email", "grupo", "get_centros", "is_staff", "is_active")
-    list_filter = ("grupo", "centros", "is_staff", "is_active")
+    list_display = (
+        "username",
+        "email",
+        "grupo",
+        "gerente_contrato_ausente",
+        "get_centros",
+        "is_staff",
+        "is_active",
+    )
+    list_filter = ("grupo", "gerente_contrato_ausente", "centros", "is_staff", "is_active")
 
     fieldsets = (
         (None, {"fields": ("username", "password")}),
-        ("Informações pessoais", {"fields": ("first_name", "last_name", "email", "grupo", "centros")}),
+        ("Informações pessoais", {"fields": ("first_name", "last_name", "email", "grupo", "gerente_contrato_ausente", "centros")}),
         ("Permissões", {"fields": ("is_staff", "is_active", "is_superuser", "groups", "user_permissions")}),
         ("Datas importantes", {"fields": ("last_login", "date_joined")}),
     )
 
     add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": (
-                "username", "email", "password1", "password2",
-                "grupo", "centros", "is_staff", "is_active"
-            )}
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "username",
+                    "email",
+                    "password1",
+                    "password2",
+                    "grupo",
+                    "gerente_contrato_ausente",
+                    "centros",
+                    "is_staff",
+                    "is_active",
+                ),
+            },
         ),
     )
 
@@ -61,23 +85,15 @@ class CustomUserAdmin(UserAdmin):
 
     def get_centros(self, obj):
         return ", ".join([c.nome for c in obj.centros.all()])
+
     get_centros.short_description = "Centros"
 
-# ==============================
-# ADMIN PADRÃO
-# ==============================
+
 class DefaultAdmin(admin.ModelAdmin):
     ordering = ("id",)
     search_help_text = "Pesquise pelos principais campos de texto e relacionamentos."
 
     def get_list_display(self, request):
-        """
-        Lista colunas automaticamente:
-        - id
-        - nome / titulo / codigo (se existirem)
-        - campos de auditoria (created_at / updated_at / data_criacao / data_atualizacao)
-        - __str__
-        """
         fields = []
 
         if hasattr(self.model, "id"):
@@ -139,19 +155,34 @@ class DefaultAdmin(admin.ModelAdmin):
         return tuple(dict.fromkeys(search_fields))
 
 
-# ==============================
-# REGISTROS
-# ==============================
 admin.site.register(User, CustomUserAdmin)
 
 MODELOS_PADRAO = [
-    Cliente, EmpresaTerceira, Proposta, Contrato, PropostaFornecedor,
-    ContratoTerceiros, Evento,
-    AvaliacaoFornecedor, Indicadores,
-    BM, DocumentoContrato, DocumentoContratoTerceiro, NFCliente,
-    SolicitacaoProspeccao, CentroDeTrabalho, DocumentoBM, CalendarioPagamento, NF,
-    SolicitacaoOrdemServico, OS, SolicitacaoContrato, RegistroAuditoria,
-    AditivoContratoTerceiro, ConfiguracaoSLA, Feriado
+    Cliente,
+    EmpresaTerceira,
+    Proposta,
+    Contrato,
+    PropostaFornecedor,
+    ContratoTerceiros,
+    Evento,
+    AvaliacaoFornecedor,
+    Indicadores,
+    BM,
+    DocumentoContrato,
+    DocumentoContratoTerceiro,
+    NFCliente,
+    SolicitacaoProspeccao,
+    CentroDeTrabalho,
+    DocumentoBM,
+    CalendarioPagamento,
+    NF,
+    SolicitacaoOrdemServico,
+    OS,
+    SolicitacaoContrato,
+    RegistroAuditoria,
+    AditivoContratoTerceiro,
+    ConfiguracaoSLA,
+    Feriado,
 ]
 
 for modelo in MODELOS_PADRAO:

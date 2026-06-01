@@ -49,7 +49,7 @@
         {% endif %}
     {% endif %}
 
-    {% if request.user.grupo == "gerente_contrato" %}
+    {% if can_act_as_gerente_contrato %}
         {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}
             <form method="post">
                 {% csrf_token %}

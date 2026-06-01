@@ -105,7 +105,7 @@
             <hr>
             <!-- Justificativa e aprovação da gerência -->
             <div>
-              {% if request.user.grupo == 'gerente_contrato' and contrato_doc %}
+              {% if can_act_as_gerente_contrato and contrato_doc %}
                 <form method="post">
                     {% csrf_token %}
                     <button type="submit" name="acao" value="aprovar" class="btn btn-success">

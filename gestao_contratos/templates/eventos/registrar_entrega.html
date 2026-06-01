@@ -144,7 +144,7 @@
               <th>Observação</th>
               <th>Arquivo</th>
 
-              {% if can_approve_bm_as_lider or can_approve_bm_as_gerente or request.user.grupo == 'suprimento' %}
+              {% if can_approve_bm_as_lider or can_approve_bm_as_gerente or request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
               <th>Ações</th>
               {% endif %}
             </tr>
@@ -273,7 +273,7 @@
                 </td>
                 {% endif %}
 
-                {% if request.user.grupo == 'suprimento' %}
+                {% if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
                 <td>
                   <div class="d-flex gap-1">
 
@@ -321,7 +321,7 @@
             <th>Data Pagamento</th>
             <th>Observação</th>
             <th>Arquivo</th>
-            {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+            {% if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
               <th>Ações</th>
             {% endif %}
           </tr>
@@ -346,7 +346,7 @@
               {% endif %}
             </td>
 
-            {% if request.user.grupo == 'suprimento' or request.user.grupo == 'coordenador' %}
+            {% if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
             <td>
               <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-warning btn-editar-nf"
@@ -374,7 +374,7 @@
 
 
 
-      {% if request.user.grupo == 'suprimento' %}
+      {% if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
       <button type="button" class="btn btn-primary mt-3"
               data-bs-toggle="modal"
               data-bs-target="#bmModal">Cadastrar BM</button>
@@ -396,7 +396,7 @@
         </div>
       </div>
       {% endif %}
-      {% if request.user.grupo == 'suprimento' %}
+      {% if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
       <button type="button" class="btn btn-info mt-3"
               data-bs-toggle="modal"
               data-bs-target="#nfModal">Cadastrar NF</button>

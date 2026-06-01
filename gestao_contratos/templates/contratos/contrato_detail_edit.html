@@ -120,7 +120,7 @@
                         <th>Valor</th>
                         <th>Observações</th>
                         <th>Arquivo</th>
-                        {% if request.user.grupo in "suprimento financeiro" %}
+{% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
                             <th>Ações</th>
                         {% endif %}
                     </tr>
@@ -147,7 +147,7 @@
                             {% endif %}
                         </td>
 
-                        {% if request.user.grupo in "suprimento financeiro" %}
+{% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
                         <td>
     <!-- BOTÃO EDITAR -->
                             <button class="btn btn-warning btn-sm"

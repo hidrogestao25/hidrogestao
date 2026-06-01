@@ -26,7 +26,7 @@
             <th>Código do Projeto</th>
             <th>Líder de Contrato</th>
             <th>Líder Técnico</th>
-            {% if user.grupo in "diretoria suprimento financeiro" %}
+            {% if user.grupo == "diretoria" or user.grupo == "suprimento" or user.grupo == "financeiro" %}
               <th>Centro</th>
             {% endif %}
             <th>Cliente</th>
@@ -39,7 +39,7 @@
             <td>{{ contrato.cod_projeto }}</td>
             <td>{{ contrato.lider_contrato }}</td>
             <td>{{ contrato.coordenadores_display|default:contrato.coordenador }}</td>
-            {% if user.grupo in "diretoria suprimento financeiro" %}
+            {% if user.grupo == "diretoria" or user.grupo == "suprimento" or user.grupo == "financeiro" %}
             <td>
               {% for coordenador in contrato.todos_coordenadores %}
                 {% for centro in coordenador.centros.all %}

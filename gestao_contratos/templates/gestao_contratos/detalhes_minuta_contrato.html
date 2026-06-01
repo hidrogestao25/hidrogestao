@@ -105,7 +105,7 @@
     {% endif %}
 
     <!-- Justificativa e aprovação da gerência -->
-    {% if request.user.grupo == 'gerente_contrato' and contrato_doc %}
+    {% if can_act_as_gerente_contrato and contrato_doc %}
       {% if solicitacao.aprovacao_gerencia == False and solicitacao.reprovacao_gerencia == False %}
         <form method="post">
             {% csrf_token %}

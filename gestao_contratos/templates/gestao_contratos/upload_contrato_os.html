@@ -24,13 +24,20 @@
                 </div>
 
                 <div class="d-flex gap-2">
-                    <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-secondary">
-                        Cancelar
-                    </a>
-
                     <button type="submit" class="btn btn-success">
                         Salvar Minuta
                     </button>
+                    <button
+                        type="submit"
+                        formaction="{{ generation_url }}"
+                        formnovalidate
+                        class="btn btn-primary"
+                    >
+                        Gerar OS
+                    </button>
+                    <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-secondary">
+                        Cancelar
+                    </a>
                 </div>
             </form>
 

@@ -415,9 +415,10 @@ document.addEventListener("DOMContentLoaded", function() {
   {% endif %}
 {% endif %}
 
-{% if request.user.grupo == 'gerente_contrato' and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
+{% if request.user.atua_como_gerente_contrato and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
     <form method="post">
         {% csrf_token %}
+        <input type="hidden" name="papel_avaliacao" value="gerente">
         {% if eventos or solicitacao.guarda_chuva %}
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
         {% else %}
@@ -430,7 +431,7 @@ document.addEventListener("DOMContentLoaded", function() {
 {% endif %}
 
 <!-- Botões de aprovação para gerente -->
-{% if request.user.grupo == 'gerente_contrato' %}
+{% if request.user.atua_como_gerente_contrato %}
   {% if not solicitacao.guarda_chuva and solicitacao.minuta_boletins_medicao_contrato %}
     {% if solicitacao.minuta_boletins_medicao_contrato.status_gerente == 'pendente' %}
       <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-primary mt-3">
@@ -455,6 +456,7 @@ document.addEventListener("DOMContentLoaded", function() {
 {% if request.user.grupo == 'diretoria' and solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
     <form method="post">
         {% csrf_token %}
+        <input type="hidden" name="papel_avaliacao" value="diretoria">
         {% if eventos or solicitacao.guarda_chuva %}
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
         {% else %}
@@ -477,6 +479,7 @@ document.addEventListener("DOMContentLoaded", function() {
     <div class="modal-content">
       <form method="post">
         {% csrf_token %}
+        <input type="hidden" name="papel_avaliacao" value="gerente">
         <input type="hidden" name="acao" value="reprovar">
         <div class="modal-header">
           <h5 class="modal-title">Reprovar solicitacao</h5>
@@ -500,6 +503,7 @@ document.addEventListener("DOMContentLoaded", function() {
     <div class="modal-content">
       <form method="post">
         {% csrf_token %}
+        <input type="hidden" name="papel_avaliacao" value="diretoria">
         <input type="hidden" name="acao" value="reprovar">
         <div class="modal-header">
           <h5 class="modal-title">Reprovar solicitacao</h5>

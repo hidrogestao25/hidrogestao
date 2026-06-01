@@ -171,7 +171,7 @@
                                 {% endif %}
                             {% endif %}
 
-                            {% if request.user.grupo == 'gerente_contrato' %}
+                            {% if can_act_as_gerente_contrato %}
                                 {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                                     <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Avaliar Fornecedor</a>
                                 {% endif %}
@@ -370,7 +370,7 @@
                           {% endif %}
                       {% endif %}
 
-                      {% if request.user.grupo == 'gerente_contrato' %}
+                      {% if can_act_as_gerente_contrato %}
                           {% if solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                           <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
                           class="btn btn-success btn-sm">
@@ -637,7 +637,7 @@
                     <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
                         Detalhes
                     </a>
-                    {% if request.user.grupo == "gerente_contrato" and aditivo.status_gerente == "pendente" %}
+                    {% if can_act_as_gerente_contrato and aditivo.status_gerente == "pendente" %}
                         <a href="{% url 'avaliar_solicitacao_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-success">
                             Avaliar solicitacao
                         </a>
@@ -653,7 +653,7 @@
                         <a href="{% url 'enviar_documento_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-warning">
                             Revisar minuta
                         </a>
-                    {% elif request.user.grupo == "gerente_contrato" and aditivo.tem_documento and aditivo.status_lider == "pendente" %}
+                    {% elif can_act_as_gerente_contrato and aditivo.tem_documento and aditivo.status_lider == "pendente" %}
                         <a href="{% url 'avaliar_minuta_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-primary">
                             Avaliar minuta
                         </a>

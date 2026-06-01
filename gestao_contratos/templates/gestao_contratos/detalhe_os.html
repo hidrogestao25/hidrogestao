@@ -180,7 +180,7 @@
                     Voltar
                 </a>
 
-                {% if request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'suprimento' %}
+                {% if request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or can_act_as_gerente_contrato or request.user.grupo == 'suprimento' %}
                     {% if os.status != 'finalizada' and os.status != 'aprovada' %}
                         <a href="{% url 'editar_ordem_servico' os.id %}" class="btn btn-warning">
                             Editar OS
@@ -188,7 +188,7 @@
                     {% endif %}
                 {% endif %}
 
-                {% if request.user.grupo == 'gerente_contrato' and os.status == 'pendente_gerente' %}
+                {% if can_act_as_gerente_contrato and os.status == 'pendente_gerente' %}
                     <a href="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}" class="btn btn-success"
                        onclick="return confirm('Confirmar aprovacao da solicitacao de OS?')">
                         Aprovar Solicitacao
@@ -214,7 +214,7 @@
                     </a>
                 {% endif %}
 
-                {% if request.user.grupo == 'gerente_contrato' and os.status == 'pendente_minuta_gerente' %}
+                {% if can_act_as_gerente_contrato and os.status == 'pendente_minuta_gerente' %}
                     <form method="post" action="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}" class="d-inline">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-success"

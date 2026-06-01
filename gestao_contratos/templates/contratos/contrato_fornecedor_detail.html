@@ -242,8 +242,8 @@
                         {% endif %}
                     {% endwith %}
                   {% endif %}
-              {% elif request.user.grupo == 'lider_contrato' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'gerente_lider' %}
-                  {% if request.user.grupo == 'gerente_contrato' or request.user.grupo == 'gerente_lider' %}
+              {% elif request.user.grupo == 'lider_contrato' or request.user.atua_como_gerente_contrato or request.user.grupo == 'gerente_lider' %}
+                  {% if request.user.atua_como_gerente_contrato or request.user.grupo == 'gerente_lider' %}
                       <a href="{% url 'detalhes_entrega' evento.id %}" class="btn btn-sm btn-outline-info">
                         Detalhes da Entrega
                       </a>
@@ -353,7 +353,7 @@
                 {% endif %}
               </td>
               <td onclick="event.stopPropagation();">
-                {% if request.user.grupo == 'lider_contrato' and request.user == os.lider_contrato or request.user.grupo == 'gerente_contrato' %}
+                {% if request.user.grupo == 'lider_contrato' and request.user == os.lider_contrato or request.user.atua_como_gerente_contrato %}
                   {% if os.realizado %}
                     {% with avaliacao=os.avaliacoes.first %}
                       {% if avaliacao %}
@@ -374,10 +374,10 @@
     {% else %}
       <p><em>Nenhuma Ordem de Serviço cadastrada para este contrato.</em></p>
     {% endif %}
-    {% if user.grupo == "gerente_lider" or user.grupo == "gerente_contrato" or user.grupo == "lider_contrato" or user.grupo == "suprimento" %}
+    {% if user.grupo == "gerente_lider" or user.atua_como_gerente_contrato or user.grupo == "lider_contrato" or user.grupo == "suprimento" %}
       <div class="text-end">
         {% if user.grupo == "suprimento" %}
-          <a href="{% url 'cadastrar_os_contrato_guarda_chuwa' contrato.pk %}" class="btn btn-custom">
+          <a href="{% url 'cadastrar_os_contrato_guarda_chuva' contrato.pk %}" class="btn btn-custom">
               + Cadastrar OS
           </a>
         {% else %}

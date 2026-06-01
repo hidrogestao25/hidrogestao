@@ -22,7 +22,9 @@
     </thead>
     <tbody>
         {% for fornecedor in page_obj %}
-        <tr>
+        <tr class="linha-hover"
+            onclick="window.location='{% url 'contrato_fornecedor_detalhe' fornecedor.pk %}'"
+            style="cursor:pointer;">
             <td>{{ fornecedor.num_contrato }}</td>
             <td>{{ fornecedor.num_contrato }}</td>
             <td>{{ fornecedor.empresa_terceira }}</td>
@@ -40,16 +42,13 @@
                   {{ fornecedor.status }}
                 {% endif %}
             </td>
-            <td>
-                <a href="{% url 'contrato_fornecedor_detalhe' fornecedor.pk %}" class="btn btn-sm btn-outline-primary">
-                    Detalhes
-                </a>
+            <td onclick="event.stopPropagation();">
                 {% if user.grupo == "suprimento" %}
                   <a href="{% url 'contrato_fornecedor_editar' fornecedor.pk %}" class="btn btn-sm btn-outline-secondary">
                       Editar Contrato
                   </a>
                 {% endif %}
-                {% if user.grupo in "gerente_lider lider_contrato gerente_contrato" %}
+                {% if user.grupo == "gerente_lider" or user.grupo == "lider_contrato" or user.grupo == "gerente_contrato" or user.atua_como_gerente_contrato %}
                     <a href="{% url 'solicitar_os' fornecedor.pk %}" class="btn btn-sm btn-success">
                         Solicitar OS
                     </a>

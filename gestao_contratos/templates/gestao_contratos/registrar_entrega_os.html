@@ -113,7 +113,7 @@
               {% endif %}
               <th>Observacao</th>
               <th>Arquivo</th>
-              {% if can_approve_bm_as_lider or can_approve_bm_as_gerente or request.user.grupo == "suprimento" %}
+              {% if can_approve_bm_as_lider or can_approve_bm_as_gerente or request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
               <th>Acoes</th>
               {% endif %}
             </tr>
@@ -239,7 +239,7 @@
               </td>
               {% endif %}
 
-              {% if request.user.grupo == "suprimento" %}
+              {% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
               <td>
                 <div class="d-flex gap-1">
                   <button
@@ -318,7 +318,7 @@
                 >
                   Editar
                 </button>
-                {% if request.user.grupo == "suprimento" %}
+                {% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
                 <form
                   method="post"
                   action="{% url 'deletar_nf' nf.id %}"
@@ -339,7 +339,7 @@
       <p class="text-muted">Nenhuma Nota Fiscal cadastrada para esta OS.</p>
       {% endif %}
 
-      {% if request.user.grupo == "suprimento" %}
+      {% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
       <button type="button" class="btn btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#bmModal">
         Cadastrar BM
       </button>

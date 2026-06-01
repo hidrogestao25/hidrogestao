@@ -559,7 +559,7 @@ document.addEventListener("DOMContentLoaded", function() {
 {% endif %}
 
 <!-- Botões de aprovação para gerente -->
-{% if request.user.grupo == 'gerente_contrato' %}
+{% if request.user.atua_como_gerente_contrato %}
   {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
       <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success mt-3">Avaliar Fornecedor</a>
   {% endif %}

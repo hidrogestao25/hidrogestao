@@ -211,7 +211,7 @@
           <button type="submit" class="btn btn-outline-primary">Duplicar OS</button>
         </form>
         {% endif %}
-        {% if request.user.grupo == "lider_contrato" and request.user == os.lider_contrato or request.user.grupo == "gerente_contrato" or request.user.grupo == "gerente_lider" or request.user.grupo == "suprimento" %}
+        {% if request.user.grupo == "lider_contrato" and request.user == os.lider_contrato or request.user.atua_como_gerente_contrato or request.user.grupo == "gerente_lider" or request.user.grupo == "suprimento" %}
         <a href="{% url 'registrar_entrega_os' os.id %}" class="btn btn-success">
           {% if os.realizado or os.avaliacao %}
             Editar Entrega

@@ -9,7 +9,7 @@
         </div>
 
         <div class="card-body">
-            {% if direct_guarda_chuwa and contrato_referencia %}
+            {% if direct_guarda_chuva and contrato_referencia %}
                 <div class="alert alert-info">
                     Esta OS sera cadastrada diretamente no contrato guarda-chuva
                     <strong>{{ contrato_referencia.num_contrato }}</strong>.
@@ -121,7 +121,7 @@
                         Cancelar
                     </a>
                     <button type="submit" class="btn btn-success">
-                        {% if direct_guarda_chuwa %}Cadastrar OS{% else %}Salvar Ordem de Serviço{% endif %}
+                        {% if direct_guarda_chuva %}Cadastrar OS{% else %}Salvar Ordem de Serviço{% endif %}
                     </button>
                 </div>
             </form>

@@ -1,0 +1,54 @@
+{% if contratos_vencendo %}
+    <ul class="list-group list-group-flush">
+        {% for c in contratos_vencendo %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>{{ c.empresa_terceira }}</strong><br>
+
+                    {% if c.objeto %}
+                        <small>{{ c.objeto|truncatechars:60 }}</small><br>
+                    {% endif %}
+
+                    <span class="badge bg-dark">
+                        Vencimento: {{ c.data_fim|date:"d/m/Y" }}
+                    </span>
+                    {% if c.dias_para_vencer < 0 %}
+                        <span class="badge bg-danger">
+                            Vencido há {{ c.dias_vencido }} dias
+                        </span>
+                    {% elif c.dias_para_vencer <= 5 %}
+                        <span class="badge bg-danger">
+                            Vence em {{ c.dias_para_vencer }} dias
+                        </span>
+                    {% elif c.dias_para_vencer <= 15 %}
+                        <span class="badge bg-warning text-dark">
+                            Vence em {{ c.dias_para_vencer }} dias
+                        </span>
+                    {% else %}
+                        <span class="badge bg-info">
+                            Vence em {{ c.dias_para_vencer }} dias
+                        </span>
+                    {% endif %}
+                </div>
+
+                <div class="d-flex flex-column gap-2 align-items-end">
+                    <a href="{% url 'contrato_fornecedor_detalhe' c.id %}"
+                       class="btn btn-sm btn-outline-dark">
+                        Ver Contrato
+                    </a>
+                    {% if c.dias_para_vencer < 0 %}
+                        <form method="post" action="{% url 'ocultar_contrato_vencido_home' c.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                Ocultar do card
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+            </li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p class="text-muted mb-0">Nenhum contrato vencendo.</p>
+{% endif %}

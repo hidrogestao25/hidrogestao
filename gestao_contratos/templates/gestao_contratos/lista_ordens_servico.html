@@ -2,14 +2,14 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Ordens de Servico Cadastradas</h2>
+    <h2>Ordens de Serviço Cadastradas</h2>
 
     {% if user.grupo == "lider_contrato" or user.grupo == "gerente_lider" or user.grupo == "gerente_contrato" %}
       <a href="{% url 'solicitar_os_com_contrato' %}" class="btn btn-custom">+ Solicitar Nova OS</a>
     {% endif %}
 
     {% if user.grupo == "suprimento" %}
-      <a href="{% url 'nova_os' %}" class="btn btn-custom">+ Adicionar Ordem de Servico</a>
+      <a href="{% url 'nova_os' %}" class="btn btn-custom">+ Adicionar Ordem de Serviço</a>
     {% endif %}
 </div>
 
@@ -29,11 +29,11 @@
         <tr>
             <th>#</th>
             <th>Projeto</th>
-            <th>Titulo</th>
-            <th>Lider</th>
+            <th>Título</th>
+            <th>Líder</th>
             <th>Valor Previsto</th>
             <th>Status</th>
-            <th>Prazo de Execucao</th>
+            <th>Prazo de Execução</th>
         </tr>
     </thead>
 
@@ -59,14 +59,14 @@
                         <span class="badge bg-success">Finalizada</span>
                     {% elif os.realizado %}
                         <span class="badge bg-warning text-dark">Faltando Pagamento</span>
-                    {% elif os.prazo_execucao and os.prazo_execucao|date:'Y-m-d' < today|date:'Y-m-d' %}
-                        <span class="badge bg-danger">Em atraso</span>
-                    {% elif os.status == 'em_execucao' %}
-                        <span class="badge bg-success">Em execucao</span>
-                    {% elif os.status == 'paralizada' %}
-                        <span class="badge bg-warning text-dark">Paralizada</span>
                     {% elif os.status == 'cancelada' %}
                         <span class="badge bg-danger">Cancelada</span>
+                    {% elif os.status == 'paralizada' %}
+                        <span class="badge bg-warning text-dark">Paralizada</span>
+                    {% elif os.prazo_execucao and os.prazo_execucao < today %}
+                        <span class="badge bg-danger">Em atraso</span>
+                    {% else %}
+                        <span class="badge bg-success">Em execução</span>
                     {% endif %}
                 </td>
                 <td>{{ os.prazo_execucao|date:"d/m/Y" }}</td>
@@ -74,16 +74,15 @@
         {% empty %}
             <tr>
                 <td colspan="7" class="text-center">
-                    Nenhuma Ordem de Servico cadastrada.
+                    Nenhuma Ordem de Serviço cadastrada.
                 </td>
             </tr>
         {% endfor %}
     </tbody>
 </table>
 
-<nav aria-label="Navegacao de paginas">
+<nav aria-label="Navegação de páginas">
     <ul class="pagination">
-
         {% if page_obj.has_previous %}
             <li class="page-item">
                 <a class="page-link" href="?page=1">&laquo; Primeiro</a>
@@ -97,23 +96,22 @@
 
         <li class="page-item disabled">
             <span class="page-link">
-                Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+                Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
             </span>
         </li>
 
         {% if page_obj.has_next %}
             <li class="page-item">
                 <a class="page-link" href="?page={{ page_obj.next_page_number }}">
-                    Proxima
+                    Próxima
                 </a>
             </li>
             <li class="page-item">
                 <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">
-                    Ultima &raquo;
+                    Última &raquo;
                 </a>
             </li>
         {% endif %}
-
     </ul>
 </nav>
 

@@ -91,6 +91,14 @@ class ContratoForm(forms.ModelForm):
         })
     )
 
+    valor_vendido = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Vendido ao Cliente",
+        required=False
+    )
     class Meta:
         model = Contrato
         fields = ['observacao', 'cod_projeto', 'cliente', 'coordenador', 'coordenadores', 'data_inicio', 'data_fim', 'valor_total', 'status', 'objeto', 'proposta', 'lider_contrato']
@@ -172,6 +180,14 @@ class FornecedorForm(forms.ModelForm):
             "A conta bancária do fornecedor deve estar atrelada ao CNPJ."
         )
 
+    valor_vendido = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Vendido ao Cliente",
+        required=False
+    )
     class Meta:
         model = EmpresaTerceira
         fields = '__all__'
@@ -319,6 +335,14 @@ class SolicitacaoContratoForm(forms.ModelForm):
         label="Valor Disponível",
         required=False
     )
+    valor_vendido = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Vendido ao Cliente",
+        required=False
+    )
     data_inicio = forms.DateField(
         required=False,
         widget=forms.DateInput(
@@ -354,6 +378,7 @@ class SolicitacaoContratoForm(forms.ModelForm):
             'previsto_no_orcamento',
             'justificativa_fornecedor_escolhido',
             'valor_disponivel',
+            'valor_vendido',
             'data_inicio',
             'data_fim',
             'cronograma',
@@ -408,22 +433,22 @@ class SolicitacaoContratoForm(forms.ModelForm):
 
         return Decimal("0.00")
 
-    """def clean_valor_vendido(self):
+    def clean_valor_vendido(self):
         valor = self.cleaned_data.get('valor_vendido')
 
-        if valor:
-            valor = (
-                valor.replace('R$', '')
-                     .replace('.', '')
-                     .replace(',', '.')
-                     .strip()
-            )
-            try:
-                return Decimal(valor)
-            except:
-                raise forms.ValidationError("Informe um valor monetário válido.")
+        if not valor:
+            return None
 
-        return valor"""
+        valor = (
+            valor.replace('R$', '')
+                 .replace('.', '')
+                 .replace(',', '.')
+                 .strip()
+        )
+        try:
+            return Decimal(valor)
+        except:
+            raise forms.ValidationError("Informe um valor monetário válido.")
 
 
 class SolicitacaoProspeccaoForm(forms.ModelForm):
@@ -466,12 +491,21 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
         ),
         input_formats=['%d-%m-%Y']
     )
+    valor_vendido = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Vendido ao Cliente",
+        required=False
+    )
     class Meta:
         model = SolicitacaoProspeccao
         fields = [
                     'justificativa_orcamento',
                     'forma_pagamento',
                     'valor_disponivel',
+                    'valor_vendido',
                     'contrato',
                     'coordenador',
                     'descricao',
@@ -529,6 +563,21 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
         return None"""
 
 
+    def clean_valor_vendido(self):
+        valor = self.cleaned_data.get('valor_vendido')
+
+        if not valor:
+            return None
+
+        try:
+            valor = valor.replace('.', '').replace(',', '.')
+            return Decimal(valor)
+        except (InvalidOperation, AttributeError):
+            raise forms.ValidationError(
+                "Informe um valor numérico válido (ex: 1.234,56)"
+            )
+
+
 class SolicitacaoGuardaChuvaForm(forms.ModelForm):
     valor_disponivel = forms.CharField(
         widget=forms.TextInput(attrs={
@@ -561,6 +610,14 @@ class SolicitacaoGuardaChuvaForm(forms.ModelForm):
         ),
         input_formats=['%d-%m-%Y']
     )
+    valor_vendido = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control money',
+            'placeholder': 'R$ 0,00'
+        }),
+        label="Valor Vendido ao Cliente",
+        required=False
+    )
 
     class Meta:
         model = SolicitacaoContrato
@@ -572,6 +629,7 @@ class SolicitacaoGuardaChuvaForm(forms.ModelForm):
             'previsto_no_orcamento',
             'justificativa_fornecedor_escolhido',
             'valor_disponivel',
+            'valor_vendido',
             'data_inicio',
             'data_fim',
             'cronograma',
@@ -607,6 +665,23 @@ class SolicitacaoGuardaChuvaForm(forms.ModelForm):
                 raise forms.ValidationError("Informe um valor monetário válido.")
 
         return valor
+
+    def clean_valor_vendido(self):
+        valor = self.cleaned_data.get('valor_vendido')
+
+        if not valor:
+            return None
+
+        valor = (
+            valor.replace('R$', '')
+                 .replace('.', '')
+                 .replace(',', '.')
+                 .strip()
+        )
+        try:
+            return Decimal(valor)
+        except:
+            raise forms.ValidationError("Informe um valor monetÃ¡rio vÃ¡lido.")
 
 
 class SolicitacaoOrdemServicoForm(forms.ModelForm):
@@ -1144,6 +1219,10 @@ class RegistroEntregaOSForm(forms.ModelForm):
         required=False,
         widget=forms.TextInput(attrs={"class": "form-control money", "placeholder": "0,00"}),
     )
+    data_pagamento = forms.DateField(
+        required=False,
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
+    )
 
     class Meta:
         model = OS
@@ -1159,14 +1238,16 @@ class RegistroEntregaOSForm(forms.ModelForm):
         widgets = {
             "caminho_evidencia": forms.Textarea(attrs={"class": "form-control", "rows": 1}),
             "avaliacao": forms.Select(attrs={"class": "form-select"}),
-            "data_entrega": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
-            "data_pagamento": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "data_entrega": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
             "observacao": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial["data_entrega"] = self.instance.data_entrega
+            self.initial["data_pagamento"] = self.instance.data_pagamento
         if self.instance and self.instance.valor_pago is not None:
             self.initial["valor_pago"] = format_decimal_for_br_input(self.instance.valor_pago)
         if user and user.grupo != "suprimento":

@@ -101,6 +101,59 @@
                 </div>
             </div>
 
+            <div class="col-md-6 mb-4 animated-card">
+                <div class="card shadow-sm dashboard-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Boletins Pendentes de Aprovação</h5>
+                    </div>
+
+                    <div class="card-body">
+                        {% if bms_pendentes %}
+                            <ul class="list-group list-group-flush">
+                                {% for bm in bms_pendentes %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
+                                            <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
+
+                                            <div class="mt-1">
+                                                {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
+                                                    <span class="badge bg-secondary">Liderança</span>
+                                                    <span class="badge bg-info text-dark">Gerência de Contrato</span>
+                                                {% endif %}
+                                                {% if bm.aprovacao_pagamento == "pendente" %}
+                                                    {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
+                                                        <span class="badge bg-danger">Diretoria</span>
+                                                    {% endif %}
+                                                {% endif %}
+                                                {% if bm.sla_display %}
+                                                    <span class="badge {{ bm.sla_display.badge_class }}">{{ bm.sla_display.badge_label }}</span>
+                                                {% endif %}
+                                            </div>
+                                            {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
+                                        </div>
+
+                                        {% if bm.evento %}
+                                            <a href="{% url 'detalhes_entrega' bm.evento.id %}"
+                                               class="btn btn-outline-primary btn-sm">
+                                                Ver BM
+                                            </a>
+                                        {% elif bm.os %}
+                                            <a href="{% url 'registrar_entrega_os' bm.os.id %}"
+                                               class="btn btn-outline-primary btn-sm">
+                                                Ver BM
+                                            </a>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted mb-0">Nenhum boletim pendente.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
             <!-- Fim do is_financeiro -->
             {% endif %}
 
@@ -487,45 +540,7 @@
                     </div>
 
                     <div class="card-body">
-                        {% if contratos_vencendo %}
-                            <ul class="list-group list-group-flush">
-                                {% for c in contratos_vencendo %}
-                                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <strong>{{ c.empresa_terceira }}</strong><br>
-
-                                            {% if c.objeto %}
-                                                <small>{{ c.objeto|truncatechars:60 }}</small><br>
-                                            {% endif %}
-
-                                            <span class="badge bg-dark">
-                                                Vence em: {{ c.data_fim|date:"d/m/Y" }}
-                                            </span>
-                                            {% if c.dias_para_vencer <= 5 %}
-                                                <span class="badge bg-danger">
-                                                    Vence em {{ c.dias_para_vencer }} dias
-                                                </span>
-                                            {% elif c.dias_para_vencer <= 15 %}
-                                                <span class="badge bg-warning text-dark">
-                                                    Vence em {{ c.dias_para_vencer }} dias
-                                                </span>
-                                            {% else %}
-                                                <span class="badge bg-info">
-                                                    Vence em {{ c.dias_para_vencer }} dias
-                                                </span>
-                                            {% endif %}
-                                        </div>
-
-                                        <a href="{% url 'contrato_fornecedor_detalhe' c.id %}"
-                                           class="btn btn-sm btn-outline-dark">
-                                            Ver Contrato
-                                        </a>
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        {% else %}
-                            <p class="text-muted mb-0">Nenhum contrato vencendo.</p>
-                        {% endif %}
+                        {% include 'gestao_contratos/_contratos_vencendo_home.html' %}
                     </div>
                 </div>
             </div>
@@ -845,45 +860,7 @@
                       </div>
 
                       <div class="card-body">
-                          {% if contratos_vencendo %}
-                              <ul class="list-group list-group-flush">
-                                  {% for c in contratos_vencendo %}
-                                      <li class="list-group-item d-flex justify-content-between align-items-center">
-                                          <div>
-                                              <strong>{{ c.empresa_terceira }}</strong><br>
-
-                                              {% if c.objeto %}
-                                                  <small>{{ c.objeto|truncatechars:60 }}</small><br>
-                                              {% endif %}
-
-                                              <span class="badge bg-dark">
-                                                  Vence em: {{ c.data_fim|date:"d/m/Y" }}
-                                              </span>
-                                              {% if c.dias_para_vencer <= 5 %}
-                                                  <span class="badge bg-danger">
-                                                      Vence em {{ c.dias_para_vencer }} dias
-                                                  </span>
-                                              {% elif c.dias_para_vencer <= 15 %}
-                                                  <span class="badge bg-warning text-dark">
-                                                      Vence em {{ c.dias_para_vencer }} dias
-                                                  </span>
-                                              {% else %}
-                                                  <span class="badge bg-info">
-                                                      Vence em {{ c.dias_para_vencer }} dias
-                                                  </span>
-                                              {% endif %}
-                                          </div>
-
-                                          <a href="{% url 'contrato_fornecedor_detalhe' c.id %}"
-                                             class="btn btn-sm btn-outline-dark">
-                                              Ver Contrato
-                                          </a>
-                                      </li>
-                                  {% endfor %}
-                              </ul>
-                          {% else %}
-                              <p class="text-muted mb-0">Nenhum contrato vencendo.</p>
-                          {% endif %}
+                        {% include 'gestao_contratos/_contratos_vencendo_home.html' %}
                       </div>
                   </div>
               </div>
@@ -1161,45 +1138,7 @@
                           </div>
 
                           <div class="card-body">
-                              {% if contratos_vencendo %}
-                                  <ul class="list-group list-group-flush">
-                                      {% for c in contratos_vencendo %}
-                                          <li class="list-group-item d-flex justify-content-between align-items-center">
-                                              <div>
-                                                  <strong>{{ c.empresa_terceira }}</strong><br>
-
-                                                  {% if c.objeto %}
-                                                      <small>{{ c.objeto|truncatechars:60 }}</small><br>
-                                                  {% endif %}
-
-                                                  <span class="badge bg-dark">
-                                                      Vence em: {{ c.data_fim|date:"d/m/Y" }}
-                                                  </span>
-                                                  {% if c.dias_para_vencer <= 5 %}
-                                                      <span class="badge bg-danger">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% elif c.dias_para_vencer <= 15 %}
-                                                      <span class="badge bg-warning text-dark">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% else %}
-                                                      <span class="badge bg-info">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% endif %}
-                                              </div>
-
-                                              <a href="{% url 'contrato_fornecedor_detalhe' c.id %}"
-                                                 class="btn btn-sm btn-outline-dark">
-                                                  Ver Contrato
-                                              </a>
-                                          </li>
-                                      {% endfor %}
-                                  </ul>
-                              {% else %}
-                                  <p class="text-muted mb-0">Nenhum contrato vencendo.</p>
-                              {% endif %}
+                        {% include 'gestao_contratos/_contratos_vencendo_home.html' %}
                           </div>
                       </div>
                   </div>
@@ -1463,45 +1402,7 @@
                           </div>
 
                           <div class="card-body">
-                              {% if contratos_vencendo %}
-                                  <ul class="list-group list-group-flush">
-                                      {% for c in contratos_vencendo %}
-                                          <li class="list-group-item d-flex justify-content-between align-items-center">
-                                              <div>
-                                                  <strong>{{ c.empresa_terceira }}</strong><br>
-
-                                                  {% if c.objeto %}
-                                                      <small>{{ c.objeto|truncatechars:60 }}</small><br>
-                                                  {% endif %}
-
-                                                  <span class="badge bg-dark">
-                                                      Vence em: {{ c.data_fim|date:"d/m/Y" }}
-                                                  </span>
-                                                  {% if c.dias_para_vencer <= 5 %}
-                                                      <span class="badge bg-danger">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% elif c.dias_para_vencer <= 15 %}
-                                                      <span class="badge bg-warning text-dark">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% else %}
-                                                      <span class="badge bg-info">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% endif %}
-                                              </div>
-
-                                              <a href="{% url 'contrato_fornecedor_detalhe' c.id %}"
-                                                 class="btn btn-sm btn-outline-dark">
-                                                  Ver Contrato
-                                              </a>
-                                          </li>
-                                      {% endfor %}
-                                  </ul>
-                              {% else %}
-                                  <p class="text-muted mb-0">Nenhum contrato vencendo.</p>
-                              {% endif %}
+                        {% include 'gestao_contratos/_contratos_vencendo_home.html' %}
                           </div>
                       </div>
                   </div>
@@ -1765,45 +1666,7 @@
                       </div>
 
                       <div class="card-body">
-                          {% if contratos_vencendo %}
-                              <ul class="list-group list-group-flush">
-                                  {% for c in contratos_vencendo %}
-                                      <li class="list-group-item d-flex justify-content-between align-items-center">
-                                          <div>
-                                              <strong>{{ c.empresa_terceira }}</strong><br>
-
-                                              {% if c.objeto %}
-                                                  <small>{{ c.objeto|truncatechars:60 }}</small><br>
-                                              {% endif %}
-
-                                              <span class="badge bg-dark">
-                                                  Vence em: {{ c.data_fim|date:"d/m/Y" }}
-                                              </span>
-                                              {% if c.dias_para_vencer <= 5 %}
-                                                  <span class="badge bg-danger">
-                                                      Vence em {{ c.dias_para_vencer }} dias
-                                                  </span>
-                                              {% elif c.dias_para_vencer <= 15 %}
-                                                  <span class="badge bg-warning text-dark">
-                                                      Vence em {{ c.dias_para_vencer }} dias
-                                                  </span>
-                                              {% else %}
-                                                  <span class="badge bg-info">
-                                                      Vence em {{ c.dias_para_vencer }} dias
-                                                  </span>
-                                              {% endif %}
-                                          </div>
-
-                                          <a href="{% url 'contrato_fornecedor_detalhe' c.id %}"
-                                             class="btn btn-sm btn-outline-dark">
-                                              Ver Contrato
-                                          </a>
-                                      </li>
-                                  {% endfor %}
-                              </ul>
-                          {% else %}
-                              <p class="text-muted mb-0">Nenhum contrato vencendo.</p>
-                          {% endif %}
+                        {% include 'gestao_contratos/_contratos_vencendo_home.html' %}
                       </div>
                   </div>
               </div>
@@ -2044,45 +1907,7 @@
                           </div>
 
                           <div class="card-body">
-                              {% if contratos_vencendo %}
-                                  <ul class="list-group list-group-flush">
-                                      {% for c in contratos_vencendo %}
-                                          <li class="list-group-item d-flex justify-content-between align-items-center">
-                                              <div>
-                                                  <strong>{{ c.empresa_terceira }}</strong><br>
-
-                                                  {% if c.objeto %}
-                                                      <small>{{ c.objeto|truncatechars:60 }}</small><br>
-                                                  {% endif %}
-
-                                                  <span class="badge bg-dark">
-                                                      Vence em: {{ c.data_fim|date:"d/m/Y" }}
-                                                  </span>
-                                                  {% if c.dias_para_vencer <= 5 %}
-                                                      <span class="badge bg-danger">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% elif c.dias_para_vencer <= 15 %}
-                                                      <span class="badge bg-warning text-dark">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% else %}
-                                                      <span class="badge bg-info">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% endif %}
-                                              </div>
-
-                                              <a href="{% url 'contrato_fornecedor_detalhe' c.id %}"
-                                                 class="btn btn-sm btn-outline-dark">
-                                                  Ver Contrato
-                                              </a>
-                                          </li>
-                                      {% endfor %}
-                                  </ul>
-                              {% else %}
-                                  <p class="text-muted mb-0">Nenhum contrato vencendo.</p>
-                              {% endif %}
+                        {% include 'gestao_contratos/_contratos_vencendo_home.html' %}
                           </div>
                       </div>
                   </div>
@@ -2376,45 +2201,7 @@
                           </div>
 
                           <div class="card-body">
-                              {% if contratos_vencendo %}
-                                  <ul class="list-group list-group-flush">
-                                      {% for c in contratos_vencendo %}
-                                          <li class="list-group-item d-flex justify-content-between align-items-center">
-                                              <div>
-                                                  <strong>{{ c.empresa_terceira }}</strong><br>
-
-                                                  {% if c.objeto %}
-                                                      <small>{{ c.objeto|truncatechars:60 }}</small><br>
-                                                  {% endif %}
-
-                                                  <span class="badge bg-dark">
-                                                      Vence em: {{ c.data_fim|date:"d/m/Y" }}
-                                                  </span>
-                                                  {% if c.dias_para_vencer <= 5 %}
-                                                      <span class="badge bg-danger">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% elif c.dias_para_vencer <= 15 %}
-                                                      <span class="badge bg-warning text-dark">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% else %}
-                                                      <span class="badge bg-info">
-                                                          Vence em {{ c.dias_para_vencer }} dias
-                                                      </span>
-                                                  {% endif %}
-                                              </div>
-
-                                              <a href="{% url 'contrato_fornecedor_detalhe' c.id %}"
-                                                 class="btn btn-sm btn-outline-dark">
-                                                  Ver Contrato
-                                              </a>
-                                          </li>
-                                      {% endfor %}
-                                  </ul>
-                              {% else %}
-                                  <p class="text-muted mb-0">Nenhum contrato vencendo.</p>
-                              {% endif %}
+                        {% include 'gestao_contratos/_contratos_vencendo_home.html' %}
                           </div>
                       </div>
                   </div>

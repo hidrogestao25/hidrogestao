@@ -153,7 +153,7 @@
                       <i class="bi bi-box-arrow-up-right"></i>
                       {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}Aprovar{% else %}Verificar{% endif %}
                     </a>
-                  {% elif request.user.grupo == 'gerente_contrato' %}
+                  {% elif request.user.atua_como_gerente_contrato %}
                     <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
                        class="btn btn-sm {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}btn-primary{% else %}btn-outline-success{% endif %}">
                       <i class="bi bi-box-arrow-up-right"></i>

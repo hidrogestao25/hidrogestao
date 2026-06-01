@@ -34,6 +34,7 @@ class User(AbstractUser):
     ]
 
     grupo = models.CharField(max_length=50, choices=GRUPOS_CHOICES, blank=True, null=True)
+    gerente_contrato_ausente = models.BooleanField(default=False)
 
     # Novo campo ManyToMany
     centros = models.ManyToManyField("CentroDeTrabalho", blank=True, related_name="usuarios")
@@ -46,6 +47,18 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.get_full_name() or self.username
+
+    @property
+    def atua_como_gerente_contrato(self):
+        if self.grupo == "gerente_contrato":
+            return True
+        if self.grupo != "diretoria":
+            return False
+        return User.objects.filter(
+            grupo="gerente_contrato",
+            is_active=True,
+            gerente_contrato_ausente=True,
+        ).exists()
 
 
 class CentroDeTrabalho(models.Model):
@@ -518,6 +531,7 @@ class ContratoTerceiros(models.Model):
     valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     objeto = models.TextField()
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_elaboracao')
+    ocultar_home_contrato_vencido = models.BooleanField(default=False)
     observacao = models.TextField(null=True, blank=True)
 
     num_contrato_arquivo = models.FileField(
@@ -562,6 +576,12 @@ class ContratoTerceiros(models.Model):
         if self.data_fim:
             return (self.data_fim - date.today()).days
         return None
+
+    @property
+    def dias_vencido(self):
+        if self.dias_para_vencer is not None and self.dias_para_vencer < 0:
+            return abs(self.dias_para_vencer)
+        return 0
 
     def save(self, *args, **kwargs):
         if self.guarda_chuva:

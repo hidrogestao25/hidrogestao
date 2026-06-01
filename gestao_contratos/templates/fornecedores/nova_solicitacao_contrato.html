@@ -118,6 +118,14 @@
           </div>
 
           <div class="mb-3">
+              <label for="{{ form.valor_vendido.id_for_label }}" class="form-label">Valor Vendido ao Cliente</label>
+              <input type="text" name="valor_vendido" id="{{ form.valor_vendido.id_for_label }}" value="{{ form.valor_vendido.value|default_if_none:'' }}" class="form-control money" placeholder="R$ 0,00">
+              {% if form.valor_vendido.errors %}
+                <div class="text-danger small">{{ form.valor_vendido.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
               <label for="{{ form.forma_pagamento.id_for_label }}" class="form-label">Forma de Pagamento</label>
               {{ form.forma_pagamento }}
               {% if form.forma_pagamento.errors %}
