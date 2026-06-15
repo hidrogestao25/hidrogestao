@@ -28,11 +28,11 @@
       <p><strong>Data Início:</strong> {{ contrato.data_inicio|date:"d/m/Y" }}</p>
       {% now "Y-m-d" as hoje %}
       <p class="
-        {% if contrato.status != 'encerrado' and contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
+        {% if contrato.status != 'encerrado' and data_fim_contrato_vigente and data_fim_contrato_vigente|date:"Y-m-d" < hoje %}
           linha-atrasada
         {% endif %}">
-        <strong>Data Fim:</strong> {{ contrato.data_fim|date:"d/m/Y" }}
-        {% if contrato.status != 'encerrado' and contrato.data_fim and contrato.data_fim|date:"Y-m-d" < hoje %}
+        <strong>Data Fim:</strong> {{ data_fim_contrato_vigente|date:"d/m/Y" }}
+        {% if contrato.status != 'encerrado' and data_fim_contrato_vigente and data_fim_contrato_vigente|date:"Y-m-d" < hoje %}
              | O contrato com fornecedor ultrapassou a data final
         {% endif %}
       </p>

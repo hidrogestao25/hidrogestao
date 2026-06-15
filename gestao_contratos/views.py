@@ -4,7 +4,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
-from django.core.mail import send_mail, EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives, send_mail as django_send_mail
 from django.core.paginator import Paginator
 from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max, Min
 from decimal import Decimal
@@ -46,6 +46,33 @@ CONTRACT_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Mode
 ADDENDUM_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Aditivo.docm"
 OS_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Ordem de Serviço.docm"
 SIGNED_FILES_PENDING_STATUS = "Aguardando Arquivos Assinados"
+DISABLE_DIRETORIA_EMAIL_NOTIFICATIONS = True
+
+
+def _filter_directoria_email_recipients(recipient_list):
+    if not DISABLE_DIRETORIA_EMAIL_NOTIFICATIONS or not recipient_list:
+        return recipient_list
+
+    diretoria_emails = {
+        email.strip().lower()
+        for email in User.objects.filter(grupo="diretoria")
+        .exclude(email__isnull=True)
+        .exclude(email__exact="")
+        .values_list("email", flat=True)
+    }
+
+    return [
+        email
+        for email in recipient_list
+        if email and email.strip().lower() not in diretoria_emails
+    ]
+
+
+def send_mail(subject, message, from_email, recipient_list, *args, **kwargs):
+    recipient_list = _filter_directoria_email_recipients(recipient_list)
+    if not recipient_list:
+        return 0
+    return django_send_mail(subject, message, from_email, recipient_list, *args, **kwargs)
 
 SLA_STAGE_DEFINITIONS = {
     "prospeccao": [
@@ -3313,6 +3340,15 @@ def bm_is_operationally_pending(bm):
     return bm.status_coordenador == "pendente" and bm.status_gerente == "pendente"
 
 
+def user_has_evaluated_bm_event(user, bm):
+    if not user or not bm or not bm.evento_id:
+        return False
+    return AvaliacaoFornecedor.objects.filter(
+        evento=bm.evento,
+        avaliador=user,
+    ).exists()
+
+
 def filter_payment_events_for_user(user, filtros_base):
     if user.grupo in ["suprimento", "diretoria", "financeiro"]:
         return Evento.objects.filter(filtros_base, contrato_terceiro__isnull=False)
@@ -4549,7 +4585,8 @@ def lista_contratos_fornecedor(request):
     elif request.user.grupo == 'gerente_lider':
         contratos = ContratoTerceiros.objects.filter(
             Q(coordenador__centros__in=request.user.centros.all()) |
-            Q(coordenadores__centros__in=request.user.centros.all())
+            Q(coordenadores__centros__in=request.user.centros.all()) |
+            Q(lider_contrato=request.user)
         ).distinct()
     elif request.user.grupo == 'gerente_contrato':
         contratos = ContratoTerceiros.objects.filter(
@@ -5072,6 +5109,11 @@ def contrato_fornecedor_detalhe(request, pk):
         .order_by("-documento_assinado_enviado_em", "-criado_em")
         .first()
     )
+    data_fim_contrato_vigente = (
+        ultimo_aditivo_aprovado.nova_data_fim
+        if ultimo_aditivo_aprovado and ultimo_aditivo_aprovado.nova_data_fim
+        else contrato.data_fim
+    )
     valor_total_contrato_vigente = (
         ultimo_aditivo_aprovado.novo_valor_total
         if ultimo_aditivo_aprovado and ultimo_aditivo_aprovado.novo_valor_total is not None
@@ -5217,6 +5259,7 @@ def contrato_fornecedor_detalhe(request, pk):
             "aditivos": aditivos,
             "aditivo_ativo": aditivo_ativo,
             "can_request_addendum": can_user_request_contract_addendum(request.user, contrato),
+            "data_fim_contrato_vigente": data_fim_contrato_vigente,
             "valor_total_contrato_vigente": valor_total_contrato_vigente,
             "total_eventos_previstos": total_eventos_previstos,
             "exibir_warning_valor_eventos": exibir_warning_valor_eventos,
@@ -9152,7 +9195,7 @@ def duplicar_evento(request, pk):
 
     messages.success(request, "Evento duplicado com sucesso!")
 
-    return redirect('detalhes_solicitacao', pk=evento.prospeccao.id)
+    return redirect_to_event_origin(evento)
 
 
 
@@ -9198,7 +9241,7 @@ def duplicar_evento_solicitacao(request, pk):
 
     messages.success(request, "Evento duplicado com sucesso!")
 
-    return redirect('detalhes_solicitacao_contrato', pk=evento.solicitacao_contrato.id)
+    return redirect_to_event_origin(evento)
 
 
 @login_required
@@ -9248,7 +9291,17 @@ def duplicar_evento_contrato(request, pk):
 
     messages.success(request, "Evento duplicado com sucesso!")
 
-    return redirect('contrato_fornecedor_detalhe', pk=evento.contrato_terceiro.id)
+    return redirect_to_event_origin(evento)
+
+
+def redirect_to_event_origin(evento):
+    if evento.prospeccao_id:
+        return redirect("detalhes_solicitacao", pk=evento.prospeccao_id)
+    if evento.solicitacao_contrato_id:
+        return redirect("detalhes_solicitacao_contrato", pk=evento.solicitacao_contrato_id)
+    if evento.contrato_terceiro_id:
+        return redirect("contrato_fornecedor_detalhe", pk=evento.contrato_terceiro_id)
+    return redirect("home")
 
 
 @login_required
@@ -9262,7 +9315,7 @@ def editar_evento(request, pk):
         form = EventoPrevisaoForm(request.POST, request.FILES, instance=evento)
         if form.is_valid():
             form.save()
-            return redirect("detalhes_solicitacao", pk=evento.prospeccao.id)
+            return redirect_to_event_origin(evento)
     else:
         form = EventoPrevisaoForm(instance=evento)
     return render(request, "gestao_contratos/editar_evento.html", {"form": form, "evento": evento})
@@ -9279,7 +9332,7 @@ def editar_evento_contrato(request, pk):
         form = EventoPrevisaoForm(request.POST, request.FILES, instance=evento)
         if form.is_valid():
             form.save()
-            return redirect("contrato_fornecedor_detalhe", pk=evento.contrato_terceiro.pk)
+            return redirect_to_event_origin(evento)
     else:
         form = EventoPrevisaoForm(instance=evento)
     return render(request, "gestao_contratos/editar_evento_contrato.html", {"form": form, "evento": evento})
@@ -9304,10 +9357,10 @@ def excluir_evento(request, pk):
         messages.info(request, "Este evento já foi removido.")
         return redirect(next_url or "home")
 
-    if evento.prospeccao:
-        pk_origem = evento.prospeccao.id
-    elif evento.solicitacao_contrato:
-        pk_origem = evento.solicitacao_contrato.id
+    if evento.prospeccao_id:
+        pk_origem = evento.prospeccao_id
+    elif evento.solicitacao_contrato_id:
+        pk_origem = evento.solicitacao_contrato_id
     else:
         pk_origem = None
 
@@ -9316,9 +9369,9 @@ def excluir_evento(request, pk):
 
         if next_url:
             return redirect(next_url)
-        if evento.prospeccao:
+        if evento.prospeccao_id:
             return redirect("detalhes_solicitacao", pk=pk_origem)
-        elif evento.solicitacao_contrato:
+        elif evento.solicitacao_contrato_id:
             return redirect("detalhes_solicitacao_contrato", pk=pk_origem)
 
         else:
@@ -9351,7 +9404,7 @@ def excluir_evento_contrato(request, pk):
         return redirect(next_url or "home")
 
     if request.method == "POST":
-        contrato_id = evento.contrato_terceiro.pk
+        contrato_id = evento.contrato_terceiro_id
         evento.delete()
         if next_url:
             return redirect(next_url)
@@ -9366,6 +9419,9 @@ def excluir_evento_contrato(request, pk):
 @login_required
 def registrar_entrega(request, pk):
     evento = get_object_or_404(Evento, pk=pk)
+    if not evento.contrato_terceiro_id:
+        messages.warning(request, "Este evento ainda não está vinculado a um contrato com fornecedor.")
+        return redirect_to_event_origin(evento)
     contrato = evento.contrato_terceiro
     can_manage_delivery = can_user_manage_event_delivery(request.user, contrato)
     boletins = evento.boletins_medicao.all()
@@ -9445,6 +9501,7 @@ def avaliar_bm(request, bm_id):
     usuario = request.user
     contrato = bm.contrato
     operational_pending = bm_is_operationally_pending(bm)
+    redirect_url = reverse("contrato_fornecedor_detalhe", kwargs={"pk": contrato.pk})
     referencia_bm = (
         f"Evento: {bm.evento.descricao}"
         if bm.evento
@@ -9481,6 +9538,13 @@ def avaliar_bm(request, bm_id):
             return JsonResponse({
                 "success": False,
                 "error": "Este BM já recebeu uma avaliação operacional."
+            }, status=400)
+
+        if bm.evento_id and not user_has_evaluated_bm_event(usuario, bm):
+            return JsonResponse({
+                "success": False,
+                "error": "Avalie o evento antes de aprovar ou reprovar o BM.",
+                "redirect_url": redirect_url,
             }, status=400)
 
         bm.status_coordenador = "aprovado" if acao == "aprovar" else "reprovado"
@@ -9530,6 +9594,13 @@ def avaliar_bm(request, bm_id):
             return JsonResponse({
                 "success": False,
                 "error": "Este BM já recebeu uma avaliação operacional."
+            }, status=400)
+
+        if usuario.grupo == "gerente_contrato" and bm.evento_id and not user_has_evaluated_bm_event(usuario, bm):
+            return JsonResponse({
+                "success": False,
+                "error": "Avalie o evento antes de aprovar ou reprovar o BM.",
+                "redirect_url": redirect_url,
             }, status=400)
 
         bm.status_gerente = "aprovado" if acao == "aprovar" else "reprovado"
@@ -10633,12 +10704,12 @@ def cadastrar_bm(request, contrato_id, evento_id):
             try:
                 emails = set()
 
-                # COORDENADOR
-                coordenador = contrato.referencia_coordenador
-                if coordenador and coordenador.email:
-                    emails.add(coordenador.email)
+                lider_contrato = contrato.referencia_lider_contrato
+                if lider_contrato and lider_contrato.email:
+                    emails.add(lider_contrato.email)
 
                 # GERENTES
+                coordenador = contrato.referencia_coordenador
                 if coordenador:
                     coordenador_centros = coordenador.centros.all()
 
@@ -10753,7 +10824,10 @@ def cadastrar_nf(request, evento_id):
         return redirect("home")
 
     evento = get_object_or_404(Evento, id=evento_id)
-    contrato = get_object_or_404(ContratoTerceiros, id=evento.contrato_terceiro.id)
+    if not evento.contrato_terceiro_id:
+        messages.warning(request, "Este evento ainda não está vinculado a um contrato com fornecedor.")
+        return redirect_to_event_origin(evento)
+    contrato = get_object_or_404(ContratoTerceiros, id=evento.contrato_terceiro_id)
 
     def atualizar_evento_com_base_na_nf(nf_obj):
         if not nf_obj.financeiro_autorizou:
@@ -10994,6 +11068,9 @@ def deletar_nf(request, nf_id):
 @login_required
 def detalhes_entrega(request, evento_id):
     evento = get_object_or_404(Evento, id=evento_id)
+    if not evento.contrato_terceiro_id:
+        messages.warning(request, "Este evento ainda não está vinculado a um contrato com fornecedor.")
+        return redirect_to_event_origin(evento)
     contrato = evento.contrato_terceiro
 
     if request.user.grupo not in ["suprimento", "financeiro", "diretoria"] and not can_user_manage_event_delivery(request.user, contrato):
@@ -11015,9 +11092,7 @@ def detalhes_entrega(request, evento_id):
         bm.aprovacao_gerente_audit = approval_info.get("gerente")
         bm.aprovacao_diretor_audit = approval_info.get("diretor")
 
-    fornecedor = None
-    if hasattr(evento, 'contrato_terceiro') and evento.contrato_terceiro.empresa_terceira:
-        fornecedor = evento.contrato_terceiro.empresa_terceira
+    fornecedor = contrato.empresa_terceira if contrato and contrato.empresa_terceira else None
 
     tem_reprovacao_coordenador = any(bm.status_coordenador == "reprovado" for bm in bms)
     tem_reprovacao_gerente = any(bm.status_gerente == "reprovado" for bm in bms)
@@ -11038,6 +11113,9 @@ def detalhes_entrega(request, evento_id):
 @login_required
 def avaliar_evento_fornecedor(request, evento_id):
     evento = get_object_or_404(Evento, id=evento_id)
+    if not evento.contrato_terceiro_id:
+        messages.warning(request, "Este evento ainda não está vinculado a um contrato com fornecedor.")
+        return redirect_to_event_origin(evento)
     contrato = evento.contrato_terceiro
     fornecedor = contrato.empresa_terceira
 

@@ -1,3 +1,5 @@
+import os
+import uuid
 from decimal import Decimal
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -5,6 +7,7 @@ from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
+from django.utils.deconstruct import deconstructible
 from django.conf import settings
 
 from datetime import date
@@ -15,6 +18,51 @@ def _uppercase_model_fields(instance, field_names):
         value = getattr(instance, field_name, None)
         if isinstance(value, str):
             setattr(instance, field_name, value.upper())
+
+
+@deconstructible
+class ShortenedUploadPath:
+    def __init__(self, directory, fallback_name="arquivo"):
+        self.directory = directory.strip("/\\")
+        self.fallback_name = fallback_name
+
+    def __call__(self, instance, filename):
+        base_name = os.path.basename(filename or "")
+        stem, extension = os.path.splitext(base_name)
+        safe_stem = "".join(
+            char for char in stem if char.isalnum() or char in {"_", "-", "."}
+        ).strip("._-")
+        if not safe_stem:
+            safe_stem = self.fallback_name
+
+        safe_extension = "".join(
+            char for char in extension.lower() if char.isalnum() or char == "."
+        )[:15]
+        if safe_extension and not safe_extension.startswith("."):
+            safe_extension = f".{safe_extension}"
+
+        suffix = f"_{uuid.uuid4().hex[:8]}"
+        max_stem_length = 255 - len(self.directory) - 1 - len(suffix) - len(safe_extension)
+        safe_stem = safe_stem[: max(1, max_stem_length)].rstrip("._-") or self.fallback_name
+        return f"{self.directory}/{safe_stem}{suffix}{safe_extension}"
+
+
+CRONOGRAMA_UPLOAD_PATH = ShortenedUploadPath("cronograma", "cronograma")
+ORCAMENTO_UPLOAD_PATH = ShortenedUploadPath("orcamentos", "orcamento")
+CONTRACT_SUPPLIER_UPLOAD_PATH = ShortenedUploadPath("contrato_do_fornecedor", "contrato_fornecedor")
+SOLICITACAO_OS_UPLOAD_PATH = ShortenedUploadPath("OS", "solicitacao_os")
+OS_UPLOAD_PATH = ShortenedUploadPath("OS", "ordem_servico")
+EVENTO_EVIDENCIA_UPLOAD_PATH = ShortenedUploadPath("produto_do_fornecedor", "evidencia_evento")
+MINUTA_BM_UPLOAD_PATH = ShortenedUploadPath("Minuta boletim", "minuta_bm")
+MINUTA_BM_ASSINADO_UPLOAD_PATH = ShortenedUploadPath("Minuta boletim/assinados", "minuta_bm_assinado")
+BM_UPLOAD_PATH = ShortenedUploadPath("BM", "boletim_medicao")
+NF_FORNECEDOR_UPLOAD_PATH = ShortenedUploadPath("NF/Fornecedor", "nf_fornecedor")
+NF_CLIENTE_UPLOAD_PATH = ShortenedUploadPath("NF/Cliente", "nf_cliente")
+DOCUMENTO_CONTRATO_UPLOAD_PATH = ShortenedUploadPath("contratos/documentos", "documento_contrato")
+MINUTA_CONTRATO_UPLOAD_PATH = ShortenedUploadPath("contratos", "minuta_contrato")
+CONTRATO_ASSINADO_UPLOAD_PATH = ShortenedUploadPath("contratos/assinados", "contrato_assinado")
+ADITIVO_UPLOAD_PATH = ShortenedUploadPath("aditivos_fornecedor", "aditivo")
+ADITIVO_ASSINADO_UPLOAD_PATH = ShortenedUploadPath("aditivos_fornecedor_assinados", "aditivo_assinado")
 
 
 # --------------------
@@ -315,9 +363,10 @@ class SolicitacaoContrato(models.Model):
     data_inicio = models.DateField(null=True, blank=True)
     data_fim = models.DateField(null=True, blank=True)
     cronograma = models.FileField(
-        upload_to='cronograma/',
+        upload_to=CRONOGRAMA_UPLOAD_PATH,
         verbose_name='Inserir cronograma',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
 
     aprovacao_fornecedor_gerente =  models.CharField(max_length=20, choices=APROVACAO_CHOICES, default="pendente")
@@ -398,9 +447,10 @@ class SolicitacaoProspeccao(models.Model):
     data_inicio = models.DateField(null=True, blank=True)
     data_fim = models.DateField(null=True, blank=True)
     cronograma = models.FileField(
-        upload_to='cronograma/',
+        upload_to=CRONOGRAMA_UPLOAD_PATH,
         verbose_name='Inserir cronograma',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
 
     aprovado = models.BooleanField(null=True, blank=True)
@@ -463,9 +513,10 @@ class PropostaFornecedor(models.Model):
     condicao_pagamento = models.CharField(max_length=30, choices=CONDICOES_CHOICES, blank=True, null=True)
     prazo_validade = models.DateField(null=True, blank=True)
     arquivo_proposta = models.FileField(
-        upload_to='orcamentos/',
+        upload_to=ORCAMENTO_UPLOAD_PATH,
         verbose_name='Inserir Orçamento PDF',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
     observacao = models.TextField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -535,9 +586,10 @@ class ContratoTerceiros(models.Model):
     observacao = models.TextField(null=True, blank=True)
 
     num_contrato_arquivo = models.FileField(
-        upload_to='contrato_do_fornecedor/',
+        upload_to=CONTRACT_SUPPLIER_UPLOAD_PATH,
         verbose_name='Inserir arquivo do contrato com fornecedor',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
 
     @property
@@ -746,9 +798,10 @@ class SolicitacaoOrdemServico(models.Model):
     justificativa_reprovacao_lider = models.TextField(null=True, blank=True)
 
     arquivo_os = models.FileField(
-        upload_to='OS/',
+        upload_to=SOLICITACAO_OS_UPLOAD_PATH,
         verbose_name='Inserir arquivo da Ordem de Serviço',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
     aprovacao_gerente = models.CharField(max_length=100, null=True, blank=True)
     aprovado_gerente_em =models.DateTimeField(null=True, blank=True)
@@ -808,9 +861,10 @@ class OS(models.Model):
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='em_execucao')
     criado_em = models.DateTimeField(auto_now_add=True)
     arquivo_os = models.FileField(
-        upload_to='OS/',
+        upload_to=OS_UPLOAD_PATH,
         verbose_name='Inserir arquivo da Ordem de Serviço',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
 
     # registro da entrega
@@ -846,9 +900,10 @@ class Evento(models.Model):
     contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, null=True, blank=True)
     aditivo = models.ForeignKey("AditivoContratoTerceiro", on_delete=models.CASCADE, null=True, blank=True, related_name="eventos")
     arquivo = models.FileField(
-        upload_to='produto_do_fornecedor/',
+        upload_to=EVENTO_EVIDENCIA_UPLOAD_PATH,
         verbose_name='Inserir arquivo para comprovação de entrega',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
     caminho_evidencia = models.CharField(max_length=260, null=True, blank=True)
     descricao = models.TextField()
@@ -1037,14 +1092,16 @@ class DocumentoBM(models.Model):
     solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="minuta_boletins_medicao", null=True, blank=True)
     solicitacao_contrato = models.OneToOneField(SolicitacaoContrato, on_delete=models.CASCADE, related_name="minuta_boletins_medicao_contrato", null=True, blank=True)
     minuta_boletim = models.FileField(
-        upload_to='Minuta boletim/',
+        upload_to=MINUTA_BM_UPLOAD_PATH,
         blank=True,
-        null=True
+        null=True,
+        max_length=255,
     )
     minuta_boletim_assinado = models.FileField(
-        upload_to='Minuta boletim/assinados/',
+        upload_to=MINUTA_BM_ASSINADO_UPLOAD_PATH,
         blank=True,
-        null=True
+        null=True,
+        max_length=255,
     )
 
     status_coordenador = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
@@ -1118,9 +1175,10 @@ class BM(models.Model):
     )
 
     arquivo_bm = models.FileField(
-        upload_to='BM/',
+        upload_to=BM_UPLOAD_PATH,
         verbose_name='Inserir arquivo do Boletim de Medição',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
     observacao = models.TextField(null=True, blank=True)
 
@@ -1160,9 +1218,10 @@ class NF(models.Model):
     parcela_paga = models.PositiveIntegerField()
     data_pagamento = models.DateField(default=timezone.now)
     arquivo_nf = models.FileField(
-        upload_to='NF/Fornecedor/',
+        upload_to=NF_FORNECEDOR_UPLOAD_PATH,
         verbose_name='Inserir arquivo da Nota Fiscal',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
     observacao = models.TextField(null=True, blank=True)
     financeiro_autorizou = models.BooleanField(default=False)
@@ -1189,9 +1248,10 @@ class NFCliente(models.Model):
     data_emissao = models.DateField(default=timezone.now)
     data_pagamento = models.DateField(default=timezone.now)
     arquivo_nf = models.FileField(
-        upload_to='NF/Cliente/',
+        upload_to=NF_CLIENTE_UPLOAD_PATH,
         verbose_name='Inserir arquivo da Nota Fiscal',
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
     observacao = models.TextField(null=True, blank=True)
     inserido_por = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
@@ -1205,7 +1265,7 @@ class NFCliente(models.Model):
 # -----------
 class DocumentoContrato(models.Model):
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name="documentos")
-    arquivo = models.FileField(upload_to="contratos/documentos/")
+    arquivo = models.FileField(upload_to=DOCUMENTO_CONTRATO_UPLOAD_PATH, max_length=255)
     descricao = models.CharField(max_length=200, blank=True, null=True)
     enviado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1230,14 +1290,16 @@ class DocumentoContratoTerceiro(models.Model):
     prazo_fim = models.DateField()
     valor_total = models.DecimalField(max_digits=12, decimal_places=2)
     arquivo_contrato = models.FileField(
-        upload_to="contratos/",
+        upload_to=MINUTA_CONTRATO_UPLOAD_PATH,
         verbose_name="Contrato em PDF",
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
     arquivo_contrato_assinado = models.FileField(
-        upload_to="contratos/assinados/",
+        upload_to=CONTRATO_ASSINADO_UPLOAD_PATH,
         verbose_name="Contrato assinado em PDF",
-        null=True, blank=True
+        null=True, blank=True,
+        max_length=255,
     )
     observacao = models.TextField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -1350,8 +1412,8 @@ class AditivoContratoTerceiro(models.Model):
     novo_valor_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     data_fim_anterior = models.DateField(null=True, blank=True)
     nova_data_fim = models.DateField(null=True, blank=True)
-    arquivo_aditivo = models.FileField(upload_to="aditivos_fornecedor/", null=True, blank=True)
-    arquivo_aditivo_assinado = models.FileField(upload_to="aditivos_fornecedor_assinados/", null=True, blank=True)
+    arquivo_aditivo = models.FileField(upload_to=ADITIVO_UPLOAD_PATH, null=True, blank=True, max_length=255)
+    arquivo_aditivo_assinado = models.FileField(upload_to=ADITIVO_ASSINADO_UPLOAD_PATH, null=True, blank=True, max_length=255)
     documento_enviado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

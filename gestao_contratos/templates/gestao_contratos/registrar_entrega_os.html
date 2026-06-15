@@ -647,6 +647,9 @@ document.addEventListener("DOMContentLoaded", function() {
       } else {
         esconderLoading();
         alert("Erro: " + data.error);
+        if (data.redirect_url) {
+          window.location.href = data.redirect_url;
+        }
       }
     })
     .catch(() => {

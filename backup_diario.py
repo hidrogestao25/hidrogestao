@@ -6,7 +6,7 @@ import time
 
 import django
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives, send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail as django_send_mail
 from django.utils.html import strip_tags
 
 
@@ -45,6 +45,32 @@ from gestao_contratos.views import build_weekly_supply_report
 
 def get_from_email():
     return getattr(settings, "DEFAULT_FROM_EMAIL", "hidro.gestao25@gmail.com")
+
+
+def filter_directoria_email_recipients(recipient_list):
+    if not recipient_list:
+        return recipient_list
+
+    diretoria_emails = {
+        email.strip().lower()
+        for email in User.objects.filter(grupo="diretoria")
+        .exclude(email__isnull=True)
+        .exclude(email__exact="")
+        .values_list("email", flat=True)
+    }
+
+    return [
+        email
+        for email in recipient_list
+        if email and email.strip().lower() not in diretoria_emails
+    ]
+
+
+def send_mail(subject, message, from_email, recipient_list, *args, **kwargs):
+    recipient_list = filter_directoria_email_recipients(recipient_list)
+    if not recipient_list:
+        return 0
+    return django_send_mail(subject, message, from_email, recipient_list, *args, **kwargs)
 
 
 hoje = datetime.date.today()
