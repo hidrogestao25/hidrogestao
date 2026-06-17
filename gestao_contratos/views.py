@@ -3182,7 +3182,22 @@ def can_user_manage_event_delivery(user, contrato):
     if user.grupo == "suprimento":
         return True
     if user.grupo == "gerente_lider":
-        return user_shares_center_with_contract_coordinators(user, contrato)
+        return (
+            getattr(contrato, "lider_contrato_id", None) == getattr(user, "pk", None)
+            or getattr(contrato_lider, "pk", None) == getattr(user, "pk", None)
+        )
+    return False
+
+
+def can_user_view_event_delivery_details(user, contrato):
+    if not user or not contrato:
+        return False
+    if user.grupo in ["suprimento", "financeiro", "diretoria"]:
+        return True
+    if can_user_manage_event_delivery(user, contrato):
+        return True
+    if user.grupo == "gerente_lider":
+        return can_gerente_lider_access_supplier_contract(user, contrato)
     return False
 
 
@@ -4055,21 +4070,28 @@ def home(request):
     elif is_gerente_lider:
         centros_gerente = getattr(user, "centros", None)
         centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []
+        gerente_lider_contract_scope = (
+            Q(coordenador__centros__in=centros_ids)
+            | Q(coordenadores__centros__in=centros_ids)
+            | Q(lider_contrato=user)
+        )
 
         solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
-            coordenador__centros__in=centros_ids
+            Q(coordenador__centros__in=centros_ids) | Q(lider_contrato=user)
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_contratos = SolicitacaoContrato.objects.filter(
-            coordenador__centros__in=centros_ids
+            Q(coordenador__centros__in=centros_ids) | Q(lider_contrato=user)
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
         solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
-            coordenador__centros__in=centros_ids
+            Q(coordenador__centros__in=centros_ids) | Q(lider_contrato=user)
         ).exclude(status__in=["finalizada","reprovada"]).distinct()
 
         bms_pendentes = BM.objects.filter(
-            contrato__coordenador__centros__in=centros_ids
+            Q(contrato__coordenador__centros__in=centros_ids)
+            | Q(contrato__coordenadores__centros__in=centros_ids)
+            | Q(contrato__lider_contrato=user)
         ).filter(
             Q(status_coordenador="pendente", status_gerente="pendente")
             | (Q(aprovacao_pagamento="pendente") & bm_operational_approval_query())
@@ -4083,21 +4105,29 @@ def home(request):
         eventos_proximos = Evento.objects.filter(
             data_prevista__range=[hoje, limite],
             realizado=False,
-            contrato_terceiro__coordenador__centros__in=centros_ids
+            contrato_terceiro__isnull=False,
+        ).filter(
+            Q(contrato_terceiro__coordenador__centros__in=centros_ids)
+            | Q(contrato_terceiro__coordenadores__centros__in=centros_ids)
+            | Q(contrato_terceiro__lider_contrato=user)
         ).order_by("data_prevista").distinct()
 
         eventos_para_avaliar = Evento.objects.filter(
-            contrato_terceiro__coordenador__centros__in=centros_ids,
             realizado=True,
-            avaliacoes__isnull=True
+            avaliacoes__isnull=True,
+            contrato_terceiro__isnull=False,
+        ).filter(
+            Q(contrato_terceiro__coordenador__centros__in=centros_ids)
+            | Q(contrato_terceiro__coordenadores__centros__in=centros_ids)
+            | Q(contrato_terceiro__lider_contrato=user)
         ).select_related(
             "contrato_terceiro",
             "empresa_terceira"
         ).order_by("data_entrega")
 
         os_em_aberto = OS.objects.filter(
-            status__in=["em_execucao", "paralizada"],
-            coordenador__centros__in=centros_ids
+            Q(coordenador__centros__in=centros_ids) | Q(lider_contrato=user),
+            status__in=["em_execucao", "paralizada"]
         ).select_related(
             "contrato",
             "contrato__empresa_terceira"
@@ -4110,16 +4140,19 @@ def home(request):
         bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
 
         contratos_vencendo = build_home_contracts_vencendo_queryset(
-            ContratoTerceiros.objects.filter(coordenador__centros__in=centros_ids),
+            ContratoTerceiros.objects.filter(gerente_lider_contract_scope),
             limite_contrato,
         )
 
         # Entregas atrasadas dos centros do gerente
         entregas_atrasadas = Evento.objects.filter(
-            contrato_terceiro__coordenador__centros__in=centros_ids,
             data_prevista__lt=hoje,
             data_entrega__isnull=True,
             contrato_terceiro__isnull=False,
+        ).filter(
+            Q(contrato_terceiro__coordenador__centros__in=centros_ids)
+            | Q(contrato_terceiro__coordenadores__centros__in=centros_ids)
+            | Q(contrato_terceiro__lider_contrato=user)
         ).select_related(
             "contrato_terceiro",
             "empresa_terceira"
@@ -5267,6 +5300,8 @@ def contrato_fornecedor_detalhe(request, pk):
             "aditivos": aditivos,
             "aditivo_ativo": aditivo_ativo,
             "can_request_addendum": can_user_request_contract_addendum(request.user, contrato),
+            "can_manage_event_delivery": can_user_manage_event_delivery(request.user, contrato),
+            "can_view_event_delivery_details": can_user_view_event_delivery_details(request.user, contrato),
             "data_fim_contrato_vigente": data_fim_contrato_vigente,
             "valor_total_contrato_vigente": valor_total_contrato_vigente,
             "total_eventos_previstos": total_eventos_previstos,
@@ -9493,7 +9528,7 @@ def registrar_entrega(request, pk):
         "evento": evento,
         "contrato": contrato,
         "can_manage_delivery": can_manage_delivery,
-        "can_approve_bm_as_lider": request.user.grupo == "lider_contrato" and request.user == contrato.referencia_lider_contrato or request.user.grupo == "gerente_lider" and user_shares_center_with_contract_coordinators(request.user, contrato),
+        "can_approve_bm_as_lider": request.user.grupo == "lider_contrato" and request.user == contrato.referencia_lider_contrato or request.user.grupo == "gerente_lider" and can_manage_delivery,
         "can_approve_bm_as_gerente": user_has_gerente_contrato_role(request.user),
         "boletins_detalhados": boletins_detalhados,
         "has_reprovacao_coordenador": has_reprovacao_coordenador,
@@ -11081,7 +11116,7 @@ def detalhes_entrega(request, evento_id):
         return redirect_to_event_origin(evento)
     contrato = evento.contrato_terceiro
 
-    if request.user.grupo not in ["suprimento", "financeiro", "diretoria"] and not can_user_manage_event_delivery(request.user, contrato):
+    if not can_user_view_event_delivery_details(request.user, contrato):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -11109,7 +11144,7 @@ def detalhes_entrega(request, evento_id):
     return render(request, 'contratos/detalhes_entrega.html', {
         'evento': evento,
         'fornecedor': fornecedor,
-        'can_approve_bm_as_lider': request.user.grupo == 'lider_contrato' and request.user == contrato.referencia_lider_contrato or request.user.grupo == 'gerente_lider' and user_shares_center_with_contract_coordinators(request.user, contrato),
+        'can_approve_bm_as_lider': request.user.grupo == 'lider_contrato' and request.user == contrato.referencia_lider_contrato or request.user.grupo == 'gerente_lider' and can_user_manage_event_delivery(request.user, contrato),
         'can_approve_bm_as_gerente': user_has_gerente_contrato_role(request.user),
         'bms': bms,
         'tem_reprovacao_coordenador': tem_reprovacao_coordenador,

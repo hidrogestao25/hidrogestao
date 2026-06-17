@@ -3837,8 +3837,8 @@ class GerenteLiderHomeDashboardTests(BaseUserTestCase):
         )
         self.evento = self.create_event(contrato=self.contrato_terceiro)
 
-    def test_home_gerente_lider_nao_exibe_card_de_bms_pendentes(self):
-        BM.objects.create(
+    def test_home_gerente_lider_exibe_bm_pendente_como_gerente_tecnico(self):
+        bm_pendente = BM.objects.create(
             contrato=self.contrato_terceiro,
             evento=self.evento,
             numero_bm=1,
@@ -3852,7 +3852,68 @@ class GerenteLiderHomeDashboardTests(BaseUserTestCase):
         response = self.client.get(reverse("home"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Boletins Pendentes de Aprovação")
+        self.assertContains(response, "Boletins Pendentes de Aprovação")
+        self.assertIn(bm_pendente, list(response.context["bms_pendentes"]))
+
+    def test_home_gerente_lider_exibe_bm_pendente_quando_e_lider_do_contrato_sem_centro_do_coordenador(self):
+        outro_centro = self.create_center("CT-HOME-GL-LIDER", "Centro fora do gerente lider")
+        outro_coordenador = self.create_user("coord_home_gl_lider", "coordenador")
+        outro_coordenador.centros.add(outro_centro)
+        contrato_base = self.create_contract(
+            codigo="PRJ-HOME-GL-LIDER",
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+        )
+        contrato_fornecedor = self.create_supplier_contract(
+            cod_projeto=contrato_base,
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+            num_contrato="CT-HOME-GL-LIDER",
+        )
+        evento = self.create_event(contrato=contrato_fornecedor)
+        bm_pendente = BM.objects.create(
+            contrato=contrato_fornecedor,
+            evento=evento,
+            numero_bm=2,
+            parcela_paga=1,
+            valor_pago=Decimal("200.00"),
+            status_coordenador="pendente",
+            status_gerente="pendente",
+        )
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Boletins Pendentes de Aprovação")
+        self.assertIn(bm_pendente, list(response.context["bms_pendentes"]))
+        self.assertContains(response, contrato_fornecedor.empresa_terceira.nome)
+
+    def test_home_gerente_lider_exibe_entrega_para_avaliar_quando_e_lider_do_contrato_sem_centro_do_coordenador(self):
+        outro_centro = self.create_center("CT-HOME-GL-AV", "Centro avaliacao fora do gerente lider")
+        outro_coordenador = self.create_user("coord_home_gl_av", "coordenador")
+        outro_coordenador.centros.add(outro_centro)
+        contrato_base = self.create_contract(
+            codigo="PRJ-HOME-GL-AV",
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+        )
+        contrato_fornecedor = self.create_supplier_contract(
+            cod_projeto=contrato_base,
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+            num_contrato="CT-HOME-GL-AV",
+        )
+        evento = self.create_event(contrato=contrato_fornecedor)
+        evento.realizado = True
+        evento.data_entrega = timezone.localdate()
+        evento.save(update_fields=["realizado", "data_entrega"])
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(evento, list(response.context["eventos_para_avaliar"]))
 
 
 class GerenteContratoHomeDashboardTests(BaseUserTestCase):
@@ -6190,6 +6251,140 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         self.assertEqual(self.evento.data_entrega, date(2026, 4, 21))
         self.assertIsNone(self.evento.valor_pago)
         self.assertIsNone(self.evento.data_pagamento)
+
+    def test_gerente_lider_registra_entrega_quando_e_lider_do_contrato_sem_centro_do_coordenador(self):
+        outro_coordenador = self.create_user("coord_ent_gl_lider", "coordenador")
+        outro_coordenador.centros.add(self.outro_centro)
+        contrato_base = self.create_contract(
+            codigo="PRJ-ENT-GL-LIDER",
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+        )
+        contrato = self.create_supplier_contract(
+            cod_projeto=contrato_base,
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+            num_contrato="CT-ENT-GL-LIDER",
+        )
+        evento = self.create_event(contrato=contrato, data_prevista=date(2026, 4, 18))
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.post(
+            reverse("registrar_entrega", args=[evento.pk]),
+            {
+                "observacao": "Entrega registrada pelo gerente líder responsável",
+                "caminho_evidencia": "C:/evidencias/gl-lider.pdf",
+                "avaliacao": "Aprovado",
+                "data_entrega": "2026-04-21",
+                "realizado": "on",
+                "valor_pago": "900,00",
+                "data_pagamento": "2026-04-22",
+            },
+            follow=False,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("contrato_fornecedor_detalhe", kwargs={"pk": contrato.pk}),
+            fetch_redirect_response=False,
+        )
+        evento.refresh_from_db()
+        self.assertTrue(evento.realizado)
+        self.assertEqual(evento.avaliacao, "Aprovado")
+        self.assertEqual(evento.data_entrega, date(2026, 4, 21))
+        self.assertIsNone(evento.valor_pago)
+        self.assertIsNone(evento.data_pagamento)
+
+    def test_gerente_lider_avalia_evento_quando_e_lider_do_contrato_sem_centro_do_coordenador(self):
+        outro_coordenador = self.create_user("coord_av_gl_lider", "coordenador")
+        outro_coordenador.centros.add(self.outro_centro)
+        contrato_base = self.create_contract(
+            codigo="PRJ-AV-GL-LIDER",
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+        )
+        contrato = self.create_supplier_contract(
+            cod_projeto=contrato_base,
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+            num_contrato="CT-AV-GL-LIDER",
+        )
+        evento = self.create_event(contrato=contrato, data_prevista=date(2026, 4, 18))
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.post(
+            reverse("avaliar_evento_fornecedor", args=[evento.pk]),
+            {
+                "nota_gestao": 5,
+                "nota_tecnica": 4,
+                "nota_entrega": 5,
+                "comentario": "Evento aprovado pelo gerente líder responsável.",
+            },
+            follow=False,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("contrato_fornecedor_detalhe", kwargs={"pk": contrato.pk}),
+            fetch_redirect_response=False,
+        )
+        avaliacao = AvaliacaoFornecedor.objects.get(evento=evento)
+        self.assertEqual(avaliacao.avaliador, self.gerente_lider)
+        self.assertEqual(avaliacao.contrato_terceiro, contrato)
+
+    def test_gerente_lider_ve_botao_de_aprovacao_bm_quando_e_lider_do_contrato_sem_centro_do_coordenador(self):
+        outro_coordenador = self.create_user("coord_bm_gl_lider", "coordenador")
+        outro_coordenador.centros.add(self.outro_centro)
+        contrato_base = self.create_contract(
+            codigo="PRJ-BM-GL-LIDER",
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+        )
+        contrato = self.create_supplier_contract(
+            cod_projeto=contrato_base,
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+            num_contrato="CT-BM-GL-LIDER",
+        )
+        evento = self.create_event(contrato=contrato, data_prevista=date(2026, 4, 18))
+        BM.objects.create(
+            contrato=contrato,
+            evento=evento,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("900.00"),
+        )
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.get(reverse("registrar_entrega", args=[evento.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["can_approve_bm_as_lider"])
+
+    def test_gerente_lider_como_gerente_tecnico_ve_detalhes_sem_registrar_entrega(self):
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", args=[self.contrato_terceiro.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["can_view_event_delivery_details"])
+        self.assertFalse(response.context["can_manage_event_delivery"])
+        self.assertContains(response, reverse("detalhes_entrega", args=[self.evento.pk]))
+        self.assertNotContains(response, reverse("registrar_entrega", args=[self.evento.pk]))
+
+    def test_gerente_lider_como_gerente_tecnico_acessa_detalhes_entrega_mas_nao_registro(self):
+        self.client.force_login(self.gerente_lider)
+
+        detalhes_response = self.client.get(reverse("detalhes_entrega", args=[self.evento.pk]))
+        registro_response = self.client.get(reverse("registrar_entrega", args=[self.evento.pk]), follow=False)
+
+        self.assertEqual(detalhes_response.status_code, 200)
+        self.assertFalse(detalhes_response.context["can_approve_bm_as_lider"])
+        self.assertRedirects(
+            registro_response,
+            reverse("home"),
+            fetch_redirect_response=False,
+        )
 
     def test_registrar_entrega_evento_como_suprimento_atualiza_campos(self):
         self.client.force_login(self.suprimento)

@@ -248,11 +248,12 @@
                     {% endwith %}
                   {% endif %}
               {% elif request.user.grupo == 'lider_contrato' or request.user.atua_como_gerente_contrato or request.user.grupo == 'gerente_lider' %}
-                  {% if request.user.atua_como_gerente_contrato or request.user.grupo == 'gerente_lider' %}
+                  {% if can_view_event_delivery_details %}
                       <a href="{% url 'detalhes_entrega' evento.id %}" class="btn btn-sm btn-outline-info">
                         Detalhes da Entrega
                       </a>
                   {% endif %}
+                  {% if can_manage_event_delivery %}
                   {% if evento.realizado %}
                     {% with avaliacao=evento.avaliacoes.first %}
                         {% if avaliacao %}
@@ -272,6 +273,7 @@
                   <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
                     Registrar Entrega
                   </a>
+                  {% endif %}
 
               {% elif request.user.grupo == "suprimento" %}
                   <a href="{% url 'registrar_entrega' evento.id %}" class="btn btn-sm btn-outline-success">
