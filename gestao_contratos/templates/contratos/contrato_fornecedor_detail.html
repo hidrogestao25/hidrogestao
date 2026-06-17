@@ -9,9 +9,14 @@
       {% if not contrato.guarda_chuva %}
       <p><strong>Código do Projeto:</strong> {{ contrato.cod_projeto.cod_projeto }}</p>
         <p><strong>Cliente:</strong>
+          {% if contrato.cod_projeto and contrato.cod_projeto.cliente %}
           <a href="{% url 'cliente_detalhe' contrato.cod_projeto.cliente.id %}" class="text-decoration-none">
             {{ contrato.cod_projeto.cliente }}
-          </a></p>
+          </a>
+          {% else %}
+            -
+          {% endif %}
+        </p>
 
       <p><strong>Líder Técnico Principal:</strong> {{ contrato.coordenador.get_full_name|default:contrato.coordenador }}</p>
       <p><strong>Demais Líderes Técnicos:</strong> {{ contrato.coordenadores_display|default:"-" }}</p>

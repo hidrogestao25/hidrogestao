@@ -8279,6 +8279,37 @@ class DjangoAdminConfigurationTests(BaseUserTestCase):
         self.assertIsNone(contrato.coordenador)
         self.assertEqual(contrato.lider_contrato, lider)
 
+    def test_contrato_terceiros_admin_aceita_formatos_de_data_do_admin(self):
+        model_admin = admin.site._registry[ContratoTerceiros]
+        fornecedor_iso = self.create_supplier("Fornecedor Admin Data ISO", "55.555.555/0001-59")
+        fornecedor_br = self.create_supplier("Fornecedor Admin Data BR", "55.555.555/0001-60")
+
+        form_iso = model_admin.form(
+            data={
+                "empresa_terceira": fornecedor_iso.pk,
+                "objeto": "Contrato com datas em formato ISO",
+                "status": "ativo",
+                "data_inicio": "2026-06-01",
+                "data_fim": "2026-06-30",
+            }
+        )
+        form_br = model_admin.form(
+            data={
+                "empresa_terceira": fornecedor_br.pk,
+                "objeto": "Contrato com datas em formato brasileiro",
+                "status": "ativo",
+                "data_inicio": "01/06/2026",
+                "data_fim": "30/06/2026",
+            }
+        )
+
+        self.assertTrue(form_iso.is_valid(), form_iso.errors)
+        self.assertTrue(form_br.is_valid(), form_br.errors)
+        self.assertEqual(form_iso.cleaned_data["data_inicio"], date(2026, 6, 1))
+        self.assertEqual(form_iso.cleaned_data["data_fim"], date(2026, 6, 30))
+        self.assertEqual(form_br.cleaned_data["data_inicio"], date(2026, 6, 1))
+        self.assertEqual(form_br.cleaned_data["data_fim"], date(2026, 6, 30))
+
     def test_contrato_fornecedor_form_comum_limpa_lider_contrato_em_guarda_chuva(self):
         fornecedor = self.create_supplier("Fornecedor Form Comum Guarda Chuva", "55.555.555/0001-57")
         lider = self.create_user("lider_form_comum_guardachuva", "lider_contrato")
@@ -8299,6 +8330,23 @@ class DjangoAdminConfigurationTests(BaseUserTestCase):
         self.assertTrue(contrato.guarda_chuva)
         self.assertIsNone(contrato.coordenador)
         self.assertIsNone(contrato.lider_contrato)
+
+    def test_detalhe_contrato_fornecedor_sem_projeto_nao_tenta_link_de_cliente_vazio(self):
+        suprimento = self.create_user("sup_admin_sem_projeto", "suprimento")
+        fornecedor = self.create_supplier("Fornecedor Admin Sem Projeto", "55.555.555/0001-58")
+        contrato = ContratoTerceiros.objects.create(
+            empresa_terceira=fornecedor,
+            objeto="Contrato cadastrado sem projeto pelo admin",
+            status="ativo",
+            num_contrato="ADM-SEM-PROJ",
+        )
+
+        self.client.force_login(suprimento)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", args=[contrato.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ADM-SEM-PROJ")
+        self.assertNotContains(response, "clientes//")
 
 
 class AditivoContratoTerceiroTests(BaseUserTestCase):

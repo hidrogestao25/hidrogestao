@@ -227,7 +227,7 @@ class ContratoFornecedorForm(forms.ModelForm):
                 'autocomplete': 'off'
             }
         ),
-        input_formats=['%d-%m-%Y']
+        input_formats=['%d-%m-%Y', '%Y-%m-%d', '%d/%m/%Y']
     )
 
     data_fim = forms.DateField(
@@ -239,7 +239,7 @@ class ContratoFornecedorForm(forms.ModelForm):
                 'autocomplete': 'off'
             }
         ),
-        input_formats=['%d-%m-%Y']
+        input_formats=['%d-%m-%Y', '%Y-%m-%d', '%d/%m/%Y']
     )
 
     class Meta:
