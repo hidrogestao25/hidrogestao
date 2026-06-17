@@ -638,7 +638,8 @@ class ContratoTerceiros(models.Model):
     def save(self, *args, **kwargs):
         if self.guarda_chuva:
             self.coordenador = None
-            self.lider_contrato = None
+            if not getattr(self, "_preserve_lider_contrato_for_guarda_chuva", False):
+                self.lider_contrato = None
         super().save(*args, **kwargs)
         if self.guarda_chuva:
             self.coordenadores.clear()

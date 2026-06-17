@@ -6,6 +6,7 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.contrib import admin
 from django.contrib.auth.models import Group
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
@@ -45,6 +46,7 @@ from .models import (
 from .forms import (
     BMForm,
     ClienteForm,
+    ContratoFornecedorForm,
     ContratoForm,
     EventoEntregaForm,
     FornecedorForm,
@@ -8234,6 +8236,69 @@ class TemplateVisibilityTests(BaseUserTestCase):
         self.client.force_login(self.lider)
         response = self.client.get(reverse("lista_ordens_servico"))
         self.assertContains(response, "Solicitar Nova OS")
+
+
+class DjangoAdminConfigurationTests(BaseUserTestCase):
+    def test_contrato_terceiros_admin_aceita_guarda_chuva_sem_coordenador(self):
+        model_admin = admin.site._registry[ContratoTerceiros]
+        self.assertTrue(issubclass(model_admin.form, ContratoFornecedorForm))
+
+        fornecedor = self.create_supplier("Fornecedor Admin Guarda Chuva", "55.555.555/0001-55")
+        form = model_admin.form(
+            data={
+                "empresa_terceira": fornecedor.pk,
+                "objeto": "Contrato guarda-chuva cadastrado pelo admin",
+                "status": "ativo",
+                "guarda_chuva": "true",
+            }
+        )
+
+        self.assertFalse(form.fields["coordenador"].required)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.cleaned_data["coordenador"])
+
+    def test_contrato_terceiros_admin_salva_lider_contrato_em_guarda_chuva(self):
+        model_admin = admin.site._registry[ContratoTerceiros]
+        fornecedor = self.create_supplier("Fornecedor Admin Lider Guarda Chuva", "55.555.555/0001-56")
+        lider = self.create_user("lider_admin_guardachuva", "lider_contrato")
+        form = model_admin.form(
+            data={
+                "empresa_terceira": fornecedor.pk,
+                "lider_contrato": lider.pk,
+                "objeto": "Contrato guarda-chuva com líder pelo admin",
+                "status": "ativo",
+                "guarda_chuva": "true",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        contrato = form.save()
+        contrato.refresh_from_db()
+
+        self.assertTrue(contrato.guarda_chuva)
+        self.assertIsNone(contrato.coordenador)
+        self.assertEqual(contrato.lider_contrato, lider)
+
+    def test_contrato_fornecedor_form_comum_limpa_lider_contrato_em_guarda_chuva(self):
+        fornecedor = self.create_supplier("Fornecedor Form Comum Guarda Chuva", "55.555.555/0001-57")
+        lider = self.create_user("lider_form_comum_guardachuva", "lider_contrato")
+        form = ContratoFornecedorForm(
+            data={
+                "empresa_terceira": fornecedor.pk,
+                "lider_contrato": lider.pk,
+                "objeto": "Contrato guarda-chuva pelo form comum",
+                "status": "ativo",
+                "guarda_chuva": "true",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        contrato = form.save()
+        contrato.refresh_from_db()
+
+        self.assertTrue(contrato.guarda_chuva)
+        self.assertIsNone(contrato.coordenador)
+        self.assertIsNone(contrato.lider_contrato)
 
 
 class AditivoContratoTerceiroTests(BaseUserTestCase):

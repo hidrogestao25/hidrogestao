@@ -216,6 +216,8 @@ class FornecedorForm(forms.ModelForm):
 
 
 class ContratoFornecedorForm(forms.ModelForm):
+    preserve_lider_contrato_for_guarda_chuva = False
+
     data_inicio = forms.DateField(
         required=False,
         widget=forms.DateInput(
@@ -299,9 +301,19 @@ class ContratoFornecedorForm(forms.ModelForm):
         cleaned_data = super().clean()
         if cleaned_data.get("guarda_chuva"):
             cleaned_data["coordenador"] = None
-            cleaned_data["lider_contrato"] = None
+            if not self.preserve_lider_contrato_for_guarda_chuva:
+                cleaned_data["lider_contrato"] = None
             cleaned_data["coordenadores"] = User.objects.none()
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if self.preserve_lider_contrato_for_guarda_chuva:
+            instance._preserve_lider_contrato_for_guarda_chuva = True
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 
     def clean_valor_total(self):

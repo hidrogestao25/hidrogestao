@@ -3,6 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 from django.db import models
 
+from .forms import ContratoFornecedorForm
 from .models import (
     User, Cliente, EmpresaTerceira, Proposta, Contrato, PropostaFornecedor,
     ContratoTerceiros, Evento,
@@ -157,13 +158,24 @@ class DefaultAdmin(admin.ModelAdmin):
 
 admin.site.register(User, CustomUserAdmin)
 
+
+class ContratoTerceirosAdminForm(ContratoFornecedorForm):
+    preserve_lider_contrato_for_guarda_chuva = True
+
+
+class ContratoTerceirosAdmin(DefaultAdmin):
+    form = ContratoTerceirosAdminForm
+
+
+admin.site.register(ContratoTerceiros, ContratoTerceirosAdmin)
+
+
 MODELOS_PADRAO = [
     Cliente,
     EmpresaTerceira,
     Proposta,
     Contrato,
     PropostaFornecedor,
-    ContratoTerceiros,
     Evento,
     AvaliacaoFornecedor,
     Indicadores,
