@@ -3816,6 +3816,18 @@ class LiderHomeDashboardTests(BaseUserTestCase):
         self.assertIn(os_em_execucao, list(response.context["os_em_aberto"]))
         self.assertContains(response, "OS Home Lider")
 
+    def test_home_lider_exibe_evento_aguardando_avaliacao(self):
+        self.evento.realizado = True
+        self.evento.data_entrega = timezone.localdate()
+        self.evento.save(update_fields=["realizado", "data_entrega"])
+
+        self.client.force_login(self.lider)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Eventos Aguardando Avaliação")
+        self.assertIn(self.evento, list(response.context["eventos_para_avaliar"]))
+
 
 class GerenteLiderHomeDashboardTests(BaseUserTestCase):
     def setUp(self):

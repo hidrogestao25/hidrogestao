@@ -3950,6 +3950,16 @@ def home(request):
             "empresa_terceira"
         ).order_by("data_prevista")
 
+        eventos_para_avaliar = Evento.objects.filter(
+            realizado=True,
+            avaliacoes__isnull=True,
+            contrato_terceiro__isnull=False,
+            contrato_terceiro__lider_contrato=user
+        ).select_related(
+            "contrato_terceiro",
+            "empresa_terceira"
+        ).order_by("data_entrega")
+
         contratos_vencendo = build_home_contracts_vencendo_queryset(
             ContratoTerceiros.objects.filter(lider_contrato=user),
             limite_contrato,
@@ -3977,6 +3987,7 @@ def home(request):
             "bms_pendentes": bms_pendentes,
             "eventos_proximos": eventos_proximos,
             "entregas_atrasadas": entregas_atrasadas,
+            "eventos_para_avaliar": eventos_para_avaliar,
             "contratos_vencendo": contratos_vencendo,
             "os_em_aberto": os_em_aberto,
             "is_lider": is_lider,
