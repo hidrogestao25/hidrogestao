@@ -635,6 +635,64 @@ class MultipleCoordenadoresContratoTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, contrato_fornecedor.num_contrato)
 
+    def test_gerente_lider_acessa_detalhe_de_contrato_fornecedor_quando_e_lider_mesmo_sem_centro_do_coordenador(self):
+        outro_centro = self.create_center("CT-OUTRO-DET", "Centro detalhe outro coordenador")
+        outro_coordenador = self.create_user("coord_outro_det", "coordenador")
+        outro_coordenador.centros.add(outro_centro)
+        contrato_base = Contrato.objects.create(
+            cod_projeto="PRJ-GL-DET",
+            cliente=self.cliente,
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+            objeto="Objeto detalhe gerente lider",
+            status="ativo",
+        )
+        fornecedor = self.create_supplier(cpf_cnpj="11.111.111/0001-63")
+        contrato_fornecedor = ContratoTerceiros.objects.create(
+            cod_projeto=contrato_base,
+            empresa_terceira=fornecedor,
+            coordenador=outro_coordenador,
+            lider_contrato=self.gerente_lider,
+            objeto="Contrato fornecedor detalhe gerente lider",
+            status="ativo",
+            num_contrato="CF-GL-DET",
+        )
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", args=[contrato_fornecedor.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, contrato_fornecedor.num_contrato)
+
+    def test_gerente_lider_nao_acessa_detalhe_de_contrato_fornecedor_sem_lideranca_ou_centro(self):
+        outro_centro = self.create_center("CT-OUTRO-BLOCK", "Centro detalhe bloqueado")
+        outro_coordenador = self.create_user("coord_outro_block", "coordenador")
+        outro_lider = self.create_user("lider_outro_block", "lider_contrato")
+        outro_coordenador.centros.add(outro_centro)
+        contrato_base = Contrato.objects.create(
+            cod_projeto="PRJ-GL-BLOCK",
+            cliente=self.cliente,
+            coordenador=outro_coordenador,
+            lider_contrato=outro_lider,
+            objeto="Objeto detalhe bloqueado",
+            status="ativo",
+        )
+        fornecedor = self.create_supplier(cpf_cnpj="11.111.111/0001-62")
+        contrato_fornecedor = ContratoTerceiros.objects.create(
+            cod_projeto=contrato_base,
+            empresa_terceira=fornecedor,
+            coordenador=outro_coordenador,
+            lider_contrato=outro_lider,
+            objeto="Contrato fornecedor detalhe bloqueado",
+            status="ativo",
+            num_contrato="CF-GL-BLOCK",
+        )
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", args=[contrato_fornecedor.pk]), follow=False)
+
+        self.assertRedirects(response, reverse("home"), fetch_redirect_response=False)
+
 
 class ContractListVisibilityTests(BaseUserTestCase):
     def setUp(self):

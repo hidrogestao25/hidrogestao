@@ -758,6 +758,14 @@ def user_shares_center_with_contract_coordinators(user, contract):
     ).exists()
 
 
+def can_gerente_lider_access_supplier_contract(user, contract):
+    if not user or not contract or getattr(user, "grupo", None) != "gerente_lider":
+        return False
+    if getattr(contract, "lider_contrato_id", None) == getattr(user, "pk", None):
+        return True
+    return user_shares_center_with_contract_coordinators(user, contract)
+
+
 def send_request_notification_to_management(subject, message):
     recipients = list(
         User.objects.filter(grupo__in=["diretoria", "gerente_contrato"])
@@ -5067,7 +5075,7 @@ def contrato_fornecedor_detalhe(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
     fornecedor = contrato.empresa_terceira
 
-    if request.user.grupo == "gerente_lider" and not user_shares_center_with_contract_coordinators(request.user, contrato):
+    if request.user.grupo == "gerente_lider" and not can_gerente_lider_access_supplier_contract(request.user, contrato):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
