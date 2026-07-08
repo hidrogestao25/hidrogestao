@@ -57,7 +57,7 @@ document.addEventListener("DOMContentLoaded", function() {
             <span style="color:red;">Não</span>
           {% endif %}
         </p>
-        <p><strong>Previsto no Orçamento:</strong>
+        <p><strong>Previsto no Planejamento:</strong>
             {% if solicitacao.previsto_no_orcamento %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}
         </p>
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>
@@ -113,6 +113,13 @@ document.addEventListener("DOMContentLoaded", function() {
                 <a href="{{ solicitacao.contrato.arquivo_contrato.url }}" target="_blank">Ver PDF</a>
             {% else %}
                 Não há contrato com cliente cadastrado no banco
+            {% endif %}
+        </p>
+        <p><strong>Propostas Técnicas:</strong>
+            {% if solicitacao.proposta_tecnica %}
+                <a href="{{ solicitacao.proposta_tecnica.url }}" target="_blank">Ver arquivo</a>
+            {% else %}
+                Não informado
             {% endif %}
         </p>
         {% if solicitacao.justificativa_gerencia %}

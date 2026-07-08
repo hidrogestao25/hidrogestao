@@ -10,23 +10,23 @@
                     {% endif %}
 
                     <span class="badge bg-dark">
-                        Vencimento: {{ c.data_fim|date:"d/m/Y" }}
+                        Vencimento: {{ c.data_vencimento_home|date:"d/m/Y" }}
                     </span>
-                    {% if c.dias_para_vencer < 0 %}
+                    {% if c.dias_para_vencer_home < 0 %}
                         <span class="badge bg-danger">
                             Vencido há {{ c.dias_vencido }} dias
                         </span>
-                    {% elif c.dias_para_vencer <= 5 %}
+                    {% elif c.dias_para_vencer_home <= 5 %}
                         <span class="badge bg-danger">
-                            Vence em {{ c.dias_para_vencer }} dias
+                            Vence em {{ c.dias_para_vencer_home }} dias
                         </span>
-                    {% elif c.dias_para_vencer <= 15 %}
+                    {% elif c.dias_para_vencer_home <= 15 %}
                         <span class="badge bg-warning text-dark">
-                            Vence em {{ c.dias_para_vencer }} dias
+                            Vence em {{ c.dias_para_vencer_home }} dias
                         </span>
                     {% else %}
                         <span class="badge bg-info">
-                            Vence em {{ c.dias_para_vencer }} dias
+                            Vence em {{ c.dias_para_vencer_home }} dias
                         </span>
                     {% endif %}
                 </div>
@@ -36,7 +36,7 @@
                        class="btn btn-sm btn-outline-dark">
                         Ver Contrato
                     </a>
-                    {% if c.dias_para_vencer < 0 %}
+                    {% if c.dias_para_vencer_home < 0 %}
                         <form method="post" action="{% url 'ocultar_contrato_vencido_home' c.id %}">
                             {% csrf_token %}
                             <input type="hidden" name="next" value="{{ request.get_full_path }}">

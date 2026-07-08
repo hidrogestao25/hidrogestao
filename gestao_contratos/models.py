@@ -48,6 +48,7 @@ class ShortenedUploadPath:
 
 
 CRONOGRAMA_UPLOAD_PATH = ShortenedUploadPath("cronograma", "cronograma")
+PROPOSTA_TECNICA_UPLOAD_PATH = ShortenedUploadPath("propostas_tecnicas", "proposta_tecnica")
 ORCAMENTO_UPLOAD_PATH = ShortenedUploadPath("orcamentos", "orcamento")
 CONTRACT_SUPPLIER_UPLOAD_PATH = ShortenedUploadPath("contrato_do_fornecedor", "contrato_fornecedor")
 SOLICITACAO_OS_UPLOAD_PATH = ShortenedUploadPath("OS", "solicitacao_os")
@@ -368,6 +369,13 @@ class SolicitacaoContrato(models.Model):
         null=True, blank=True,
         max_length=255,
     )
+    proposta_tecnica = models.FileField(
+        upload_to=PROPOSTA_TECNICA_UPLOAD_PATH,
+        verbose_name='Inserir propostas técnicas',
+        null=True,
+        blank=True,
+        max_length=255,
+    )
 
     aprovacao_fornecedor_gerente =  models.CharField(max_length=20, choices=APROVACAO_CHOICES, default="pendente")
     aprocacao_fornecedor_gerente_em = models.DateTimeField(null=True, blank=True)
@@ -625,8 +633,9 @@ class ContratoTerceiros(models.Model):
 
     @property
     def dias_para_vencer(self):
-        if self.data_fim:
-            return (self.data_fim - date.today()).days
+        data_vencimento = getattr(self, "data_vencimento_home", None) or self.data_fim
+        if data_vencimento:
+            return (data_vencimento - date.today()).days
         return None
 
     @property

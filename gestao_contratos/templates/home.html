@@ -704,9 +704,9 @@
 
                                           </div>
 
-                                          <a href="{% url 'registrar_entrega' e.id %}"
+                                          <a href="{% url 'contrato_fornecedor_detalhe' e.contrato_terceiro.id %}"
                                              class="btn btn-sm btn-outline-danger">
-                                              Registrar Entrega
+                                              Ver Detalhes
                                           </a>
                                       </li>
                                   {% endfor %}
@@ -799,9 +799,9 @@
                                               </span>
                                           </div>
 
-                                          <a href="{% url 'registrar_entrega' e.id %}"
+                                          <a href="{% url 'contrato_fornecedor_detalhe' e.contrato_terceiro.id %}"
                                              class="btn btn-sm btn-outline-warning">
-                                              Registrar Entrega
+                                              Ver Detalhes
                                           </a>
                                       </li>
                                   {% endfor %}

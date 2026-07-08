@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.mail import EmailMultiAlternatives, send_mail as django_send_mail
 from django.core.paginator import Paginator
-from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max, Min
+from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max, Min, DateField, OuterRef, Subquery
 from decimal import Decimal
 from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
@@ -761,6 +761,8 @@ def user_shares_center_with_contract_coordinators(user, contract):
 def can_gerente_lider_access_supplier_contract(user, contract):
     if not user or not contract or getattr(user, "grupo", None) != "gerente_lider":
         return False
+    if getattr(contract, "guarda_chuva", False):
+        return True
     if getattr(contract, "lider_contrato_id", None) == getattr(user, "pk", None):
         return True
     return user_shares_center_with_contract_coordinators(user, contract)
@@ -1496,19 +1498,67 @@ def sort_home_items_by_sla_priority(items):
 
 def build_home_contracts_vencendo_queryset(queryset, limite_contrato):
     hoje = timezone.localdate()
-    return (
+    ultima_data_fim_aditivo = AditivoContratoTerceiro.objects.filter(
+        contrato=OuterRef("pk"),
+        nova_data_fim__isnull=False,
+        arquivo_aditivo_assinado__isnull=False,
+    ).exclude(
+        arquivo_aditivo_assinado=""
+    ).order_by("-documento_assinado_enviado_em", "-atualizado_em", "-pk").values("nova_data_fim")[:1]
+
+    contratos = list(
         queryset.filter(
-            data_fim__lte=limite_contrato,
             status="ativo",
         )
+        .annotate(
+            data_vencimento_home=Coalesce(
+                Subquery(ultima_data_fim_aditivo, output_field=DateField()),
+                "data_fim",
+                output_field=DateField(),
+            )
+        )
+        .filter(data_vencimento_home__lte=limite_contrato)
         .filter(
-            Q(data_fim__gte=hoje)
+            Q(data_vencimento_home__gte=hoje)
             | Q(ocultar_home_contrato_vencido=False)
         )
         .select_related("empresa_terceira")
-        .order_by("data_fim")
+        .order_by("data_vencimento_home")
         .distinct()
     )
+
+    for contrato in contratos:
+        data_vencimento = contrato.data_vencimento_home
+        contrato.dias_para_vencer_home = (data_vencimento - hoje).days if data_vencimento else None
+        contrato.dias_vencido_home = abs(contrato.dias_para_vencer_home) if contrato.dias_para_vencer_home is not None and contrato.dias_para_vencer_home < 0 else 0
+
+    return contratos
+
+
+def get_valor_total_aditivado(aditivo, valor_base=None):
+    if not aditivo or aditivo.novo_valor_total is None:
+        return valor_base
+
+    valor_anterior = aditivo.valor_total_anterior
+    if valor_anterior is None:
+        valor_anterior = valor_base
+
+    if valor_anterior is None:
+        return aditivo.novo_valor_total
+
+    return valor_anterior + aditivo.novo_valor_total
+
+
+def get_valor_contrato_sem_aditivos(contrato, aditivos_queryset):
+    primeiro_aditivo_assinado = (
+        aditivos_queryset.filter(arquivo_aditivo_assinado__isnull=False)
+        .exclude(arquivo_aditivo_assinado="")
+        .order_by("documento_assinado_enviado_em", "criado_em", "pk")
+        .first()
+    )
+    if primeiro_aditivo_assinado and primeiro_aditivo_assinado.valor_total_anterior is not None:
+        return primeiro_aditivo_assinado.valor_total_anterior
+    return contrato.valor_total or Decimal("0.00")
 
 
 @login_required
@@ -1778,7 +1828,27 @@ def calculate_contract_payment_totals(contracts):
     eventos = Evento.objects.filter(contrato_terceiro_id__in=contract_ids)
     ordens = OS.objects.filter(contrato_id__in=contract_ids)
 
-    valor_total = sum((contract.valor_total or Decimal("0.00")) for contract in contracts)
+    valor_planejado_eventos_por_contrato = {
+        item["contrato_terceiro_id"]: item["total"] or Decimal("0.00")
+        for item in eventos.values("contrato_terceiro_id").annotate(
+            total=Coalesce(Sum("valor_previsto"), Decimal("0.00"))
+        )
+    }
+    valor_planejado_os_por_contrato = {
+        item["contrato_id"]: item["total"] or Decimal("0.00")
+        for item in ordens.values("contrato_id").annotate(
+            total=Coalesce(Sum("valor"), Decimal("0.00"))
+        )
+    }
+
+    valor_total = Decimal("0.00")
+    for contract in contracts:
+        valor_planejado = (
+            valor_planejado_eventos_por_contrato.get(contract.pk, Decimal("0.00"))
+            + valor_planejado_os_por_contrato.get(contract.pk, Decimal("0.00"))
+        )
+        valor_total += valor_planejado if valor_planejado > Decimal("0.00") else (contract.valor_total or Decimal("0.00"))
+
     valor_pago_eventos = eventos.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
     valor_pago_os = ordens.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
     valor_pago = (valor_pago_eventos or Decimal("0.00")) + (valor_pago_os or Decimal("0.00"))
@@ -1790,6 +1860,40 @@ def calculate_contract_payment_totals(contracts):
         "valor_total": valor_total,
         "valor_pago": valor_pago,
         "valor_previsto": valor_previsto,
+    }
+
+
+def calculate_annual_contract_execution_totals(contracts, year):
+    contract_ids = [contract.pk for contract in contracts]
+    if not contract_ids:
+        return {
+            "ano": year,
+            "valor_planejado": Decimal("0.00"),
+            "valor_executado": Decimal("0.00"),
+            "percentual_executado": 0.0,
+        }
+
+    eventos = Evento.objects.filter(
+        contrato_terceiro_id__in=contract_ids,
+        data_prevista_pagamento__year=year,
+    )
+    ordens = OS.objects.filter(
+        contrato_id__in=contract_ids,
+        data_prevista_pagamento__year=year,
+    )
+    valor_planejado_eventos = eventos.aggregate(total=Coalesce(Sum("valor_previsto"), Decimal("0.00")))["total"]
+    valor_planejado_os = ordens.aggregate(total=Coalesce(Sum("valor"), Decimal("0.00")))["total"]
+    valor_planejado = (valor_planejado_eventos or Decimal("0.00")) + (valor_planejado_os or Decimal("0.00"))
+    valor_executado_eventos = eventos.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
+    valor_executado_os = ordens.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
+    valor_executado = (valor_executado_eventos or Decimal("0.00")) + (valor_executado_os or Decimal("0.00"))
+    percentual_executado = round((valor_executado / valor_planejado) * Decimal("100"), 1) if valor_planejado else 0.0
+
+    return {
+        "ano": year,
+        "valor_planejado": valor_planejado,
+        "valor_executado": valor_executado,
+        "percentual_executado": float(percentual_executado),
     }
 
 
@@ -2320,7 +2424,7 @@ def indicadores_suprimento(request):
 
     media_prazo_guarda_chuva = average_days_from_pairs(guarda_chuva_pairs)
     media_prazo_os = average_days_from_pairs(
-        build_os_average_pairs(list(os_queryset), os_audit_map)
+        build_os_average_pairs(list(backlog_os), os_audit_map)
     )
 
     retrabalho_prospeccao, retrabalho_contratacao = build_supply_retrabalho_queryset()
@@ -2328,12 +2432,17 @@ def indicadores_suprimento(request):
     total_retrabalho = retrabalho_prospeccao.count() + retrabalho_contratacao.count()
     percentual_retrabalho = round((total_retrabalho / total_solicitacoes) * 100, 1) if total_solicitacoes else 0.0
 
-    contratos_ativos_qs = ContratoTerceiros.objects.exclude(status="encerrado")
+    contratos_ativos_qs = ContratoTerceiros.objects.filter(status="ativo")
     contratos_ativos_list = list(contratos_ativos_qs)
     contract_totals = calculate_contract_payment_totals(contratos_ativos_list)
     valor_total_contratos_ativos = contract_totals["valor_total"]
     valor_pago_contratos_ativos = contract_totals["valor_pago"]
     valor_previsto_contratos_ativos = contract_totals["valor_previsto"]
+    hoje = timezone.localdate()
+    execucao_anual_contratos = calculate_annual_contract_execution_totals(
+        contratos_ativos_list,
+        hoje.year,
+    )
 
     eventos_sem_nf_count = Evento.objects.filter(
         boletins_medicao__aprovacao_pagamento="aprovado",
@@ -2343,7 +2452,6 @@ def indicadores_suprimento(request):
         | Q(boletins_medicao__status_gerente="aprovado")
     ).distinct().count()
 
-    hoje = timezone.localdate()
     eventos_atrasados_count = Evento.objects.filter(contrato_terceiro__in=contratos_ativos_qs).filter(
         Q(com_atraso=True)
         | Q(realizado=False, data_prevista__lt=hoje)
@@ -2422,33 +2530,6 @@ def indicadores_suprimento(request):
             selected_user_id = None
         if selected_user_id:
             selected_user = User.objects.filter(pk=selected_user_id).first()
-    if selected_user is None and user_options:
-        selected_user = User.objects.filter(pk=user_options[0]["id"]).first()
-
-    selected_user_metrics = build_selected_user_supply_metrics(
-        selected_user,
-        list(solicitacoes_prospeccao),
-        list(solicitacoes_contratacao),
-        list(os_queryset),
-        prospeccao_onboarding_map,
-        contratacao_onboarding_map,
-        os_audit_map,
-        contratos_ativos_list,
-    )
-    if selected_user_metrics:
-        selected_user_metrics["sla_summary"] = user_sla_map.get(selected_user.pk, {}).get(
-            "summary",
-            {
-                "ativos_total": 0,
-                "dentro_sla": 0,
-                "em_alerta": 0,
-                "vencidos": 0,
-                "sem_configuracao": 0,
-                "taxa_dentro_sla": 0.0,
-            },
-        )
-        selected_user_metrics["sla_stage_rows"] = user_sla_map.get(selected_user.pk, {}).get("stage_rows", [])
-
     sla_dashboard = build_sla_dashboard(
         list(solicitacoes_prospeccao),
         list(solicitacoes_contratacao),
@@ -2509,6 +2590,34 @@ def indicadores_suprimento(request):
         )
     )
 
+    if selected_user is None and merged_user_indicator_rows:
+        selected_user = User.objects.filter(pk=merged_user_indicator_rows[0]["usuario_id"]).first()
+
+    selected_user_metrics = build_selected_user_supply_metrics(
+        selected_user,
+        list(solicitacoes_prospeccao),
+        list(solicitacoes_contratacao),
+        list(os_queryset),
+        prospeccao_onboarding_map,
+        contratacao_onboarding_map,
+        os_audit_map,
+        contratos_ativos_list,
+    )
+    if selected_user_metrics:
+        selected_user_metrics["sla_summary"] = user_sla_map.get(selected_user.pk, {}).get(
+            "summary",
+            {
+                "ativos_total": 0,
+                "dentro_sla": 0,
+                "em_alerta": 0,
+                "vencidos": 0,
+                "sem_configuracao": 0,
+                "taxa_dentro_sla": 0.0,
+            },
+        )
+        selected_user_metrics["sla_stage_rows"] = user_sla_map.get(selected_user.pk, {}).get("stage_rows", [])
+
+    total_contratos_gerados = len(latest_completed)
     latest_completed = sorted(latest_completed, key=lambda item: item["concluido_em"], reverse=True)[:10]
 
     context = {
@@ -2528,8 +2637,12 @@ def indicadores_suprimento(request):
         "valor_total_contratos_ativos": valor_total_contratos_ativos,
         "valor_pago_contratos_ativos": valor_pago_contratos_ativos,
         "valor_previsto_contratos_ativos": valor_previsto_contratos_ativos,
+        "ano_execucao_contratos": execucao_anual_contratos["ano"],
+        "valor_planejado_contratos_ano": execucao_anual_contratos["valor_planejado"],
+        "valor_executado_contratos_ano": execucao_anual_contratos["valor_executado"],
+        "percentual_executado_contratos_ano": execucao_anual_contratos["percentual_executado"],
         "contratos_ativos_total": contratos_ativos_qs.count(),
-        "contratos_gerados_total": len(latest_completed),
+        "contratos_gerados_total": total_contratos_gerados,
         "eventos_atrasados_count": eventos_atrasados_count,
         "eventos_sem_nf_count": eventos_sem_nf_count,
         "bms_pendentes_operacionais": bms_pendentes_operacionais,
@@ -3218,6 +3331,8 @@ def can_user_manage_os_delivery(user, os):
 def can_user_request_contract_addendum(user, contrato):
     if not user or not contrato:
         return False
+    if getattr(contrato, "guarda_chuva", False):
+        return user.grupo in ["lider_contrato", "gerente_lider"] or user_has_gerente_contrato_role(user)
     contrato_lider = getattr(contrato, "referencia_lider_contrato", None) or contrato.lider_contrato
     if user.grupo == "lider_contrato":
         return user == contrato_lider
@@ -3231,6 +3346,8 @@ def can_user_request_contract_addendum(user, contrato):
 def can_user_view_addendum(user, aditivo):
     if not user or not aditivo:
         return False
+    if user == aditivo.solicitado_por:
+        return True
     if user.grupo in ["suprimento", "diretoria"] or user_has_gerente_contrato_role(user):
         return True
     if user.grupo == "lider_contrato":
@@ -5147,6 +5264,8 @@ def contrato_fornecedor_detalhe(request, pk):
         "documento_enviado_por",
         "documento_assinado_enviado_por",
     ).all()
+    for aditivo in aditivos:
+        aditivo.novo_valor_total_exibicao = get_valor_total_aditivado(aditivo)
     aditivo_ativo = next(
         (
             item
@@ -5167,10 +5286,11 @@ def contrato_fornecedor_detalhe(request, pk):
         else contrato.data_fim
     )
     valor_total_contrato_vigente = (
-        ultimo_aditivo_aprovado.novo_valor_total
+        get_valor_total_aditivado(ultimo_aditivo_aprovado, contrato.valor_total)
         if ultimo_aditivo_aprovado and ultimo_aditivo_aprovado.novo_valor_total is not None
         else (contrato.valor_total or Decimal("0.00"))
     )
+    valor_contrato_sem_aditivos = get_valor_contrato_sem_aditivos(contrato, aditivos)
     total_eventos_previstos = eventos.aggregate(total=Sum("valor_previsto"))["total"] or Decimal("0.00")
     exibir_warning_valor_eventos = total_eventos_previstos != valor_total_contrato_vigente
 
@@ -5315,6 +5435,7 @@ def contrato_fornecedor_detalhe(request, pk):
             "can_view_event_delivery_details": can_user_view_event_delivery_details(request.user, contrato),
             "data_fim_contrato_vigente": data_fim_contrato_vigente,
             "valor_total_contrato_vigente": valor_total_contrato_vigente,
+            "valor_contrato_sem_aditivos": valor_contrato_sem_aditivos,
             "total_eventos_previstos": total_eventos_previstos,
             "exibir_warning_valor_eventos": exibir_warning_valor_eventos,
         },
@@ -5760,7 +5881,10 @@ def enviar_aditivo_assinado_contrato(request, pk):
             if aditivo.nova_data_fim:
                 aditivo.contrato.data_fim = aditivo.nova_data_fim
             if aditivo.novo_valor_total is not None:
-                aditivo.contrato.valor_total = aditivo.novo_valor_total
+                aditivo.contrato.valor_total = get_valor_total_aditivado(
+                    aditivo,
+                    aditivo.contrato.valor_total,
+                )
             aditivo.contrato.save(update_fields=["data_fim", "valor_total"])
 
             aditivo.eventos.filter(contrato_terceiro__isnull=True).update(
@@ -5936,7 +6060,7 @@ def nova_solicitacao_contrato(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
         clientes = Cliente.objects.all().order_by('nome')
         if request.method == 'POST':
-            form = SolicitacaoContratoForm(request.POST, user=request.user)
+            form = SolicitacaoContratoForm(request.POST, request.FILES, user=request.user)
             if form.is_valid():
                 solicitacao = form.save(commit=False)
                 solicitacao.lider_contrato = request.user
@@ -6259,7 +6383,7 @@ def nova_solicitacao_guarda_chuva(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
         clientes = Cliente.objects.all().order_by('nome')
         if request.method == 'POST':
-            form = SolicitacaoGuardaChuvaForm(request.POST, user=request.user)
+            form = SolicitacaoGuardaChuvaForm(request.POST, request.FILES, user=request.user)
             if form.is_valid():
                 solicitacao = form.save(commit=False)
                 solicitacao.lider_contrato = request.user
@@ -8064,7 +8188,15 @@ def cadastrar_contrato(request, solicitacao_id):
                 contrato.arquivo_contrato_assinado = contrato_existente.arquivo_contrato_assinado
 
             contrato.save()
-            criar_contrato_se_aprovado(solicitacao)
+            contrato_criado = criar_contrato_se_aprovado(solicitacao)
+            if (
+                is_signed_file_upload_only
+                and (contrato_criado or ContratoTerceiros.objects.filter(prospeccao=solicitacao).exists())
+            ):
+                solicitacao.refresh_from_db()
+                if solicitacao.status != "Onboarding":
+                    solicitacao.status = "Onboarding"
+                    solicitacao.save(update_fields=["status"])
 
             gerente = _group_emails("gerente_contrato")
 
@@ -8158,7 +8290,6 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
             contrato_criado = criar_contrato_se_aprovado_minuta(solicitacao)
             if (
                 is_signed_file_upload_only
-                and solicitacao.guarda_chuva
                 and (contrato_criado or ContratoTerceiros.objects.filter(solicitacao=solicitacao).exists())
             ):
                 solicitacao.refresh_from_db()
@@ -8254,6 +8385,7 @@ def build_addendum_docm_replacements(aditivo):
     ordem_label = f"{ordem_aditivo}º"
     descricao = contrato.objeto or aditivo.motivo or "-"
     contract_type_line = "☐ ESPECÍFICO    ☒ GUARDA-CHUVA" if contrato.guarda_chuva else "☒ ESPECÍFICO    ☐ GUARDA-CHUVA"
+    valor_aditivo_documento = aditivo.novo_valor_total or contrato.valor_total or Decimal("0.00")
 
     return {
         "__ordem_aditivo__": ordem_label,
@@ -8263,8 +8395,8 @@ def build_addendum_docm_replacements(aditivo):
         "__data_fim__": format_date_br(aditivo.data_fim_anterior or contrato.data_fim),
         "__data_fim_aditivo__": format_date_br(aditivo.nova_data_fim),
         "__descricao__": descricao,
-        "__novo_valor _total__": format_currency_br(aditivo.novo_valor_total or contrato.valor_total or Decimal("0.00"), with_symbol=True),
-        "__novo_valor _total_extenso__": decimal_to_money_words_pt_br(aditivo.novo_valor_total or contrato.valor_total or Decimal("0.00")),
+        "__novo_valor _total__": format_currency_br(valor_aditivo_documento, with_symbol=True),
+        "__novo_valor _total_extenso__": decimal_to_money_words_pt_br(valor_aditivo_documento),
         "__contrato__": contrato_codigo or "-",
         "__informacoes_bancarias__": fornecedor.informacoes_bancarias or "-",
         "__endereco__": fornecedor.endereco or "-",
@@ -9245,6 +9377,7 @@ def duplicar_evento(request, pk):
     if evento.data_prevista_pagamento:
         evento.data_prevista_pagamento = evento.data_prevista_pagamento + timedelta(days=30)
 
+    preencher_empresa_terceira_do_evento(evento)
     evento.save()
 
     messages.success(request, "Evento duplicado com sucesso!")
@@ -9291,6 +9424,7 @@ def duplicar_evento_solicitacao(request, pk):
     if evento.data_prevista_pagamento:
         evento.data_prevista_pagamento = evento.data_prevista_pagamento + timedelta(days=30)
 
+    preencher_empresa_terceira_do_evento(evento)
     evento.save()
 
     messages.success(request, "Evento duplicado com sucesso!")
@@ -9341,11 +9475,23 @@ def duplicar_evento_contrato(request, pk):
     if evento.data_prevista_pagamento:
         evento.data_prevista_pagamento = evento.data_prevista_pagamento + timedelta(days=30)
 
+    preencher_empresa_terceira_do_evento(evento)
     evento.save()
 
     messages.success(request, "Evento duplicado com sucesso!")
 
     return redirect_to_event_origin(evento)
+
+
+def preencher_empresa_terceira_do_evento(evento):
+    if evento.empresa_terceira_id:
+        return
+    if evento.contrato_terceiro_id:
+        evento.empresa_terceira = evento.contrato_terceiro.empresa_terceira
+    elif evento.prospeccao_id:
+        evento.empresa_terceira = evento.prospeccao.fornecedor_escolhido
+    elif evento.solicitacao_contrato_id:
+        evento.empresa_terceira = evento.solicitacao_contrato.fornecedor_escolhido
 
 
 def redirect_to_event_origin(evento):
@@ -9851,6 +9997,32 @@ def previsao_pagamentos(request):
         eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
         os_queryset = os_queryset.order_by('data_prevista_pagamento', 'data_pagamento')
 
+        def data_no_periodo(data):
+            return data and data_inicio_filtro <= data <= data_limite
+
+        def calendario_do_periodo(datas_referencia):
+            calendario = list(
+                CalendarioPagamento.objects.filter(
+                    data_pagamento__range=[data_inicio_filtro, data_limite]
+                )
+                .order_by("data_pagamento")
+                .values_list("data_pagamento", flat=True)
+            )
+            datas_referencia = sorted({data for data in datas_referencia if data_no_periodo(data)})
+            if calendario:
+                if calendario[-1] < data_limite:
+                    calendario.append(data_limite)
+                return calendario
+            return datas_referencia
+
+        def filtro_periodo_pagamento(campo, data_fim, data_inicio=None):
+            filtro = Q(**{f"{campo}__lte": data_fim})
+            if data_inicio:
+                filtro &= Q(**{f"{campo}__gt": data_inicio})
+            else:
+                filtro &= Q(**{f"{campo}__gte": data_inicio_filtro})
+            return filtro
+
         pagamentos_eventos = [
             {
                 "tipo": "Evento",
@@ -9859,9 +10031,9 @@ def previsao_pagamentos(request):
                 "lider_contrato": evento.contrato_terceiro.lider_contrato.get_full_name() if evento.contrato_terceiro and evento.contrato_terceiro.lider_contrato else "",
                 "fornecedor": evento.empresa_terceira.nome if evento.empresa_terceira else "",
                 "data_prevista": evento.data_prevista_pagamento,
-                "valor_previsto": Decimal(evento.valor_previsto or 0),
-                "data_pagamento": evento.data_pagamento,
-                "valor_pago": Decimal(evento.valor_pago or 0),
+                "valor_previsto": Decimal(evento.valor_previsto or 0) if data_no_periodo(evento.data_prevista_pagamento) else Decimal("0"),
+                "data_pagamento": evento.data_pagamento if data_no_periodo(evento.data_pagamento) else None,
+                "valor_pago": Decimal(evento.valor_pago or 0) if data_no_periodo(evento.data_pagamento) else Decimal("0"),
             }
             for evento in eventos
         ]
@@ -9874,9 +10046,9 @@ def previsao_pagamentos(request):
                 "lider_contrato":ordem_servico.lider_contrato.get_full_name() if ordem_servico.lider_contrato else "",
                 "fornecedor": ordem_servico.contrato.empresa_terceira.nome if ordem_servico.contrato and ordem_servico.contrato.empresa_terceira else "",
                 "data_prevista": ordem_servico.data_prevista_pagamento,
-                "valor_previsto": Decimal(ordem_servico.valor or 0),
-                "data_pagamento": ordem_servico.data_pagamento,
-                "valor_pago": Decimal(ordem_servico.valor_pago or 0),
+                "valor_previsto": Decimal(ordem_servico.valor or 0) if data_no_periodo(ordem_servico.data_prevista_pagamento) else Decimal("0"),
+                "data_pagamento": ordem_servico.data_pagamento if data_no_periodo(ordem_servico.data_pagamento) else None,
+                "valor_pago": Decimal(ordem_servico.valor_pago or 0) if data_no_periodo(ordem_servico.data_pagamento) else Decimal("0"),
             }
             for ordem_servico in os_queryset
         ]
@@ -9892,14 +10064,14 @@ def previsao_pagamentos(request):
         )
 
         total_previsto_eventos = sum(item['valor_previsto'] for item in pagamentos_eventos)
-        total_previsto_os = os_queryset.aggregate(
+        total_previsto_os = os_queryset.filter(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]).aggregate(
             total=Coalesce(Sum("valor"), Decimal("0.00"))
         )["total"]
 
         total_previsto = total_previsto_eventos + total_previsto_os
 
         total_pago_eventos = sum(item['valor_pago'] for item in pagamentos_eventos)
-        total_pago_os = os_queryset.aggregate(
+        total_pago_os = os_queryset.filter(data_pagamento__range=[data_inicio_filtro, data_limite]).aggregate(
             total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
         )["total"]
 
@@ -9908,23 +10080,21 @@ def previsao_pagamentos(request):
 
         # ==== GRÁFICO 1: LINHA ACUMULADA (EVENTOS + OS) ====
 
-        from collections import defaultdict
-
         acumulado_previsto_por_data = defaultdict(Decimal)
         acumulado_pago_por_data = defaultdict(Decimal)
 
         # EVENTOS
         for e in eventos:
-            if e.data_prevista_pagamento:
+            if data_no_periodo(e.data_prevista_pagamento):
                 acumulado_previsto_por_data[e.data_prevista_pagamento] += e.valor_previsto or 0
-            if e.data_pagamento:
+            if data_no_periodo(e.data_pagamento):
                 acumulado_pago_por_data[e.data_pagamento] += e.valor_pago or 0
 
         # OS
         for os in os_queryset:
-            if os.data_prevista_pagamento:
+            if data_no_periodo(os.data_prevista_pagamento):
                 acumulado_previsto_por_data[os.data_prevista_pagamento] += os.valor or 0
-            if os.data_pagamento:
+            if data_no_periodo(os.data_pagamento):
                 acumulado_pago_por_data[os.data_pagamento] += os.valor_pago or 0
 
         datas = sorted(set(acumulado_previsto_por_data.keys()) | set(acumulado_pago_por_data.keys()))
@@ -9982,18 +10152,10 @@ def previsao_pagamentos(request):
 
 
         # ==== GRÁFICO 2: POR COORDENADOR ====
-        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
-                          .values_list('data_pagamento', flat=True))
-        if not calendario:
-            calendario = sorted(
-                {
-                    data for data in (
-                        list(eventos.values_list('data_prevista_pagamento', flat=True))
-                        + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
-                        + list(os_queryset.values_list('data_pagamento', flat=True))
-                    ) if data
-                }
-            )
+        calendario = calendario_do_periodo(
+            list(eventos.values_list('data_prevista_pagamento', flat=True))
+            + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
+        )
 
         coordenadores = sorted(
             {
@@ -10011,9 +10173,11 @@ def previsao_pagamentos(request):
             data_inicio = None
 
             for data_fim in calendario:
-                filtro_periodo = Q(data_prevista_pagamento__lte=data_fim)
-                if data_inicio:
-                    filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
+                filtro_periodo = filtro_periodo_pagamento(
+                    "data_prevista_pagamento",
+                    data_fim,
+                    data_inicio,
+                )
 
                 eventos_previsto = eventos.filter(
                     filtro_periodo
@@ -10025,10 +10189,8 @@ def previsao_pagamentos(request):
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
                 )['total']
                 total_previsto_os = os_queryset.filter(
-                    data_prevista_pagamento__lte=data_fim,
+                    filtro_periodo,
                     coordenador__username=coord,
-                ).filter(
-                    Q(data_prevista_pagamento__gt=data_inicio) if data_inicio else Q()
                 ).aggregate(
                     total=Coalesce(Sum('valor'), Decimal('0.00'))
                 )['total']
@@ -10071,9 +10233,11 @@ def previsao_pagamentos(request):
             data_inicio = None
 
             for data_fim in calendario:
-                filtro_periodo = Q(data_prevista_pagamento__lte=data_fim)
-                if data_inicio:
-                    filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
+                filtro_periodo = filtro_periodo_pagamento(
+                    "data_prevista_pagamento",
+                    data_fim,
+                    data_inicio,
+                )
 
                 eventos_previsto = eventos.filter(
                     filtro_periodo
@@ -10086,10 +10250,8 @@ def previsao_pagamentos(request):
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
                 )['total']
                 total_previsto_os = os_queryset.filter(
-                    data_prevista_pagamento__lte=data_fim,
+                    filtro_periodo,
                     lider_contrato__username=lider,
-                ).filter(
-                    Q(data_prevista_pagamento__gt=data_inicio) if data_inicio else Q()
                 ).aggregate(
                     total=Coalesce(Sum('valor'), Decimal('0.00'))
                 )['total']
@@ -10116,18 +10278,10 @@ def previsao_pagamentos(request):
         grafico_barras_lider_contrato = plot(fig_barra_lider, output_type='div')
 
         # ==== GRÁFICO 2.2: POR PROJETO ====
-        calendario = list(CalendarioPagamento.objects.order_by('data_pagamento')
-                          .values_list('data_pagamento', flat=True))
-        if not calendario:
-            calendario = sorted(
-                {
-                    data for data in (
-                        list(eventos.values_list('data_prevista_pagamento', flat=True))
-                        + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
-                        + list(os_queryset.values_list('data_pagamento', flat=True))
-                    ) if data
-                }
-            )
+        calendario = calendario_do_periodo(
+            list(eventos.values_list('data_prevista_pagamento', flat=True))
+            + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
+        )
 
         # filtra os projetos conforme coordenador (ou todos se não houver filtro)
         projetos_eventos = list(
@@ -10144,9 +10298,11 @@ def previsao_pagamentos(request):
             data_inicio = None
 
             for data_fim in calendario:
-                filtro_periodo = Q(data_prevista_pagamento__lte=data_fim)
-                if data_inicio:
-                    filtro_periodo &= Q(data_prevista_pagamento__gt=data_inicio)
+                filtro_periodo = filtro_periodo_pagamento(
+                    "data_prevista_pagamento",
+                    data_fim,
+                    data_inicio,
+                )
 
                 filtro_base_evento = Q(contrato_terceiro__cod_projeto__cod_projeto=proj)
                 filtro_base_os = Q(cod_projeto__cod_projeto=proj)
@@ -10159,9 +10315,7 @@ def previsao_pagamentos(request):
                     total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
                 )['total']
                 os_previsto = os_queryset.filter(
-                    data_prevista_pagamento__lte=data_fim
-                ).filter(
-                    Q(data_prevista_pagamento__gt=data_inicio) if data_inicio else Q()
+                    filtro_periodo
                 ).filter(filtro_base_os)
                 total_previsto_os = os_previsto.aggregate(
                     total=Coalesce(Sum('valor'), Decimal('0.00'))
@@ -10190,59 +10344,52 @@ def previsao_pagamentos(request):
 
         # ==== GRÁFICO 3: PREVISTO x PAGO (EVENTOS + OS) ====
 
-        calendario = list(
-            CalendarioPagamento.objects.order_by("data_pagamento")
-            .values_list("data_pagamento", flat=True)
+        calendario = calendario_do_periodo(
+            list(eventos.values_list('data_prevista_pagamento', flat=True))
+            + list(eventos.values_list('data_pagamento', flat=True))
+            + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
+            + list(os_queryset.values_list('data_pagamento', flat=True))
         )
-        if not calendario:
-            calendario = sorted(
-                {
-                    data for data in (
-                        list(eventos.values_list('data_prevista_pagamento', flat=True))
-                        + list(eventos.values_list('data_pagamento', flat=True))
-                        + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
-                        + list(os_queryset.values_list('data_pagamento', flat=True))
-                    ) if data
-                }
-            )
 
         y_previstos = []
         y_pagos = []
         data_inicio = None
 
         for data_fim in calendario:
-            filtro_prev_evento = Q(data_prevista_pagamento__lte=data_fim)
-            filtro_pago_evento = Q(data_pagamento__lte=data_fim)
-            filtro_os = Q(data_prevista_pagamento__lte=data_fim)
+            filtro_prev_evento = filtro_periodo_pagamento(
+                "data_prevista_pagamento",
+                data_fim,
+                data_inicio,
+            )
+            filtro_prev_os = filtro_periodo_pagamento(
+                "data_prevista_pagamento",
+                data_fim,
+                data_inicio,
+            )
+            filtro_pago_evento = filtro_periodo_pagamento(
+                "data_pagamento",
+                data_fim,
+                data_inicio,
+            )
+            filtro_pago_os = filtro_periodo_pagamento(
+                "data_pagamento",
+                data_fim,
+                data_inicio,
+            )
 
-            if data_inicio:
-                filtro_prev_evento &= Q(data_prevista_pagamento__gt=data_inicio)
-                filtro_pago_evento &= Q(data_pagamento__gt=data_inicio)
-                filtro_os &= Q(data_prevista_pagamento__gt=data_inicio)
-
-            if coordenador:
-                filtro_prev_evento &= Q(contrato_terceiro__coordenador=coordenador)
-                filtro_pago_evento &= Q(contrato_terceiro__coordenador=coordenador)
-                filtro_os &= Q(coordenador=coordenador)
-
-            if user_has_gerente_contrato_role(request.user):
-                filtro_prev_evento &= Q(contrato_terceiro__lider_contrato__grupo__in=['lider_contrato', 'gerente_lider', 'gerente_contrato'])
-                filtro_pago_evento &= Q(contrato_terceiro__lider_contrato__grupo__in=['lider_contrato', 'gerente_lider', 'gerente_contrato'])
-                filtro_os &= Q(lider_contrato__grupo__in=['lider_contrato', 'gerente_lider', 'gerente_contrato'])
-
-            total_prev_eventos = Evento.objects.filter(filtro_prev_evento, contrato_terceiro__isnull=False,).aggregate(
+            total_prev_eventos = eventos.filter(filtro_prev_evento).aggregate(
                 total=Coalesce(Sum("valor_previsto"), Decimal("0.00"))
             )["total"]
 
-            total_pago_eventos = Evento.objects.filter(filtro_pago_evento, contrato_terceiro__isnull=False,).aggregate(
+            total_pago_eventos = eventos.filter(filtro_pago_evento).aggregate(
                 total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
             )["total"]
 
-            total_prev_os = os_queryset.filter(filtro_os).aggregate(
+            total_prev_os = os_queryset.filter(filtro_prev_os).aggregate(
                 total=Coalesce(Sum("valor"), Decimal("0.00"))
             )["total"]
 
-            total_pago_os = os_queryset.filter(filtro_os).aggregate(
+            total_pago_os = os_queryset.filter(filtro_pago_os).aggregate(
                 total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
             )["total"]
 
@@ -10492,6 +10639,9 @@ def exportar_previsao_pagamentos_excel(request):
     eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
     os_queryset = os_queryset.order_by('data_prevista_pagamento', 'data_pagamento')
 
+    def data_no_periodo(data):
+        return data and data_inicio_filtro <= data <= data_limite
+
     pagamentos_exportacao = []
     for evento in eventos:
         pagamentos_exportacao.append({
@@ -10500,9 +10650,9 @@ def exportar_previsao_pagamentos_excel(request):
             "projeto": evento.contrato_terceiro.cod_projeto.cod_projeto if evento.contrato_terceiro and evento.contrato_terceiro.cod_projeto else "",
             "fornecedor": evento.empresa_terceira.nome if evento.empresa_terceira else "",
             "coordenador": evento.contrato_terceiro.coordenador.username if evento.contrato_terceiro and evento.contrato_terceiro.coordenador else "",
-            "valor_previsto": Decimal(evento.valor_previsto or 0),
-            "data_pagamento": evento.data_pagamento,
-            "valor_pago": Decimal(evento.valor_pago or 0),
+            "valor_previsto": Decimal(evento.valor_previsto or 0) if data_no_periodo(evento.data_prevista_pagamento) else Decimal("0"),
+            "data_pagamento": evento.data_pagamento if data_no_periodo(evento.data_pagamento) else None,
+            "valor_pago": Decimal(evento.valor_pago or 0) if data_no_periodo(evento.data_pagamento) else Decimal("0"),
         })
 
     for ordem_servico in os_queryset:
@@ -10512,9 +10662,9 @@ def exportar_previsao_pagamentos_excel(request):
             "projeto": ordem_servico.cod_projeto.cod_projeto if ordem_servico.cod_projeto else "",
             "fornecedor": ordem_servico.contrato.empresa_terceira.nome if ordem_servico.contrato and ordem_servico.contrato.empresa_terceira else "",
             "coordenador": ordem_servico.coordenador.username if ordem_servico.coordenador else "",
-            "valor_previsto": Decimal(ordem_servico.valor or 0),
-            "data_pagamento": ordem_servico.data_pagamento,
-            "valor_pago": Decimal(ordem_servico.valor_pago or 0),
+            "valor_previsto": Decimal(ordem_servico.valor or 0) if data_no_periodo(ordem_servico.data_prevista_pagamento) else Decimal("0"),
+            "data_pagamento": ordem_servico.data_pagamento if data_no_periodo(ordem_servico.data_pagamento) else None,
+            "valor_pago": Decimal(ordem_servico.valor_pago or 0) if data_no_periodo(ordem_servico.data_pagamento) else Decimal("0"),
         })
 
     pagamentos_exportacao.sort(

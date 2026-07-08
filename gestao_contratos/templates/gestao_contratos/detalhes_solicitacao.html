@@ -54,7 +54,7 @@ document.addEventListener("DOMContentLoaded", function() {
             <span style="color:red;">Não</span>
           {% endif %}
         </p>
-        <p><strong>Previsto no Orçamento:</strong>
+        <p><strong>Previsto no Planejamento:</strong>
             {% if solicitacao.previsto_no_orcamento %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}
         </p>
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>

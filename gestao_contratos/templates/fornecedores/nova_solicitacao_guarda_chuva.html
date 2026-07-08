@@ -11,7 +11,7 @@
 
     <div class="card-body">
 
-      <form method="post">
+      <form method="post" enctype="multipart/form-data">
           {% csrf_token %}
 
           <div class="mb-3">
@@ -48,14 +48,6 @@
           </div>
 
           <div class="mb-3">
-              <label for="{{ form.requisitos.id_for_label }}" class="form-label">Requisitos Mínimos do Fornecedor</label>
-              <div>{{ form.requisitos }}</div>
-              {% if form.requisitos.errors %}
-                <div class="text-danger small">{{ form.requisitos.errors|striptags }}</div>
-              {% endif %}
-          </div>
-
-          <div class="mb-3">
               <label for="{{ form.justificativa_fornecedor_escolhido.id_for_label }}" class="form-label">Justificativa da Escolha do Fornecedor</label>
               <div>{{ form.justificativa_fornecedor_escolhido }}</div>
               {% if form.justificativa_fornecedor_escolhido.errors %}
@@ -64,7 +56,7 @@
           </div>
 
           <div class="mb-3">
-              <label for="{{ form.previsto_no_orcamento.id_for_label }}" class="form-label">Previsto no Orçamento</label>
+              <label for="{{ form.previsto_no_orcamento.id_for_label }}" class="form-label">Previsto no Planejamento</label>
               {{ form.previsto_no_orcamento }}
               {% if form.previsto_no_orcamento.errors %}
                 <div class="text-danger small">{{ form.previsto_no_orcamento.errors|striptags }}</div>
@@ -72,10 +64,18 @@
           </div>
 
           <div class="mb-3" id="justificativa-container">
-              <label for="{{ form.justificativa_orcamento.id_for_label }}" class="form-label">Justificativa da falta de previsão orçamentária</label>
+              <label for="{{ form.justificativa_orcamento.id_for_label }}" class="form-label">Justificativa para a Contratação do Serviço</label>
               <div>{{ form.justificativa_orcamento }}</div>
               {% if form.justificativa_orcamento.errors %}
                 <div class="text-danger small">{{ form.justificativa_orcamento.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.requisitos.id_for_label }}" class="form-label">Observa&ccedil;&otilde;es da Contrata&ccedil;&atilde;o</label>
+              <div>{{ form.requisitos }}</div>
+              {% if form.requisitos.errors %}
+                <div class="text-danger small">{{ form.requisitos.errors|striptags }}</div>
               {% endif %}
           </div>
 
@@ -96,7 +96,15 @@
           </div>
 
           <div class="mb-3">
-              <label for="{{ form.valor_disponivel.id_for_label }}" class="form-label">Valor Disponível (Target)</label>
+              <label for="{{ form.proposta_tecnica.id_for_label }}" class="form-label">Propostas T&eacute;cnicas</label>
+              {{ form.proposta_tecnica }}
+              {% if form.proposta_tecnica.errors %}
+                <div class="text-danger small">{{ form.proposta_tecnica.errors|striptags }}</div>
+              {% endif %}
+          </div>
+
+          <div class="mb-3">
+              <label for="{{ form.valor_disponivel.id_for_label }}" class="form-label">Valor a ser Contratado</label>
               {{ form.valor_disponivel }}
               {% if form.valor_disponivel.errors %}
                 <div class="text-danger small">{{ form.valor_disponivel.errors|striptags }}</div>

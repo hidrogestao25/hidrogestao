@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 from django.db import models
+from django.db.models import Q
 
 from .forms import ContratoFornecedorForm
 from .models import (
@@ -170,6 +171,66 @@ class ContratoTerceirosAdmin(DefaultAdmin):
 admin.site.register(ContratoTerceiros, ContratoTerceirosAdmin)
 
 
+class BMAdmin(DefaultAdmin):
+    list_display = (
+        "id",
+        "numero_bm",
+        "parcela_paga",
+        "valor_pago",
+        "contrato",
+        "evento",
+        "os",
+        "status_coordenador",
+        "status_gerente",
+        "aprovacao_pagamento",
+    )
+    list_filter = (
+        "status_coordenador",
+        "status_gerente",
+        "aprovacao_pagamento",
+        "data_pagamento",
+    )
+    search_fields = (
+        "=numero_bm",
+        "contrato__num_contrato",
+        "contrato__cod_projeto__cod_projeto",
+        "contrato__empresa_terceira__nome",
+        "contrato__empresa_terceira__cpf_cnpj",
+        "evento__descricao",
+        "os__titulo",
+        "observacao",
+    )
+    search_help_text = (
+        "Pesquise por número do BM, contrato, projeto, fornecedor, evento, OS ou observação."
+    )
+
+    def get_search_results(self, request, queryset, search_term):
+        queryset, may_have_duplicates = super().get_search_results(request, queryset, search_term)
+        search_term = search_term.strip()
+        if not search_term:
+            return queryset, may_have_duplicates
+
+        extra_query = (
+            Q(contrato__num_contrato__icontains=search_term)
+            | Q(contrato__cod_projeto__cod_projeto__icontains=search_term)
+            | Q(contrato__empresa_terceira__nome__icontains=search_term)
+            | Q(contrato__empresa_terceira__cpf_cnpj__icontains=search_term)
+            | Q(evento__descricao__icontains=search_term)
+            | Q(os__titulo__icontains=search_term)
+            | Q(observacao__icontains=search_term)
+        )
+
+        try:
+            extra_query |= Q(numero_bm=int(search_term))
+        except ValueError:
+            pass
+
+        return queryset | self.model.objects.filter(extra_query), True
+
+
+admin.site.register(BM, BMAdmin)
+
+
 MODELOS_PADRAO = [
     Cliente,
     EmpresaTerceira,
@@ -179,7 +240,6 @@ MODELOS_PADRAO = [
     Evento,
     AvaliacaoFornecedor,
     Indicadores,
-    BM,
     DocumentoContrato,
     DocumentoContratoTerceiro,
     NFCliente,

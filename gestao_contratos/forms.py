@@ -386,14 +386,15 @@ class SolicitacaoContratoForm(forms.ModelForm):
             'contrato',
             'coordenador',
             'descricao',
-            'requisitos',
             'previsto_no_orcamento',
             'justificativa_fornecedor_escolhido',
             'valor_disponivel',
             'valor_vendido',
+            'requisitos',
             'data_inicio',
             'data_fim',
             'cronograma',
+            'proposta_tecnica',
             'forma_pagamento',
             'justificativa_orcamento',
         ]
@@ -403,7 +404,11 @@ class SolicitacaoContratoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.fields['descricao'].label = "Escopo de Contratação"
-        self.fields['requisitos'].label = "Requisitos Mínimos"
+        self.fields['requisitos'].label = "Observações da Contratação"
+        self.fields['previsto_no_orcamento'].label = "Previsto no Planejamento"
+        self.fields['justificativa_orcamento'].label = "Justificativa para a contratação dos serviços (sem planejamento)"
+        self.fields['proposta_tecnica'].label = "Propostas Técnicas"
+        self.fields['proposta_tecnica'].widget.attrs.update({"class": "form-control"})
 
         if user and user.grupo == 'coordenador':
             self.fields['contrato'].queryset = Contrato.objects.filter(coordenador=user)
@@ -535,6 +540,7 @@ class SolicitacaoProspeccaoForm(forms.ModelForm):
 
         self.fields['descricao'].label = "Escopo de Contratação"
         self.fields['requisitos'].label = "Requisitos Mínimos"
+        self.fields['previsto_no_orcamento'].label = "Previsto no Planejamento"
 
         if user and user.grupo == 'coordenador':
             self.fields['contrato'].queryset = Contrato.objects.filter(coordenador=user)
@@ -637,14 +643,15 @@ class SolicitacaoGuardaChuvaForm(forms.ModelForm):
             'fornecedor_escolhido',
             'coordenador',
             'descricao',
-            'requisitos',
             'previsto_no_orcamento',
             'justificativa_fornecedor_escolhido',
             'valor_disponivel',
             'valor_vendido',
+            'requisitos',
             'data_inicio',
             'data_fim',
             'cronograma',
+            'proposta_tecnica',
             'forma_pagamento',
             'justificativa_orcamento',
         ]
@@ -654,7 +661,10 @@ class SolicitacaoGuardaChuvaForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.fields['descricao'].label = "Escopo de Contratação"
-        self.fields['requisitos'].label = "Requisitos Mínimos"
+        self.fields['requisitos'].label = "Observações da Contratação"
+        self.fields['previsto_no_orcamento'].label = "Previsto no Planejamento"
+        self.fields['proposta_tecnica'].label = "Propostas Técnicas"
+        self.fields['proposta_tecnica'].widget.attrs.update({"class": "form-control"})
 
         self.fields['fornecedor_escolhido'].queryset = EmpresaTerceira.objects.all().order_by('nome')
 

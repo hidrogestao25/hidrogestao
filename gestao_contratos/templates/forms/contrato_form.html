@@ -48,6 +48,12 @@
           </div>
 
           <div class="col-md-6 mb-3">
+            <label class="form-label" for="{{ form.lider_contrato.id_for_label }}">Líder de Contrato</label>
+            {{ form.lider_contrato }}
+            {% if form.lider_contrato.errors %}<div class="text-danger small mt-1">{{ form.lider_contrato.errors|striptags }}</div>{% endif %}
+          </div>
+
+          <div class="col-md-6 mb-3">
             <label class="form-label" for="{{ form.data_inicio.id_for_label }}">Data Início</label>
             {{ form.data_inicio }}
           </div>
@@ -134,7 +140,7 @@
     });
 
     // Ativa o Select2 nos campos pesquisáveis
-    $('#id_cliente, #id_coordenador, #id_coordenadores, #id_proposta, #id_status').select2({
+    $('#id_cliente, #id_coordenador, #id_coordenadores, #id_lider_contrato, #id_proposta, #id_status').select2({
       width: '100%',
       placeholder: 'Selecione ou digite para pesquisar...',
       allowClear: true,
