@@ -92,9 +92,9 @@
         <tbody>
           {% for bm in bms %}
             <tr>
-              <td>{{ bm.contrato.cod_projeto.cod_projeto }}</td>
+              <td>{{ bm.projeto_referencia }}</td>
               <td>{{ bm.contrato.empresa_terceira.nome }}</td>
-              <td>{{ bm.contrato.lider_contrato.get_full_name }}</td>
+              <td>{{ bm.lider_contrato_referencia }}</td>
               <td>{{ bm.numero_bm }}</td>
               <td>
                 {% if bm.data_inicial_medicao and bm.data_final_medicao %}
@@ -275,28 +275,35 @@
 
 {% if grafico_barras %}
   <div class="mt-5">
-    <h4>Pagamentos Previstos por Líder Técnico</h4>
+    <h4>Pagamentos Previstos x Pagos por Líder Técnico</h4>
     {{ grafico_barras|safe }}
   </div>
 {% endif %}
 
 {% if grafico_barras_lider_contrato %}
   <div class="mt-5">
-    <h4>Pagamentos Previstos por Líder de Contrato</h4>
+    <h4>Pagamentos Previstos x Pagos por Líder de Contrato</h4>
     {{ grafico_barras_lider_contrato|safe }}
   </div>
 {% endif %}
 
 {% if grafico_barras_projeto %}
   <div class="mt-5">
-    <h4>Pagamentos Previstos por Projetos</h4>
+    <h4>Pagamentos Previstos x Pagos por Projetos</h4>
     {{ grafico_barras_projeto|safe }}
+  </div>
+{% endif %}
+
+{% if grafico_barras_centros %}
+  <div class="mt-5">
+    <h4>Pagamentos Previstos x Pagos por Centros</h4>
+    {{ grafico_barras_centros|safe }}
   </div>
 {% endif %}
 
 {% if grafico_barra %}
   <div class="mt-5">
-    <h4>Pagamentos Previstos x Pagos (Últimos 12 meses e Próximos 12 meses)</h4>
+    <h4>Pagamentos Previstos x Pagos por Mês</h4>
     {{ grafico_barra|safe }}
   </div>
 {% endif %}

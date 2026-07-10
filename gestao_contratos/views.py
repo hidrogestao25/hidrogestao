@@ -3571,6 +3571,9 @@ def filter_payment_bms_for_user(user, queryset):
         return queryset.filter(
             Q(contrato__coordenador__centros__in=user.centros.all())
             | Q(contrato__coordenadores__centros__in=user.centros.all())
+            | Q(os__coordenador__centros__in=user.centros.all())
+            | Q(os__cod_projeto__coordenador__centros__in=user.centros.all())
+            | Q(os__cod_projeto__coordenadores__centros__in=user.centros.all())
             | Q(
                 contrato__guarda_chuva=True,
                 contrato__cod_projeto__coordenador__centros__in=user.centros.all(),
@@ -3583,6 +3586,8 @@ def filter_payment_bms_for_user(user, queryset):
     if user and user.grupo == "gerente_contrato":
         return queryset.filter(
             Q(contrato__lider_contrato=user)
+            | Q(os__lider_contrato=user)
+            | Q(os__cod_projeto__lider_contrato=user)
             | Q(
                 contrato__guarda_chuva=True,
                 contrato__cod_projeto__lider_contrato=user,
@@ -3591,6 +3596,8 @@ def filter_payment_bms_for_user(user, queryset):
     if user_can_cover_gerente_contrato(user):
         return queryset.filter(
             Q(contrato__lider_contrato__grupo__in=["lider_contrato", "gerente_lider", "gerente_contrato"])
+            | Q(os__lider_contrato__grupo__in=["lider_contrato", "gerente_lider", "gerente_contrato"])
+            | Q(os__cod_projeto__lider_contrato__grupo__in=["lider_contrato", "gerente_lider", "gerente_contrato"])
             | Q(
                 contrato__guarda_chuva=True,
                 contrato__cod_projeto__lider_contrato__grupo__in=["lider_contrato", "gerente_lider", "gerente_contrato"],
@@ -9960,6 +9967,7 @@ def previsao_pagamentos(request):
     grafico_barras = None
     grafico_barras_lider_contrato = None
     grafico_barras_projeto = None
+    grafico_barras_centros = None
     bms = []
     total_bm_pago = None
     total_bm_previsto = None
@@ -10000,28 +10008,105 @@ def previsao_pagamentos(request):
         def data_no_periodo(data):
             return data and data_inicio_filtro <= data <= data_limite
 
-        def calendario_do_periodo(datas_referencia):
-            calendario = list(
-                CalendarioPagamento.objects.filter(
-                    data_pagamento__range=[data_inicio_filtro, data_limite]
-                )
-                .order_by("data_pagamento")
-                .values_list("data_pagamento", flat=True)
-            )
-            datas_referencia = sorted({data for data in datas_referencia if data_no_periodo(data)})
-            if calendario:
-                if calendario[-1] < data_limite:
-                    calendario.append(data_limite)
-                return calendario
-            return datas_referencia
+        def mes_referencia(data):
+            return date(data.year, data.month, 1) if data else None
 
-        def filtro_periodo_pagamento(campo, data_fim, data_inicio=None):
-            filtro = Q(**{f"{campo}__lte": data_fim})
-            if data_inicio:
-                filtro &= Q(**{f"{campo}__gt": data_inicio})
-            else:
-                filtro &= Q(**{f"{campo}__gte": data_inicio_filtro})
-            return filtro
+        def meses_do_periodo():
+            meses = []
+            mes_atual = date(data_inicio_filtro.year, data_inicio_filtro.month, 1)
+            mes_final = date(data_limite.year, data_limite.month, 1)
+            while mes_atual <= mes_final:
+                meses.append(mes_atual)
+                if mes_atual.month == 12:
+                    mes_atual = date(mes_atual.year + 1, 1, 1)
+                else:
+                    mes_atual = date(mes_atual.year, mes_atual.month + 1, 1)
+            return meses
+
+        def nome_usuario(usuario_ref):
+            if not usuario_ref:
+                return ""
+            return usuario_ref.get_full_name() or usuario_ref.username
+
+        def coordenador_evento(evento):
+            contrato = evento.contrato_terceiro
+            return contrato.referencia_coordenador if contrato else None
+
+        def coordenador_os(ordem_servico):
+            projeto = ordem_servico.cod_projeto
+            return ordem_servico.coordenador or (projeto.coordenador if projeto else None)
+
+        def centros_lider_tecnico(coordenador_ref):
+            if not coordenador_ref:
+                return ["Sem Centro"]
+            centros = list(coordenador_ref.centros.order_by("codigo", "nome"))
+            if not centros:
+                return ["Sem Centro"]
+            return [
+                f"{centro.nome} ({centro.codigo})" if centro.codigo else centro.nome
+                for centro in centros
+            ]
+
+        def referencias_evento(evento):
+            contrato = evento.contrato_terceiro
+            projeto = contrato.cod_projeto if contrato else None
+            coordenador_ref = coordenador_evento(evento)
+            lider_ref = contrato.referencia_lider_contrato if contrato else None
+            return (
+                projeto.cod_projeto if projeto else "",
+                nome_usuario(coordenador_ref),
+                nome_usuario(lider_ref),
+            )
+
+        def referencias_os(ordem_servico):
+            projeto = ordem_servico.cod_projeto
+            coordenador_ref = coordenador_os(ordem_servico)
+            lider_ref = (projeto.lider_contrato if projeto and projeto.lider_contrato else None) or ordem_servico.lider_contrato
+            return (
+                projeto.cod_projeto if projeto else "",
+                nome_usuario(coordenador_ref),
+                nome_usuario(lider_ref),
+            )
+
+        def distribuir_por_centros(totais, data_ref, valor, coordenador_ref, tipo):
+            mes = mes_referencia(data_ref)
+            centros = centros_lider_tecnico(coordenador_ref)
+            valor_por_centro = Decimal(valor or 0) / Decimal(len(centros))
+            for centro in centros:
+                totais[centro][mes][tipo] += valor_por_centro
+
+        def totais_mensais_por_categoria(chave):
+            rotulos_sem_referencia = {
+                "projeto": "Sem Projeto",
+                "coordenador": "Sem Líder Técnico",
+                "lider": "Sem Líder de Contrato",
+            }
+            totais = defaultdict(lambda: defaultdict(lambda: defaultdict(Decimal)))
+            for evento in eventos:
+                projeto, coordenador_nome, lider_nome = referencias_evento(evento)
+                chave_nome = {"projeto": projeto, "coordenador": coordenador_nome, "lider": lider_nome}[chave]
+                chave_nome = chave_nome or rotulos_sem_referencia[chave]
+                if data_no_periodo(evento.data_prevista_pagamento):
+                    totais[chave_nome][mes_referencia(evento.data_prevista_pagamento)]["Previsto"] += evento.valor_previsto or 0
+                if data_no_periodo(evento.data_pagamento):
+                    totais[chave_nome][mes_referencia(evento.data_pagamento)]["Pago"] += evento.valor_pago or 0
+            for ordem_servico in os_queryset:
+                projeto, coordenador_nome, lider_nome = referencias_os(ordem_servico)
+                chave_nome = {"projeto": projeto, "coordenador": coordenador_nome, "lider": lider_nome}[chave]
+                chave_nome = chave_nome or rotulos_sem_referencia[chave]
+                if data_no_periodo(ordem_servico.data_prevista_pagamento):
+                    totais[chave_nome][mes_referencia(ordem_servico.data_prevista_pagamento)]["Previsto"] += ordem_servico.valor or 0
+                if data_no_periodo(ordem_servico.data_pagamento):
+                    totais[chave_nome][mes_referencia(ordem_servico.data_pagamento)]["Pago"] += ordem_servico.valor_pago or 0
+            return totais
+
+        meses = meses_do_periodo()
+        meses_labels = [mes.strftime("%m/%Y") for mes in meses]
+        x_meses_previsto_pago = []
+        x_tipos_previsto_pago = []
+        for mes_label in meses_labels:
+            x_meses_previsto_pago.extend([mes_label, mes_label])
+            x_tipos_previsto_pago.extend(["Previsto", "Pago"])
 
         pagamentos_eventos = [
             {
@@ -10152,191 +10237,78 @@ def previsao_pagamentos(request):
 
 
         # ==== GRÁFICO 2: POR COORDENADOR ====
-        calendario = calendario_do_periodo(
-            list(eventos.values_list('data_prevista_pagamento', flat=True))
-            + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
-        )
-
-        coordenadores = sorted(
-            {
-                nome for nome in (
-                    list(eventos.values_list('contrato_terceiro__coordenador__username', flat=True))
-                    + list(eventos.values_list('contrato_terceiro__cod_projeto__coordenador__username', flat=True))
-                    + list(os_queryset.values_list('coordenador__username', flat=True))
-                ) if nome
-            }
-        )
-
+        pagamentos_por_coordenador = totais_mensais_por_categoria("coordenador")
         fig_barra = go.Figure()
-        for coord in coordenadores:
-            y_previstos = []
-            data_inicio = None
-
-            for data_fim in calendario:
-                filtro_periodo = filtro_periodo_pagamento(
-                    "data_prevista_pagamento",
-                    data_fim,
-                    data_inicio,
-                )
-
-                eventos_previsto = eventos.filter(
-                    filtro_periodo
-                ).filter(
-                    Q(contrato_terceiro__coordenador__username=coord)
-                    | Q(contrato_terceiro__cod_projeto__coordenador__username=coord)
-                )
-                total_previsto_eventos = eventos_previsto.aggregate(
-                    total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
-                )['total']
-                total_previsto_os = os_queryset.filter(
-                    filtro_periodo,
-                    coordenador__username=coord,
-                ).aggregate(
-                    total=Coalesce(Sum('valor'), Decimal('0.00'))
-                )['total']
-
-                y_previstos.append(total_previsto_eventos + total_previsto_os)
-                data_inicio = data_fim
-
+        for coord in sorted(pagamentos_por_coordenador):
+            valores = []
+            for mes in meses:
+                valores.append(pagamentos_por_coordenador[coord][mes].get("Previsto", Decimal("0.00")))
+                valores.append(pagamentos_por_coordenador[coord][mes].get("Pago", Decimal("0.00")))
             fig_barra.add_trace(go.Bar(
-                name=f"{coord or 'Sem Coordenador'}",
-                x=calendario,
-                y=y_previstos
+                name=coord,
+                x=[x_meses_previsto_pago, x_tipos_previsto_pago],
+                y=valores
             ))
 
         fig_barra.update_layout(
             barmode='stack',
-            title="Pagamentos Previstos (Eventos + OS por Líder Técnico, conforme calendário de pagamento)",
-            xaxis_title="Data do Calendário",
-            yaxis_title="Valor Previsto (R$)",
+            title="Pagamentos Previstos x Pagos (Eventos + OS por Líder Técnico, por mês)",
+            xaxis_title="Mês / Tipo",
+            yaxis_title="Valor (R$)",
             template="plotly_white",
-            height=500,
+            height=550,
             legend_title="Coordenador"
         )
 
         grafico_barras = plot(fig_barra, output_type='div')
 
         # ==== GRÁFICO 2.1: POR LÍDER DE CONTRATO ====
-        lideres_contrato = sorted(
-            {
-                nome for nome in (
-                    list(eventos.values_list('contrato_terceiro__lider_contrato__username', flat=True))
-                    + list(eventos.values_list('contrato_terceiro__cod_projeto__lider_contrato__username', flat=True))
-                    + list(os_queryset.values_list('lider_contrato__username', flat=True))
-                ) if nome
-            }
-        )
-
+        pagamentos_por_lider = totais_mensais_por_categoria("lider")
         fig_barra_lider = go.Figure()
-        for lider in lideres_contrato:
-            y_previstos = []
-            data_inicio = None
-
-            for data_fim in calendario:
-                filtro_periodo = filtro_periodo_pagamento(
-                    "data_prevista_pagamento",
-                    data_fim,
-                    data_inicio,
-                )
-
-                eventos_previsto = eventos.filter(
-                    filtro_periodo
-                ).filter(
-                    Q(contrato_terceiro__lider_contrato__username=lider)
-                    | Q(contrato_terceiro__cod_projeto__lider_contrato__username=lider)
-                )
-
-                total_previsto_eventos = eventos_previsto.aggregate(
-                    total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
-                )['total']
-                total_previsto_os = os_queryset.filter(
-                    filtro_periodo,
-                    lider_contrato__username=lider,
-                ).aggregate(
-                    total=Coalesce(Sum('valor'), Decimal('0.00'))
-                )['total']
-
-                y_previstos.append(total_previsto_eventos + total_previsto_os)
-                data_inicio = data_fim
-
+        for lider in sorted(pagamentos_por_lider):
+            valores = []
+            for mes in meses:
+                valores.append(pagamentos_por_lider[lider][mes].get("Previsto", Decimal("0.00")))
+                valores.append(pagamentos_por_lider[lider][mes].get("Pago", Decimal("0.00")))
             fig_barra_lider.add_trace(go.Bar(
-                name=f"{lider or 'Sem Líder de Contrato'}",
-                x=calendario,
-                y=y_previstos
+                name=lider,
+                x=[x_meses_previsto_pago, x_tipos_previsto_pago],
+                y=valores
             ))
 
         fig_barra_lider.update_layout(
             barmode='stack',
-            title="Pagamentos Previstos (Eventos + OS por Líder de Contrato, conforme calendário de pagamento)",
-            xaxis_title="Data do Calendário",
-            yaxis_title="Valor Previsto (R$)",
+            title="Pagamentos Previstos x Pagos (Eventos + OS por Líder de Contrato, por mês)",
+            xaxis_title="Mês / Tipo",
+            yaxis_title="Valor (R$)",
             template="plotly_white",
-            height=500,
+            height=550,
             legend_title="Líder de Contrato"
         )
 
         grafico_barras_lider_contrato = plot(fig_barra_lider, output_type='div')
 
         # ==== GRÁFICO 2.2: POR PROJETO ====
-        calendario = calendario_do_periodo(
-            list(eventos.values_list('data_prevista_pagamento', flat=True))
-            + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
-        )
-
-        # filtra os projetos conforme coordenador (ou todos se não houver filtro)
-        projetos_eventos = list(
-            eventos.values_list('contrato_terceiro__cod_projeto__cod_projeto', flat=True)
-        )
-        projetos_os = list(
-            os_queryset.values_list('cod_projeto__cod_projeto', flat=True)
-        )
-        projetos = sorted({projeto for projeto in (projetos_eventos + projetos_os) if projeto})
-
+        pagamentos_por_projeto = totais_mensais_por_categoria("projeto")
         fig_barra_proj = go.Figure()
-        for proj in projetos:
-            y_previstos = []
-            data_inicio = None
-
-            for data_fim in calendario:
-                filtro_periodo = filtro_periodo_pagamento(
-                    "data_prevista_pagamento",
-                    data_fim,
-                    data_inicio,
-                )
-
-                filtro_base_evento = Q(contrato_terceiro__cod_projeto__cod_projeto=proj)
-                filtro_base_os = Q(cod_projeto__cod_projeto=proj)
-                if coordenador:
-                    filtro_base_evento &= Q(contrato_terceiro__coordenador=coordenador)
-                    filtro_base_os &= Q(coordenador=coordenador)
-
-                eventos_previsto = eventos.filter(filtro_periodo & filtro_base_evento)
-                total_previsto_eventos = eventos_previsto.aggregate(
-                    total=Coalesce(Sum('valor_previsto'), Decimal('0.00'))
-                )['total']
-                os_previsto = os_queryset.filter(
-                    filtro_periodo
-                ).filter(filtro_base_os)
-                total_previsto_os = os_previsto.aggregate(
-                    total=Coalesce(Sum('valor'), Decimal('0.00'))
-                )['total']
-
-                y_previstos.append(total_previsto_eventos + total_previsto_os)
-                data_inicio = data_fim
-
+        for proj in sorted(pagamentos_por_projeto):
+            valores = []
+            for mes in meses:
+                valores.append(pagamentos_por_projeto[proj][mes].get("Previsto", Decimal("0.00")))
+                valores.append(pagamentos_por_projeto[proj][mes].get("Pago", Decimal("0.00")))
             fig_barra_proj.add_trace(go.Bar(
-                name=f"{proj or 'Sem Projeto'}",
-                x=calendario,
-                y=y_previstos
+                name=proj,
+                x=[x_meses_previsto_pago, x_tipos_previsto_pago],
+                y=valores
             ))
 
         fig_barra_proj.update_layout(
             barmode='stack',
-            title="Pagamentos Previstos (Eventos + OS por Projeto, conforme calendário de pagamento)",
-            xaxis_title="Data do Calendário",
-            yaxis_title="Valor Previsto (R$)",
+            title="Pagamentos Previstos x Pagos (Eventos + OS por Projeto, por mês)",
+            xaxis_title="Mês / Tipo",
+            yaxis_title="Valor (R$)",
             template="plotly_white",
-            height=500,
+            height=550,
             legend_title="Projeto"
         )
 
@@ -10344,75 +10316,101 @@ def previsao_pagamentos(request):
 
         # ==== GRÁFICO 3: PREVISTO x PAGO (EVENTOS + OS) ====
 
-        calendario = calendario_do_periodo(
-            list(eventos.values_list('data_prevista_pagamento', flat=True))
-            + list(eventos.values_list('data_pagamento', flat=True))
-            + list(os_queryset.values_list('data_prevista_pagamento', flat=True))
-            + list(os_queryset.values_list('data_pagamento', flat=True))
-        )
+        previsto_por_mes = defaultdict(Decimal)
+        pago_por_mes = defaultdict(Decimal)
+        for evento in eventos:
+            if data_no_periodo(evento.data_prevista_pagamento):
+                previsto_por_mes[mes_referencia(evento.data_prevista_pagamento)] += evento.valor_previsto or 0
+            if data_no_periodo(evento.data_pagamento):
+                pago_por_mes[mes_referencia(evento.data_pagamento)] += evento.valor_pago or 0
+        for ordem_servico in os_queryset:
+            if data_no_periodo(ordem_servico.data_prevista_pagamento):
+                previsto_por_mes[mes_referencia(ordem_servico.data_prevista_pagamento)] += ordem_servico.valor or 0
+            if data_no_periodo(ordem_servico.data_pagamento):
+                pago_por_mes[mes_referencia(ordem_servico.data_pagamento)] += ordem_servico.valor_pago or 0
 
-        y_previstos = []
-        y_pagos = []
-        data_inicio = None
-
-        for data_fim in calendario:
-            filtro_prev_evento = filtro_periodo_pagamento(
-                "data_prevista_pagamento",
-                data_fim,
-                data_inicio,
-            )
-            filtro_prev_os = filtro_periodo_pagamento(
-                "data_prevista_pagamento",
-                data_fim,
-                data_inicio,
-            )
-            filtro_pago_evento = filtro_periodo_pagamento(
-                "data_pagamento",
-                data_fim,
-                data_inicio,
-            )
-            filtro_pago_os = filtro_periodo_pagamento(
-                "data_pagamento",
-                data_fim,
-                data_inicio,
-            )
-
-            total_prev_eventos = eventos.filter(filtro_prev_evento).aggregate(
-                total=Coalesce(Sum("valor_previsto"), Decimal("0.00"))
-            )["total"]
-
-            total_pago_eventos = eventos.filter(filtro_pago_evento).aggregate(
-                total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
-            )["total"]
-
-            total_prev_os = os_queryset.filter(filtro_prev_os).aggregate(
-                total=Coalesce(Sum("valor"), Decimal("0.00"))
-            )["total"]
-
-            total_pago_os = os_queryset.filter(filtro_pago_os).aggregate(
-                total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
-            )["total"]
-
-            y_previstos.append(total_prev_eventos + total_prev_os)
-            y_pagos.append(total_pago_eventos + total_pago_os)
-
-            data_inicio = data_fim
+        y_previstos = [previsto_por_mes.get(mes, Decimal("0.00")) for mes in meses]
+        y_pagos = [pago_por_mes.get(mes, Decimal("0.00")) for mes in meses]
 
         fig_barra_final = go.Figure(data=[
-            go.Bar(name="Previsto", x=calendario, y=y_previstos, marker_color="orange"),
-            go.Bar(name="Pago", x=calendario, y=y_pagos, marker_color="green"),
+            go.Bar(name="Previsto", x=meses_labels, y=y_previstos, marker_color="orange"),
+            go.Bar(name="Pago", x=meses_labels, y=y_pagos, marker_color="green"),
         ])
 
         fig_barra_final.update_layout(
             barmode="group",
-            title="Pagamentos Previsto x Pago (Eventos + OS)",
-            xaxis_title="Data",
+            title="Pagamentos Previsto x Pago (Eventos + OS por mês)",
+            xaxis_title="Mês",
             yaxis_title="Valor (R$)",
             template="plotly_white",
             height=500,
         )
 
         grafico_barra = plot(fig_barra_final, output_type="div")
+
+        # ==== GRÁFICO 4: PREVISTO x PAGO POR CENTRO ====
+        pagamentos_por_centro = defaultdict(lambda: defaultdict(lambda: defaultdict(Decimal)))
+        for evento in eventos:
+            coordenador_ref = coordenador_evento(evento)
+            if data_no_periodo(evento.data_prevista_pagamento):
+                distribuir_por_centros(
+                    pagamentos_por_centro,
+                    evento.data_prevista_pagamento,
+                    evento.valor_previsto,
+                    coordenador_ref,
+                    "Previsto",
+                )
+            if data_no_periodo(evento.data_pagamento):
+                distribuir_por_centros(
+                    pagamentos_por_centro,
+                    evento.data_pagamento,
+                    evento.valor_pago,
+                    coordenador_ref,
+                    "Pago",
+                )
+
+        for ordem_servico in os_queryset:
+            coordenador_ref = coordenador_os(ordem_servico)
+            if data_no_periodo(ordem_servico.data_prevista_pagamento):
+                distribuir_por_centros(
+                    pagamentos_por_centro,
+                    ordem_servico.data_prevista_pagamento,
+                    ordem_servico.valor,
+                    coordenador_ref,
+                    "Previsto",
+                )
+            if data_no_periodo(ordem_servico.data_pagamento):
+                distribuir_por_centros(
+                    pagamentos_por_centro,
+                    ordem_servico.data_pagamento,
+                    ordem_servico.valor_pago,
+                    coordenador_ref,
+                    "Pago",
+                )
+
+        fig_barra_centros = go.Figure()
+        for centro in sorted(pagamentos_por_centro):
+            valores = []
+            for mes in meses:
+                valores.append(pagamentos_por_centro[centro][mes].get("Previsto", Decimal("0.00")))
+                valores.append(pagamentos_por_centro[centro][mes].get("Pago", Decimal("0.00")))
+            fig_barra_centros.add_trace(go.Bar(
+                name=centro,
+                x=[x_meses_previsto_pago, x_tipos_previsto_pago],
+                y=valores,
+            ))
+
+        fig_barra_centros.update_layout(
+            barmode="stack",
+            title="Pagamentos Previstos x Pagos por Centro (centros dos Líderes Técnicos)",
+            xaxis_title="Mês / Tipo",
+            yaxis_title="Valor (R$)",
+            template="plotly_white",
+            height=550,
+            legend_title="Centro",
+        )
+
+        grafico_barras_centros = plot(fig_barra_centros, output_type="div")
 
 
         # ==== TABELA DE BMs ====
@@ -10439,13 +10437,23 @@ def previsao_pagamentos(request):
         bms = bms.select_related(
             'contrato__cod_projeto',
             'contrato__coordenador',
+            'contrato__lider_contrato',
             'evento',
-            'os'
+            'os',
+            'os__cod_projeto',
+            'os__cod_projeto__lider_contrato',
+            'os__lider_contrato',
         ).order_by('-data_pagamento')
 
         # Se o coordenador foi selecionado, filtra também os BMs
         if coordenador:
-            bms = bms.filter(contrato__coordenador=coordenador)
+            bms = bms.filter(
+                Q(contrato__coordenador=coordenador)
+                | Q(contrato__coordenadores=coordenador)
+                | Q(os__coordenador=coordenador)
+                | Q(os__cod_projeto__coordenador=coordenador)
+                | Q(os__cod_projeto__coordenadores=coordenador)
+            ).distinct()
 
         # Determina status de aprovação (para exibir na tabela)
         for bm in bms:
@@ -10471,6 +10479,24 @@ def previsao_pagamentos(request):
             approval_info = bm_approval_audit_map.get(bm.id, {})
             bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
             bm.aprovacao_gerente_audit = approval_info.get("gerente")
+            projeto_referencia = (
+                bm.os.cod_projeto
+                if bm.os_id and bm.os and bm.os.cod_projeto
+                else bm.contrato.cod_projeto
+            )
+            lider_referencia = None
+            if projeto_referencia and projeto_referencia.lider_contrato:
+                lider_referencia = projeto_referencia.lider_contrato
+            if not lider_referencia and bm.os_id and bm.os and bm.os.lider_contrato:
+                lider_referencia = bm.os.lider_contrato
+            if not lider_referencia:
+                lider_referencia = bm.contrato.lider_contrato
+            bm.projeto_referencia = projeto_referencia.cod_projeto if projeto_referencia else ""
+            bm.lider_contrato_referencia = (
+                lider_referencia.get_full_name() or lider_referencia.username
+                if lider_referencia
+                else ""
+            )
 
         total_bm_pago = sum(bm.valor_pago or 0 for bm in bms)
         total_bm_previsto = sum(
@@ -10491,6 +10517,7 @@ def previsao_pagamentos(request):
         "grafico_barras": grafico_barras,
         "grafico_barras_lider_contrato": grafico_barras_lider_contrato,
         "grafico_barras_projeto": grafico_barras_projeto,
+        "grafico_barras_centros": grafico_barras_centros,
         "grafico_barra": grafico_barra,
         "bms": bms,
         "total_bm_pago": total_bm_pago,
@@ -10541,7 +10568,13 @@ def download_bms_aprovados(request):
 
     # === FILTRAR POR COORDENADOR, SE APLICADO ===
     if coordenador:
-        bms_aprovados = bms_aprovados.filter(contrato__coordenador=coordenador)
+        bms_aprovados = bms_aprovados.filter(
+            Q(contrato__coordenador=coordenador)
+            | Q(contrato__coordenadores=coordenador)
+            | Q(os__coordenador=coordenador)
+            | Q(os__cod_projeto__coordenador=coordenador)
+            | Q(os__cod_projeto__coordenadores=coordenador)
+        ).distinct()
 
     # === APENAS COM ARQUIVO ===
     bms_aprovados = bms_aprovados.exclude(arquivo_bm='')
@@ -10571,11 +10604,12 @@ def download_bms_aprovados(request):
                 if hash_conteudo in hashes_ja_incluidos:
                     continue
 
-                nome_projeto = (
-                    bm.contrato.cod_projeto.cod_projeto
-                    if bm.contrato and bm.contrato.cod_projeto
-                    else "SemProjeto"
-                )
+                if bm.os and bm.os.cod_projeto:
+                    nome_projeto = bm.os.cod_projeto.cod_projeto
+                elif bm.contrato and bm.contrato.cod_projeto:
+                    nome_projeto = bm.contrato.cod_projeto.cod_projeto
+                else:
+                    nome_projeto = "SemProjeto"
                 nome_original = bm.arquivo_bm.name.split('/')[-1]
                 nome_arquivo_zip = f"{nome_projeto}_BM{bm.numero_bm}_{nome_original}"
 
