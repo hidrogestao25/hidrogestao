@@ -3328,6 +3328,16 @@ def can_user_manage_os_delivery(user, os):
     return False
 
 
+def can_user_manage_bm_operational_approval(user, bm):
+    if not user or not bm:
+        return False
+    if bm.os_id:
+        return can_user_manage_os_delivery(user, bm.os)
+    if bm.evento_id:
+        return can_user_manage_event_delivery(user, bm.contrato)
+    return False
+
+
 def can_user_request_contract_addendum(user, contrato):
     if not user or not contrato:
         return False
@@ -9710,7 +9720,7 @@ def registrar_entrega(request, pk):
         "evento": evento,
         "contrato": contrato,
         "can_manage_delivery": can_manage_delivery,
-        "can_approve_bm_as_lider": request.user.grupo == "lider_contrato" and request.user == contrato.referencia_lider_contrato or request.user.grupo == "gerente_lider" and can_manage_delivery,
+        "can_approve_bm_as_lider": request.user.grupo in ["lider_contrato", "gerente_lider"] and can_manage_delivery,
         "can_approve_bm_as_gerente": user_has_gerente_contrato_role(request.user),
         "boletins_detalhados": boletins_detalhados,
         "has_reprovacao_coordenador": has_reprovacao_coordenador,
@@ -9747,7 +9757,7 @@ def avaliar_bm(request, bm_id):
         }, status=400)
 
     if usuario.grupo in ["lider_contrato", "gerente_lider"]:
-        if not can_user_manage_event_delivery(usuario, contrato):
+        if not can_user_manage_bm_operational_approval(usuario, bm):
             return JsonResponse({
                 "success": False,
                 "error": "Você não tem permissão para avaliar este BM."
@@ -11357,7 +11367,7 @@ def detalhes_entrega(request, evento_id):
     return render(request, 'contratos/detalhes_entrega.html', {
         'evento': evento,
         'fornecedor': fornecedor,
-        'can_approve_bm_as_lider': request.user.grupo == 'lider_contrato' and request.user == contrato.referencia_lider_contrato or request.user.grupo == 'gerente_lider' and can_user_manage_event_delivery(request.user, contrato),
+        'can_approve_bm_as_lider': request.user.grupo in ["lider_contrato", "gerente_lider"] and can_user_manage_event_delivery(request.user, contrato),
         'can_approve_bm_as_gerente': user_has_gerente_contrato_role(request.user),
         'bms': bms,
         'tem_reprovacao_coordenador': tem_reprovacao_coordenador,
@@ -11577,7 +11587,7 @@ def registrar_entrega_os(request, pk):
             "os": os,
             "form": form,
             "can_manage_delivery": can_user_manage_os_delivery(request.user, os),
-            "can_approve_bm_as_lider": request.user.grupo == "lider_contrato" and request.user == os.lider_contrato or request.user.grupo == "gerente_lider" and user_shares_center_with_coordinator(request.user, os.coordenador),
+            "can_approve_bm_as_lider": request.user.grupo in ["lider_contrato", "gerente_lider"] and can_user_manage_os_delivery(request.user, os),
             "can_approve_bm_as_gerente": user_has_gerente_contrato_role(request.user),
             "boletins_detalhados": boletins_detalhados,
             "has_reprovacao_coordenador": has_reprovacao_coordenador,

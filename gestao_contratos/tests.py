@@ -3187,6 +3187,26 @@ class EventBMApprovalFlowTests(BaseUserTestCase):
             valor_pago=Decimal("500.00"),
         )
 
+    def create_bm_os(self, lider_os):
+        contrato_guarda = self.create_supplier_contract(
+            cod_projeto=self.contrato_base,
+            guarda_chuva=True,
+            num_contrato="CT-BM-OS-FLUXO",
+        )
+        os_obj = self.create_os(
+            contrato=contrato_guarda,
+            coordenador=self.coordenador,
+            lider_contrato=lider_os,
+            titulo="OS BM Fluxo",
+        )
+        return BM.objects.create(
+            contrato=contrato_guarda,
+            os=os_obj,
+            numero_bm=1,
+            parcela_paga=1,
+            valor_pago=Decimal("500.00"),
+        )
+
     def avaliar_evento_com(self, usuario, comentario="Evento avaliado para liberar BM."):
         return AvaliacaoFornecedor.objects.create(
             empresa_terceira=self.contrato_terceiro.empresa_terceira,
@@ -3216,6 +3236,21 @@ class EventBMApprovalFlowTests(BaseUserTestCase):
         self.assertEqual(bm.status_gerente, "pendente")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
+
+    def test_lider_da_os_pode_aprovar_bm_da_os(self):
+        lider_os = self.create_user("lider_os_bm_fluxo", "lider_contrato")
+        bm = self.create_bm_os(lider_os)
+        self.client.force_login(lider_os)
+
+        response = self.client.post(
+            reverse("avaliar_bm", args=[bm.pk]),
+            {"acao": "aprovar"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        bm.refresh_from_db()
+        self.assertEqual(bm.status_coordenador, "aprovado")
+        self.assertEqual(bm.status_gerente, "pendente")
 
     def test_gerente_contrato_aprova_bm_sem_precisar_de_aprovacao_do_lider(self):
         bm = self.create_bm_evento()
