@@ -10285,6 +10285,7 @@ class DocmGenerationTests(BaseUserTestCase):
         self.cliente = self.create_client("Cliente Docm", "00.000.000/0001-55")
         self.fornecedor = self.create_supplier("Fornecedor Docm", "11.111.111/0001-55")
         self.fornecedor.endereco = "Rua das Flores"
+        self.fornecedor.complemento = "Sala 101"
         self.fornecedor.numero = "123"
         self.fornecedor.bairro = "Centro"
         self.fornecedor.municipio = "Belo Horizonte"
@@ -10633,7 +10634,7 @@ class DocmGenerationTests(BaseUserTestCase):
 
     def test_geradores_docm_cobrem_cpf_cnpj_e_campos_endereco_faltantes(self):
         contract_template_path = self.create_docm_template(
-            "__cpf_cnpj__ __nome_empresa_terceira__",
+            "__cpf_cnpj__ __complemento__ __nome_empresa_terceira__",
             "",
         )
         addendum_template_path = self.create_docm_template(
@@ -10664,8 +10665,9 @@ class DocmGenerationTests(BaseUserTestCase):
         addendum_header_xml = self.read_docm_xml(addendum_response, "word/header1.xml")
 
         self.assertIn("11.111.111/0001-55", contract_document_xml)
+        self.assertIn("SALA 101", contract_document_xml)
         self.assertIn("11.111.111/0001-55", addendum_document_xml)
-        self.assertIn("-", addendum_document_xml)
+        self.assertIn("SALA 101", addendum_document_xml)
         self.assertIn("CENTRO", addendum_document_xml)
         self.assertIn("BELO HORIZONTE", addendum_document_xml)
         self.assertIn("MG", addendum_document_xml)
