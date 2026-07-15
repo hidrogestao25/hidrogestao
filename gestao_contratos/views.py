@@ -6567,8 +6567,13 @@ def _prepare_direct_os_form(form, contrato):
     form.initial["lider_contrato"] = contrato.cod_projeto.lider_contrato if contrato.cod_projeto else None
     form.initial["status"] = "em_execucao"
 
-    for field_name in ["contrato", "solicitacao", "cod_projeto", "status"]:
+    for field_name in ["contrato", "solicitacao", "status"]:
         form.fields.pop(field_name, None)
+
+    if contrato.cod_projeto:
+        form.fields.pop("cod_projeto", None)
+    elif "cod_projeto" in form.fields:
+        form.fields["cod_projeto"].required = True
 
     return form
 
@@ -6588,11 +6593,23 @@ def cadastrar_os_contrato_guarda_chuva(request, contrato_id):
             ordem_servico = form.save(commit=False)
             ordem_servico.contrato = contrato
             ordem_servico.solicitacao = None
-            ordem_servico.cod_projeto = contrato.cod_projeto
-            if not ordem_servico.lider_contrato and contrato.cod_projeto:
-                ordem_servico.lider_contrato = contrato.cod_projeto.lider_contrato
-            if not ordem_servico.coordenador and contrato.cod_projeto:
-                ordem_servico.coordenador = contrato.cod_projeto.coordenador
+            if contrato.cod_projeto:
+                ordem_servico.cod_projeto = contrato.cod_projeto
+            if not ordem_servico.cod_projeto:
+                form.add_error("cod_projeto", "Informe o projeto desta OS.")
+                return render(
+                    request,
+                    "forms/os_form.html",
+                    {
+                        "form": form,
+                        "direct_guarda_chuva": True,
+                        "contrato_referencia": contrato,
+                    },
+                )
+            if not ordem_servico.lider_contrato:
+                ordem_servico.lider_contrato = ordem_servico.cod_projeto.lider_contrato
+            if not ordem_servico.coordenador:
+                ordem_servico.coordenador = ordem_servico.cod_projeto.coordenador
             ordem_servico.status = "em_execucao"
             ordem_servico.save()
 
