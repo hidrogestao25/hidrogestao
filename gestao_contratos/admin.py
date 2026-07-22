@@ -85,6 +85,28 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ("username", "email")
     ordering = ("username",)
 
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj and obj.grupo == "gerente_contrato":
+            return fieldsets
+        return self._without_gerente_contrato_ausente(fieldsets)
+
+    def _without_gerente_contrato_ausente(self, fieldsets):
+        adjusted = []
+        for name, options in fieldsets:
+            options = options.copy()
+            fields = options.get("fields", ())
+            options["fields"] = tuple(
+                field for field in fields if field != "gerente_contrato_ausente"
+            )
+            adjusted.append((name, options))
+        return tuple(adjusted)
+
+    def save_model(self, request, obj, form, change):
+        if obj.grupo != "gerente_contrato":
+            obj.gerente_contrato_ausente = False
+        super().save_model(request, obj, form, change)
+
     def get_centros(self, obj):
         return ", ".join([c.nome for c in obj.centros.all()])
 

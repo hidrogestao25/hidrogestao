@@ -16,41 +16,37 @@
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Projeto</th>
-                    <th>Descrição</th>
-                    <th>Data</th>
-                    <th>Previsto no Planejamento</th>
-                    <th>Valor Disponível</th>
-                    <th>Status</th>
+                    <th>Nome do fornecedor</th>
+                    <th>Solicitante</th>
+                    <th>Solicitado em</th>
+                    <th>Valor</th>
+                    <th>Etapa atual</th>
                     <th>SLA</th>
-                    <th>Aprovação do Fornecedor - Gerência</th>
-                    <th>Aprovação do Fornecedor - Diretoria</th>
-                    {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria,gerente_lider' %}
-                        <th>Ações</th>
-                    {% endif %}
+                    <th>Ações</th>
                 </tr>
             </thead>
             <tbody>
                 {% for solicitacao in page_obj %}
                     <tr class="linha-hover" onclick="window.location='{% url 'detalhes_solicitacao' solicitacao.id %}'">
                         <td>#{{ solicitacao.id }}</td>
-                        <td>{{ solicitacao.contrato }}</td>
-                        <td>{{ solicitacao.descricao }}</td>
-                        <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>
                         <td>
-                            {% if solicitacao.previsto_no_orcamento %}
-                                <i class="bi bi-check-lg text-success fs-4"></i>
+                            {% if solicitacao.fornecedor_escolhido %}
+                                {{ solicitacao.fornecedor_escolhido }}
                             {% else %}
-                                <i class="bi bi-x-lg text-danger fs-4"></i>
+                                <span class="text-muted">-</span>
                             {% endif %}
                         </td>
+                        <td>{{ solicitacao.solicitante|default:"-" }}</td>
+                        <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>
                         <td>
-                          {% if solicitacao.valor_disponivel %}
-                            R$ {{ solicitacao.valor_disponivel|floatformat:2 }}
-                          {% else %}
-                            Não informado
-                          {% endif %}
-                          </td>
+                            {% if solicitacao.valor_provisionado %}
+                                R$ {{ solicitacao.valor_provisionado|floatformat:2 }}
+                            {% elif solicitacao.valor_disponivel %}
+                                R$ {{ solicitacao.valor_disponivel|floatformat:2 }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if solicitacao.nenhum_fornecedor_ideal %}
                                 Nenhum fornecedor é ideal
@@ -63,25 +59,6 @@
                                 <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
                             {% else %}
                                 <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
-                                <span class="badge bg-success">Aprovado</span>
-                            {% elif solicitacao.aprovacao_fornecedor_gerente == "reprovado" %}
-                                <span class="badge bg-danger">Reprovado</span>
-                            {% else %}
-                                <span class="badge bg-secondary">Pendente</span>
-                            {% endif %}
-                        </td>
-
-                        <td>
-                            {% if solicitacao.aprovacao_fornecedor_diretor == "aprovado" %}
-                                <span class="badge bg-success">Aprovado</span>
-                            {% elif solicitacao.aprovacao_fornecedor_diretor == "reprovado" %}
-                                <span class="badge bg-danger">Reprovado</span>
-                            {% else %}
-                                <span class="badge bg-secondary">Pendente</span>
                             {% endif %}
                         </td>
 
@@ -171,7 +148,7 @@
                                 {% endif %}
                             {% endif %}
 
-                            {% if can_act_as_gerente_contrato %}
+                            {% if request.user.grupo == 'gerente_contrato' %}
                                 {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                                     <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success btn-sm">Avaliar Fornecedor</a>
                                 {% endif %}
@@ -253,17 +230,13 @@
           <thead>
               <tr>
                   <th>ID</th>
-                  <th>Projeto</th>
-                  <th>Descrição</th>
-                  <th>Data</th>
-                  <th>Previsto no Planejamento</th>
-                  <th>Valor Provisionado</th>
-                  <th>Status</th>
+                  <th>Nome do fornecedor</th>
+                  <th>Solicitante</th>
+                  <th>Solicitado em</th>
+                  <th>Valor</th>
+                  <th>Etapa atual</th>
                   <th>SLA</th>
-
-                  {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato, gerente_lider' %}
-                      <th>Ações</th>
-                  {% endif %}
+                  <th>Ações</th>
               </tr>
           </thead>
           <tbody>
@@ -273,31 +246,23 @@
 
                   <td>#{{ solicitacao.id }}</td>
                   <td>
-                    {% if solicitacao.contrato %}
-                        {{ solicitacao.contrato }}
-                    {% elif solicitacao.guarda_chuva %}
-                        Guarda-chuva
-                    {% endif %}
-                  </td>
-                  <td>{{ solicitacao.descricao|truncatechars:60 }}</td>
-                  <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>
-
-                  <td>
-                      {% if solicitacao.previsto_no_orcamento %}
-                          <i class="bi bi-check-lg text-success fs-4"></i>
-                      {% else %}
-                          <i class="bi bi-x-lg text-danger fs-4"></i>
-                      {% endif %}
-                  </td>
-
-                  <td>
-                    {% if solicitacao.valor_previsto %}
-                        R$ {{ solicitacao.valor_previsto|floatformat:2 }}
+                    {% if solicitacao.fornecedor_escolhido %}
+                        {{ solicitacao.fornecedor_escolhido }}
                     {% else %}
-                        -
+                        <span class="text-muted">-</span>
                     {% endif %}
                   </td>
-
+                  <td>{{ solicitacao.solicitante|default:"-" }}</td>
+                  <td>{{ solicitacao.data_solicitacao|date:"d/m/Y H:i" }}</td>
+                  <td>
+                    {% if solicitacao.valor_provisionado %}
+                        R$ {{ solicitacao.valor_provisionado|floatformat:2 }}
+                    {% elif solicitacao.valor_disponivel %}
+                        R$ {{ solicitacao.valor_disponivel|floatformat:2 }}
+                    {% else %}
+                        <span class="text-muted">-</span>
+                    {% endif %}
+                  </td>
                   <td>
                       {{ solicitacao.status }}
                   </td>
@@ -310,7 +275,6 @@
                   </td>
 
                     <!-- AÇÕES -->
-                  {% if request.user.grupo in 'suprimento,lider_contrato,gerente,gerente_contrato,diretoria,gerente_lider' %}
                   <td onclick="event.stopPropagation();">
 
                       {% if request.user.grupo == 'suprimento' %}
@@ -370,7 +334,7 @@
                           {% endif %}
                       {% endif %}
 
-                      {% if can_act_as_gerente_contrato %}
+                      {% if request.user.grupo == 'gerente_contrato' %}
                           {% if solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                           <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
                           class="btn btn-success btn-sm">
@@ -414,7 +378,6 @@
                       {% endif %}
 
                   </td>
-                  {% endif %}
               </tr>
               {% endfor %}
           </tbody>
@@ -475,15 +438,12 @@
         <thead class="table-light">
             <tr>
                 <th>ID</th>
-                <th>Projeto</th>
+                <th>Nome do fornecedor</th>
                 <th>Título</th>
-                {% if request.user.grupo != "lider_contrato" %}
-                  <th>Solicitante</th>
-                {% endif %}
-                <th>Líder do Contrato</th>
-                <th>Valor Previsto</th>
-                <th>Prazo</th>
-                <th>Status</th>
+                <th>Solicitante</th>
+                <th>Solicitado em</th>
+                <th>Valor</th>
+                <th>Etapa atual</th>
                 <th>SLA</th>
                 <th>Ações</th>
             </tr>
@@ -492,43 +452,42 @@
             {% for os in ordens_servico_page %}
             <tr class="linha-hover" onclick="window.location='{% url 'detalhe_ordem_servico' os.id %}'">
                 <td>#{{ os.id }}</td>
-                <td>{{ os.contrato }}</td>
-                <td>{{ os.titulo }}</td>
-                {% if request.user.grupo != "lider_contrato" %}
-                  <td>{{ os.solicitante.get_full_name|default:os.coordenador.username }}</td>
-                {% endif %}
                 <td>
-                    {% if os.lider_contrato %}
-                        {{ os.lider_contrato.get_full_name|default:os.lider_contrato.username }}
+                    {% if os.contrato and os.contrato.empresa_terceira %}
+                        {{ os.contrato.empresa_terceira }}
                     {% else %}
-                        -
+                        <span class="text-muted">-</span>
                     {% endif %}
                 </td>
+                <td>{{ os.titulo }}</td>
+                <td>
+                    {% if os.solicitante %}
+                        {{ os.solicitante.get_full_name|default:os.solicitante.username }}
+                    {% else %}
+                        <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+                <td>{{ os.criado_em|date:"d/m/Y H:i" }}</td>
                 <td>
                     {% if os.valor_previsto %}
                         R$ {{ os.valor_previsto|floatformat:2 }}
                     {% else %}
-                        -
+                        <span class="text-muted">-</span>
                     {% endif %}
                 </td>
                 <td>
-                    {% if os.prazo_execucao %}
-                        {{ os.prazo_execucao|date:"d/m/Y" }}
-                    {% else %}
-                        -
-                    {% endif %}
-                </td>
-                <td>
-                    {% if os.status == 'rascunho' %}
+                    {% if os.status == "rascunho" %}
                         <span class="badge bg-secondary">Rascunho</span>
-                    {% elif 'pendente' in os.status %}
+                    {% elif "pendente" in os.status %}
                         <span class="badge bg-warning">Pendente</span>
-                    {% elif os.status == 'aprovada' %}
+                    {% elif os.status == "aprovada" %}
                         <span class="badge bg-success">Aprovada</span>
-                    {% elif os.status == 'reprovada' %}
+                    {% elif os.status == "reprovada" %}
                         <span class="badge bg-danger">Reprovada</span>
-                    {% elif os.status == 'finalizada' %}
+                    {% elif os.status == "finalizada" %}
                         <span class="badge bg-dark">Finalizada</span>
+                    {% else %}
+                        {{ os.get_status_display|default:os.status }}
                     {% endif %}
                 </td>
                 <td>
@@ -606,25 +565,29 @@
         <thead class="table-light">
             <tr>
                 <th>ID</th>
-                <th>Contrato</th>
+                <th>Nome do fornecedor</th>
                 <th>Solicitante</th>
                 <th>Solicitado em</th>
-                <th>Novo valor total</th>
-                <th>Nova data fim</th>
+                <th>Valor</th>
                 <th>Etapa atual</th>
                 <th>SLA</th>
-                <th>Acoes</th>
+                <th>Ações</th>
             </tr>
         </thead>
         <tbody>
             {% for aditivo in aditivos_page %}
             <tr class="linha-hover" onclick="window.location='{% url 'detalhes_aditivo_contrato' aditivo.id %}'">
                 <td>#{{ aditivo.id }}</td>
-                <td>{{ aditivo.contrato.num_contrato }} - {{ aditivo.contrato.empresa_terceira }}</td>
+                <td>
+                    {% if aditivo.contrato and aditivo.contrato.empresa_terceira %}
+                        {{ aditivo.contrato.empresa_terceira }}
+                    {% else %}
+                        <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
                 <td>{{ aditivo.solicitado_por.get_full_name|default:aditivo.solicitado_por }}</td>
                 <td>{{ aditivo.criado_em|date:"d/m/Y H:i" }}</td>
-                <td>{% if aditivo.novo_valor_total %}R$ {{ aditivo.novo_valor_total|floatformat:2 }}{% else %}-{% endif %}</td>
-                <td>{{ aditivo.nova_data_fim|date:"d/m/Y"|default:"-" }}</td>
+                <td>{% if aditivo.novo_valor_total %}R$ {{ aditivo.novo_valor_total|floatformat:2 }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
                 <td>{{ aditivo.etapa_atual }}</td>
                 <td>
                     {% if aditivo.sla_display %}
@@ -637,7 +600,7 @@
                     <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
                         Detalhes
                     </a>
-                    {% if can_act_as_gerente_contrato and aditivo.status_gerente == "pendente" %}
+                    {% if request.user.grupo == "gerente_contrato" and aditivo.status_gerente == "pendente" %}
                         <a href="{% url 'avaliar_solicitacao_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-success">
                             Avaliar solicitacao
                         </a>

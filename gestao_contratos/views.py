@@ -1,9 +1,10 @@
-﻿from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
+from django.core.cache import cache
 from django.core.mail import EmailMultiAlternatives, send_mail as django_send_mail
 from django.core.paginator import Paginator
 from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max, Min, DateField, OuterRef, Subquery
@@ -25,6 +26,7 @@ from plotly.offline import plot
 import plotly.colors as pc
 
 import os
+import secrets
 from datetime import date
 import hashlib
 import zipfile
@@ -47,6 +49,40 @@ ADDENDUM_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Mode
 OS_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Ordem de Serviço.docm"
 SIGNED_FILES_PENDING_STATUS = "Aguardando Arquivos Assinados"
 DISABLE_DIRETORIA_EMAIL_NOTIFICATIONS = True
+DUPLICATE_SUBMISSION_MESSAGE = "Esta solicitacao ja foi enviada. Evitei criar uma duplicidade."
+
+
+def _submission_token_key(name):
+    return f"submission_token:{name}"
+
+
+def _get_submission_token(request, name):
+    key = _submission_token_key(name)
+    token = request.session.get(key)
+    if not token:
+        token = secrets.token_urlsafe(24)
+        request.session[key] = token
+    return token
+
+
+def _consume_submission_token(request, name):
+    key = _submission_token_key(name)
+    token = request.session.get(key)
+    submitted_token = request.POST.get("submission_token")
+    if not token and not submitted_token:
+        return True
+    if not token or not submitted_token or submitted_token != token:
+        return False
+    request.session.pop(key, None)
+    request.session.modified = True
+    return True
+
+
+def _consume_recent_action(request, name, cooldown_seconds=10):
+    if not request.session.session_key:
+        request.session.create()
+    key = f"recent_action:{request.session.session_key}:{name}"
+    return cache.add(key, timezone.now().timestamp(), cooldown_seconds)
 
 
 def _filter_directoria_email_recipients(recipient_list):
@@ -60,11 +96,19 @@ def _filter_directoria_email_recipients(recipient_list):
         .exclude(email__exact="")
         .values_list("email", flat=True)
     }
+    non_diretoria_emails = {
+        email.strip().lower()
+        for email in User.objects.exclude(grupo="diretoria")
+        .exclude(email__isnull=True)
+        .exclude(email__exact="")
+        .values_list("email", flat=True)
+    }
+    diretoria_only_emails = diretoria_emails - non_diretoria_emails
 
     return [
         email
         for email in recipient_list
-        if email and email.strip().lower() not in diretoria_emails
+        if email and email.strip().lower() not in diretoria_only_emails
     ]
 
 
@@ -147,6 +191,14 @@ def format_date_br(value):
     if not value:
         return "-"
     return value.strftime("%d/%m/%Y")
+
+
+def format_datetime_br(value):
+    if not value:
+        return "-"
+    if timezone.is_aware(value):
+        value = timezone.localtime(value)
+    return value.strftime("%d/%m/%Y %H:%M")
 
 
 def format_date_long_br(value):
@@ -484,6 +536,12 @@ def calculate_inclusive_days(start_date, end_date):
     if not start_date or not end_date:
         return "-"
     return f"{(end_date - start_date).days + 1} dias"
+
+
+def calculate_contract_days_after_start(start_date, end_date):
+    if not start_date or not end_date:
+        return "-"
+    return f"{max((end_date - start_date).days, 0)} dias"
 
 
 def get_selected_supplier_proposal(solicitacao=None, solicitacao_contrato=None, fornecedor=None):
@@ -951,6 +1009,21 @@ def get_sla_stage_label(tipo_fluxo, stage_slug):
         if stage["slug"] == stage_slug:
             return stage["label"]
     return stage_slug.replace("_", " ").title()
+
+
+def calculate_timeline_progress_percent(current_index, total_steps, timeline_complete=False):
+    if total_steps <= 1:
+        return "0.00"
+    current_index = max(0, min(current_index, total_steps - 1))
+    if timeline_complete and current_index == total_steps - 1:
+        return "100.00"
+    return "{:.2f}".format(((current_index + 0.5) / total_steps) * 100)
+
+
+def get_next_timeline_index(completed_index, total_steps):
+    if total_steps <= 1:
+        return 0
+    return max(0, min(completed_index + 1, total_steps - 1))
 
 
 def get_sla_stage_mapping_rows(config_map):
@@ -3368,7 +3441,7 @@ def can_user_view_addendum(user, aditivo):
 
 
 def can_user_approve_addendum_request_as_gerente(user, aditivo):
-    return bool(user and aditivo and user_has_gerente_contrato_role(user) and aditivo.status_gerente == "pendente")
+    return bool(user and aditivo and user.grupo == "gerente_contrato" and aditivo.status_gerente == "pendente")
 
 
 def can_user_approve_addendum_request_as_diretoria(user, aditivo):
@@ -3425,27 +3498,27 @@ def build_addendum_timeline(aditivo):
         "Concluido",
     ]
     if aditivo.aprovado_totalmente:
-        current_index = 5
+        completed_index = 5
     elif aditivo.minuta_aprovada:
-        current_index = 4
+        completed_index = 3
     elif aditivo.tem_documento:
-        current_index = 3
+        completed_index = 2
     elif aditivo.solicitacao_aprovada_totalmente:
-        current_index = 2
+        completed_index = 1
     else:
-        current_index = 1
-
-    progress_percent = 0
-    if len(labels) > 1:
-        if current_index == 5:
-            progress_percent = 100
-        else:
-            progress_percent = (current_index / (len(labels))) * 100
+        completed_index = 0
+    current_index = get_next_timeline_index(completed_index, len(labels))
 
     return {
         "labels": labels,
         "current_index": current_index,
-        "progress_percent": float(progress_percent),
+        "progress_percent": float(
+            calculate_timeline_progress_percent(
+                current_index,
+                len(labels),
+                timeline_complete=completed_index == len(labels) - 1,
+            )
+        ),
     }
 
 
@@ -3484,6 +3557,18 @@ def bm_has_operational_approval(bm):
         bm.status_coordenador == "aprovado"
         or bm.status_gerente == "aprovado"
     ) and bm.status_coordenador != "reprovado" and bm.status_gerente != "reprovado"
+
+
+def user_can_approve_bm_payment(user, bm):
+    return bool(
+        user
+        and bm
+        and user.grupo == "diretoria"
+        and (
+            bm_has_operational_approval(bm)
+            or (user_can_cover_gerente_contrato(user) and bm.status_gerente == "pendente")
+        )
+    )
 
 
 def bm_is_operationally_pending(bm):
@@ -4050,7 +4135,8 @@ def home(request):
         ).exclude(status__in=["aprovada", "reprovada", "finalizada"]).distinct()
 
         bms_pendentes = BM.objects.filter(
-            contrato__lider_contrato=user
+            Q(contrato__lider_contrato=user)
+            | Q(os__lider_contrato=user)
         ).filter(
             Q(status_coordenador="pendente", status_gerente="pendente")
             | (Q(aprovacao_pagamento="pendente") & bm_operational_approval_query())
@@ -4060,6 +4146,7 @@ def home(request):
             "contrato",
             "contrato__empresa_terceira",
             "evento",
+            "os",
         ).order_by("-data_pagamento").distinct()
 
         eventos_proximos = Evento.objects.filter(
@@ -4234,9 +4321,8 @@ def home(request):
         ).exclude(status__in=["finalizada","reprovada"]).distinct()
 
         bms_pendentes = BM.objects.filter(
-            Q(contrato__coordenador__centros__in=centros_ids)
-            | Q(contrato__coordenadores__centros__in=centros_ids)
-            | Q(contrato__lider_contrato=user)
+            Q(contrato__lider_contrato=user)
+            | Q(os__lider_contrato=user)
         ).filter(
             Q(status_coordenador="pendente", status_gerente="pendente")
             | (Q(aprovacao_pagamento="pendente") & bm_operational_approval_query())
@@ -4459,10 +4545,14 @@ def home(request):
         ).distinct()
 
         # BM aprovados por Coordenador e Gerente mas pendentes na Diretoria
+        bm_diretoria_pending_query = bm_operational_approval_query()
+        if user_can_cover_gerente_contrato(user):
+            bm_diretoria_pending_query |= Q(status_gerente="pendente")
+
         bms_pendentes = BM.objects.filter(
             Q(aprovacao_pagamento="pendente")
         ).filter(
-            bm_operational_approval_query()
+            bm_diretoria_pending_query
         ).exclude(
             Q(status_coordenador="reprovado") | Q(status_gerente="reprovado")
         ).select_related(
@@ -5462,6 +5552,7 @@ def contrato_fornecedor_detalhe(request, pk):
 @login_required
 def solicitar_aditivo_contrato(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
+    token_name = f"solicitar_aditivo_contrato:{contrato.pk}"
 
     if not can_user_request_contract_addendum(request.user, contrato):
         messages.error(request, "Você não tem permissão para solicitar aditivo neste contrato.")
@@ -5482,6 +5573,9 @@ def solicitar_aditivo_contrato(request, pk):
     if request.method == "POST":
         form = SolicitacaoAditivoContratoTerceiroForm(request.POST)
         if form.is_valid():
+            if not _consume_submission_token(request, token_name):
+                messages.warning(request, DUPLICATE_SUBMISSION_MESSAGE)
+                return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
             aditivo = form.save(commit=False)
             aditivo.contrato = contrato
             aditivo.solicitado_por = request.user
@@ -5530,7 +5624,7 @@ def solicitar_aditivo_contrato(request, pk):
     return render(
         request,
         "contratos/solicitar_aditivo_contrato.html",
-        {"contrato": contrato, "form": form, "timeline_steps": None},
+        {"contrato": contrato, "form": form, "timeline_steps": None, "submission_token": _get_submission_token(request, token_name)},
     )
 
 
@@ -5595,9 +5689,15 @@ def avaliar_solicitacao_aditivo_contrato(request, pk):
             if aditivo.status_diretoria != "pendente":
                 messages.warning(request, "A diretoria já avaliou esta solicitação.")
                 return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
-            aditivo.status_diretoria = "aprovado" if acao == "aprovar_diretoria" else "reprovado"
-            aditivo.data_aprovacao_diretoria = timezone.now()
+            status_avaliacao = "aprovado" if acao == "aprovar_diretoria" else "reprovado"
+            data_avaliacao = timezone.now()
+            aditivo.status_diretoria = status_avaliacao
+            aditivo.data_aprovacao_diretoria = data_avaliacao
             aditivo.justificativa_reprovacao_diretoria = justificativa if acao == "reprovar_diretoria" else None
+            if user_can_cover_gerente_contrato(request.user) and aditivo.status_gerente == "pendente":
+                aditivo.status_gerente = status_avaliacao
+                aditivo.data_aprovacao_gerente = data_avaliacao
+                aditivo.justificativa_reprovacao_gerente = justificativa if acao == "reprovar_diretoria" else None
         else:
             messages.error(request, "Ação inválida para esta solicitação de aditivo.")
             return redirect("avaliar_solicitacao_aditivo_contrato", pk=aditivo.pk)
@@ -6075,10 +6175,14 @@ def fornecedor_detalhe(request, pk):
 @login_required
 def nova_solicitacao_contrato(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
+        token_name = "nova_solicitacao_contrato"
         clientes = Cliente.objects.all().order_by('nome')
         if request.method == 'POST':
             form = SolicitacaoContratoForm(request.POST, request.FILES, user=request.user)
             if form.is_valid():
+                if not _consume_submission_token(request, token_name):
+                    messages.warning(request, DUPLICATE_SUBMISSION_MESSAGE)
+                    return redirect('lista_solicitacoes')
                 solicitacao = form.save(commit=False)
                 solicitacao.lider_contrato = request.user
                 solicitacao.status = "Solicitação de contratação"
@@ -6132,7 +6236,7 @@ def nova_solicitacao_contrato(request):
                 messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
         else:
             form = SolicitacaoContratoForm(user=request.user)
-        return render(request, 'fornecedores/nova_solicitacao_contrato.html', {'form':form, 'clientes': clientes})
+        return render(request, 'fornecedores/nova_solicitacao_contrato.html', {'form':form, 'clientes': clientes, 'submission_token': _get_submission_token(request, token_name)})
     else:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
@@ -6268,8 +6372,12 @@ def aprovar_solicitacao_contrato(request, pk):
 
         # --- Caso APROVADO ---
         if acao == "aprovar":
+            data_avaliacao = timezone.now()
+            if user_can_cover_gerente_contrato(request.user) and solicitacao.aprovacao_fornecedor_gerente == "pendente":
+                solicitacao.aprovacao_fornecedor_gerente = "aprovado"
+                solicitacao.aprocacao_fornecedor_gerente_em = data_avaliacao
             solicitacao.aprovacao_fornecedor_diretor = "aprovado"
-            solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
+            solicitacao.aprocacao_fornecedor_diretor_em = data_avaliacao
             solicitacao.save()
 
             messages.success(
@@ -6291,8 +6399,13 @@ def aprovar_solicitacao_contrato(request, pk):
 
         # --- Caso REPROVADO ---
         elif acao == "reprovar":
+            data_avaliacao = timezone.now()
+            if user_can_cover_gerente_contrato(request.user) and solicitacao.aprovacao_fornecedor_gerente == "pendente":
+                solicitacao.aprovacao_fornecedor_gerente = "reprovado"
+                solicitacao.aprocacao_fornecedor_gerente_em = data_avaliacao
             solicitacao.status = "Fornecedor reprovado pela diretoria"
             solicitacao.aprovacao_fornecedor_diretor = "reprovado"
+            solicitacao.aprocacao_fornecedor_diretor_em = data_avaliacao
             solicitacao.save()
 
             messages.warning(request, "Fornecedor reprovado.")
@@ -6332,10 +6445,14 @@ def aprovar_solicitacao_contrato(request, pk):
 @login_required
 def nova_solicitacao_prospeccao(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
+        token_name = "nova_solicitacao_prospeccao"
         clientes = Cliente.objects.all().order_by('nome')
         if request.method == 'POST':
             form = SolicitacaoProspeccaoForm(request.POST, user=request.user)
             if form.is_valid():
+                if not _consume_submission_token(request, token_name):
+                    messages.warning(request, DUPLICATE_SUBMISSION_MESSAGE)
+                    return redirect('lista_solicitacoes')
                 solicitacao = form.save(commit=False)
                 solicitacao.lider_contrato = request.user
                 solicitacao.status = "Solicitação de prospecção"
@@ -6388,7 +6505,7 @@ def nova_solicitacao_prospeccao(request):
                 messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
         else:
             form = SolicitacaoProspeccaoForm(user=request.user)
-        return render(request, 'fornecedores/nova_solicitacao.html', {'form':form, 'clientes':clientes})
+        return render(request, 'fornecedores/nova_solicitacao.html', {'form':form, 'clientes':clientes, 'submission_token': _get_submission_token(request, token_name)})
 
     else:
         messages.error(request, "Você não tem permissão para isso!")
@@ -6398,10 +6515,14 @@ def nova_solicitacao_prospeccao(request):
 @login_required
 def nova_solicitacao_guarda_chuva(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
+        token_name = "nova_solicitacao_guarda_chuva"
         clientes = Cliente.objects.all().order_by('nome')
         if request.method == 'POST':
             form = SolicitacaoGuardaChuvaForm(request.POST, request.FILES, user=request.user)
             if form.is_valid():
+                if not _consume_submission_token(request, token_name):
+                    messages.warning(request, DUPLICATE_SUBMISSION_MESSAGE)
+                    return redirect('lista_solicitacoes')
                 solicitacao = form.save(commit=False)
                 solicitacao.lider_contrato = request.user
                 solicitacao.status = "Solicitação de contratação"
@@ -6456,7 +6577,7 @@ def nova_solicitacao_guarda_chuva(request):
                 messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
         else:
             form = SolicitacaoGuardaChuvaForm(user=request.user)
-        return render(request, 'fornecedores/nova_solicitacao_guarda_chuva.html', {'form':form, 'clientes':clientes})
+        return render(request, 'fornecedores/nova_solicitacao_guarda_chuva.html', {'form':form, 'clientes':clientes, 'submission_token': _get_submission_token(request, token_name)})
 
     else:
         messages.error(request, "Você não tem permissão para isso!")
@@ -6511,6 +6632,7 @@ def solicitar_os(request, contrato_id):
         return redirect("home")
 
     contrato = get_object_or_404(ContratoTerceiros, pk=contrato_id)
+    token_name = f"solicitar_os:{contrato.pk}"
 
     if not contrato.guarda_chuva:
         messages.error(request, "A solicitação de OS está disponível apenas para contratos guarda-chuva.")
@@ -6522,6 +6644,9 @@ def solicitar_os(request, contrato_id):
             lider_contrato=request.user
         ).distinct()
         if form.is_valid():
+            if not _consume_submission_token(request, token_name):
+                messages.warning(request, DUPLICATE_SUBMISSION_MESSAGE)
+                return redirect("contrato_fornecedor_detalhe", pk=contrato.pk)
             os = form.save(commit=False)
             os.solicitante = request.user
             os.lider_contrato = os.cod_projeto.lider_contrato if os.cod_projeto else request.user
@@ -6567,7 +6692,7 @@ def solicitar_os(request, contrato_id):
             lider_contrato=request.user
         ).distinct()
 
-    return render(request, 'fornecedores/solicitar_os.html', {'form': form, "contrato": contrato, "seleciona_contrato": False})
+    return render(request, 'fornecedores/solicitar_os.html', {'form': form, "contrato": contrato, "seleciona_contrato": False, "submission_token": _get_submission_token(request, token_name)})
 
 
 def _prepare_direct_os_form(form, contrato):
@@ -6646,9 +6771,13 @@ def solicitar_os_com_contrato(request):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
+    token_name = "solicitar_os_com_contrato"
     if request.method == 'POST':
         form = SolicitacaoOrdemServicoSemContratoForm(request.POST, user=request.user)
         if form.is_valid():
+            if not _consume_submission_token(request, token_name):
+                messages.warning(request, DUPLICATE_SUBMISSION_MESSAGE)
+                return redirect("home")
             os = form.save(commit=False)
             os.solicitante = request.user
             os.lider_contrato = os.cod_projeto.lider_contrato if os.cod_projeto else request.user
@@ -6695,7 +6824,7 @@ def solicitar_os_com_contrato(request):
     return render(
         request,
         'fornecedores/solicitar_os.html',
-        {"form": form, "contrato": None, "seleciona_contrato": True},
+        {"form": form, "contrato": None, "seleciona_contrato": True, "submission_token": _get_submission_token(request, token_name)},
     )
 
 
@@ -7040,11 +7169,19 @@ def aprovar_os_diretoria(request, pk, acao):
         if request.method != "POST" or not justificativa:
             messages.error(request, "A justificativa é obrigatória para reprovar a solicitação de OS.")
             return redirect('detalhe_ordem_servico', pk=os.pk)
-        os.status = 'pendente_gerente'
+        cobre_gerente = user_can_cover_gerente_contrato(request.user) and os.aprovacao_gerente in [None, '', 'pendente']
+        data_avaliacao = timezone.now()
+        os.status = 'solicitacao_os' if cobre_gerente else 'pendente_gerente'
         os.aprovacao_diretor = 'reprovado'
-        os.aprovado_diretor_em = timezone.now()
+        os.aprovado_diretor_em = data_avaliacao
         os.justificativa_reprovacao_diretor = justificativa
-        os.save(update_fields=['status', 'aprovacao_diretor', 'aprovado_diretor_em', 'justificativa_reprovacao_diretor'])
+        update_fields = ['status', 'aprovacao_diretor', 'aprovado_diretor_em', 'justificativa_reprovacao_diretor']
+        if cobre_gerente:
+            os.aprovacao_gerente = 'reprovado'
+            os.aprovado_gerente_em = data_avaliacao
+            os.justificativa_reprovacao_gerente = justificativa
+            update_fields.extend(['aprovacao_gerente', 'aprovado_gerente_em', 'justificativa_reprovacao_gerente'])
+        os.save(update_fields=update_fields)
         try:
             _send_stage_return_notification(
                 f"Solicitação de OS #{os.pk} - Retornada para nova avaliação",
@@ -7062,11 +7199,19 @@ def aprovar_os_diretoria(request, pk, acao):
         messages.error(request, "Solicitacao de OS reprovada pela Diretoria.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
+    cobre_gerente = user_can_cover_gerente_contrato(request.user) and os.aprovacao_gerente in [None, '', 'pendente']
+    data_avaliacao = timezone.now()
     os.aprovacao_diretor = 'aprovado'
-    os.aprovado_diretor_em = timezone.now()
+    os.aprovado_diretor_em = data_avaliacao
     os.justificativa_reprovacao_diretor = None
+    update_fields = ['status', 'aprovacao_diretor', 'aprovado_diretor_em', 'justificativa_reprovacao_diretor']
+    if cobre_gerente:
+        os.aprovacao_gerente = 'aprovado'
+        os.aprovado_gerente_em = data_avaliacao
+        os.justificativa_reprovacao_gerente = None
+        update_fields.extend(['aprovacao_gerente', 'aprovado_gerente_em', 'justificativa_reprovacao_gerente'])
     os.status = 'pendente_suprimento' if os.aprovacao_gerente == 'aprovado' else 'pendente_gerente'
-    os.save(update_fields=['status', 'aprovacao_diretor', 'aprovado_diretor_em', 'justificativa_reprovacao_diretor'])
+    os.save(update_fields=update_fields)
 
     if os.status == 'pendente_suprimento':
         try:
@@ -7786,16 +7931,25 @@ def detalhes_solicitacao_contrato(request, pk):
 
         # DIRETORIA
         elif atua_como_diretoria:
+            cobre_gerente = user_can_cover_gerente_contrato(request.user) and solicitacao.aprovacao_fornecedor_gerente == "pendente"
+            data_avaliacao = timezone.now()
             if acao == "aprovar":
                 solicitacao.aprovacao_fornecedor_diretor = "aprovado"
-                solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
+                solicitacao.aprocacao_fornecedor_diretor_em = data_avaliacao
+                if cobre_gerente:
+                    solicitacao.aprovacao_fornecedor_gerente = "aprovado"
+                    solicitacao.aprocacao_fornecedor_gerente_em = data_avaliacao
             elif acao == "reprovar":
                 if not justificativa:
                     messages.error(request, "A justificativa e obrigatoria para reprovar.")
                     return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
                 solicitacao.aprovacao_fornecedor_diretor = "reprovado"
-                solicitacao.aprocacao_fornecedor_diretor_em = timezone.now()
+                solicitacao.aprocacao_fornecedor_diretor_em = data_avaliacao
                 solicitacao.justificativa_diretoria = justificativa
+                if cobre_gerente:
+                    solicitacao.aprovacao_fornecedor_gerente = "reprovado"
+                    solicitacao.aprocacao_fornecedor_gerente_em = data_avaliacao
+                    solicitacao.justificativa_gerencia = justificativa
         else:
             messages.error(request, "Você não tem permissão para avaliar esta solicitação.")
             return redirect("home")
@@ -7868,8 +8022,13 @@ def detalhes_solicitacao_contrato(request, pk):
 
     eventos = solicitacao.evento_set.all()
 
-    current_index = status_order.index(solicitacao.status)+1 if solicitacao.status in status_order else 0
-    progress_percent = "{:.2f}".format((current_index / (len(status_order))) * 100)
+    completed_index = status_order.index(solicitacao.status) if solicitacao.status in status_order else 0
+    current_index = get_next_timeline_index(completed_index, len(status_order))
+    progress_percent = calculate_timeline_progress_percent(
+        current_index,
+        len(status_order),
+        timeline_complete=completed_index == len(status_order) - 1,
+    )
 
     context = {
         "solicitacao": solicitacao,
@@ -7930,8 +8089,13 @@ def detalhes_solicitacao(request, pk):
 
     eventos = solicitacao.evento_set.all()
 
-    current_index = status_order.index(solicitacao.status)+1 if solicitacao.status in status_order else 0
-    progress_percent = "{:.2f}".format((current_index / (len(status_order))) * 100)
+    completed_index = status_order.index(solicitacao.status) if solicitacao.status in status_order else 0
+    current_index = get_next_timeline_index(completed_index, len(status_order))
+    progress_percent = calculate_timeline_progress_percent(
+        current_index,
+        len(status_order),
+        timeline_complete=completed_index == len(status_order) - 1,
+    )
 
     # Propostas dos fornecedores selecionados
     propostas_dict = {}
@@ -8000,23 +8164,25 @@ def detalhe_os(request, pk):
         'OS Cadastrada',
     ]
 
-    status_map = {
+    completed_status_map = {
         'solicitacao_os': 0,
-        'pendente_gerente': 1,
-        'pendente_diretoria': 2,
-        'pendente_suprimento': 3,
-        'pendente_minuta_gerente': 4,
+        'pendente_gerente': 0,
+        'pendente_diretoria': 1,
+        'pendente_suprimento': 2,
+        'pendente_minuta_gerente': 3,
         'aprovada': 5,
     }
 
-    current_index = status_map.get(os.status, 0)
+    completed_index = completed_status_map.get(os.status, 0)
+    current_index = get_next_timeline_index(completed_index, len(status_order))
 
     total_steps = len(status_order)
 
-    if total_steps > 1:
-        progress_percent = int((current_index / (total_steps - 1)) * 100)
-    else:
-        progress_percent = 0
+    progress_percent = calculate_timeline_progress_percent(
+        current_index,
+        total_steps,
+        timeline_complete=completed_index == total_steps - 1,
+    )
 
     context = {
         'os': os,
@@ -8385,7 +8551,7 @@ def build_contract_docm_replacements(documento_contrato, fornecedor, contrato_pr
         "__nome_empresa__": fornecedor.nome or "-",
         "__cpf_cnpj__": fornecedor.cpf_cnpj or "-",
         "__endereco__": fornecedor.endereco or "-",
-        "__complemento__": fornecedor.complemento or "-",
+        "__complemento__": (fornecedor.complemento or "-").upper(),
         "__numero__": fornecedor.numero or "-",
         "__bairro__": fornecedor.bairro or "-",
         "__municipio__": fornecedor.municipio or "-",
@@ -8401,7 +8567,7 @@ def build_contract_docm_replacements(documento_contrato, fornecedor, contrato_pr
         "__ valor_proposta__": format_currency_br(valor_total, with_symbol=True),
         "__valor_proposta_extenso__": decimal_to_money_words_pt_br(valor_total),
         "__contrato__": contrato_codigo or "-",
-        "__dias_totais__": calculate_inclusive_days(data_inicio, data_fim),
+        "__dias_totais__": calculate_contract_days_after_start(data_inicio, data_fim),
         "__data_inicio__": format_date_br(data_inicio),
         "__data_fim__": format_date_br(data_fim),
         "__documento_proposta__": proposal_document,
@@ -8436,7 +8602,7 @@ def build_addendum_docm_replacements(aditivo):
         "__informacoes_bancarias__": fornecedor.informacoes_bancarias or "-",
         "__endereco__": fornecedor.endereco or "-",
         "__numero__": fornecedor.numero or "-",
-        "__complemento__": fornecedor.complemento or "-",
+        "__complemento__": (fornecedor.complemento or "-").upper(),
         "__bairro__": fornecedor.bairro or "-",
         "__municipio__": fornecedor.municipio or "-",
         "__estado__": fornecedor.estado or "-",
@@ -8504,7 +8670,9 @@ def build_os_docm_replacements(solicitacao_os):
     prazo_execucao = format_date_br(solicitacao_os.prazo_execucao)
     if solicitacao_os.prazo_execucao:
         dias_execucao = max((solicitacao_os.prazo_execucao - timezone.localdate()).days, 0)
-        prazo_execucao = f"{prazo_execucao} ({number_to_words_pt_br(dias_execucao)} dias)"
+        if dias_execucao > 0:
+            prazo_execucao = f"{prazo_execucao} ({number_to_words_pt_br(dias_execucao)} dias)"
+    valor_os = solicitacao_os.valor_previsto or Decimal("0.00")
 
     return {
         "__empresa_terceira__": fornecedor.nome if fornecedor else "-",
@@ -8515,12 +8683,14 @@ def build_os_docm_replacements(solicitacao_os):
         "__objeto_contrato__": contrato.objeto if contrato and contrato.objeto else "-",
         "__descricao_os__": solicitacao_os.descricao or "-",
         "__prazo_execucao__": prazo_execucao,
-        "__valor_os__": format_currency_br(solicitacao_os.valor_previsto or Decimal("0.00"), with_symbol=True),
+        "__valor_os__": f"{format_currency_br(valor_os, with_symbol=True)} ({decimal_to_money_words_pt_br(valor_os)})",
         "__centro_tecnico__": centro_tecnico,
         "__cod_projeto__": projeto.cod_projeto if projeto else "-",
         "__autorizado_diretoria__": (
             diretor_aprovador.get_full_name() or diretor_aprovador.username
         ) if diretor_aprovador and solicitacao_os.aprovacao_diretor == "aprovado" else "-",
+        "__data_autorizacao__": format_datetime_br(solicitacao_os.aprovado_diretor_em)
+        if solicitacao_os.aprovacao_diretor == "aprovado" else "-",
         "__data_hoje__": format_date_br(timezone.localdate()),
     }
 
@@ -9399,25 +9569,7 @@ def buscar_proxima_data_pagamento(request):
 
 @login_required
 def duplicar_evento(request, pk):
-    evento = get_object_or_404(Evento, pk=pk)
-
-    evento.pk = None
-    evento.realizado = False
-    evento.valor_pago = None
-    evento.data_pagamento = None
-
-    if evento.data_prevista:
-        evento.data_prevista = evento.data_prevista + timedelta(days=30)
-
-    if evento.data_prevista_pagamento:
-        evento.data_prevista_pagamento = evento.data_prevista_pagamento + timedelta(days=30)
-
-    preencher_empresa_terceira_do_evento(evento)
-    evento.save()
-
-    messages.success(request, "Evento duplicado com sucesso!")
-
-    return redirect_to_event_origin(evento)
+    return duplicate_event_from_request(request, pk, "prospeccao")
 
 
 
@@ -9446,25 +9598,7 @@ def cadastrar_evento_solicitacao(request, pk):
 
 @login_required
 def duplicar_evento_solicitacao(request, pk):
-    evento = get_object_or_404(Evento, pk=pk)
-
-    evento.pk = None
-    evento.realizado = False
-    evento.valor_pago = None
-    evento.data_pagamento = None
-
-    if evento.data_prevista:
-        evento.data_prevista = evento.data_prevista + timedelta(days=30)
-
-    if evento.data_prevista_pagamento:
-        evento.data_prevista_pagamento = evento.data_prevista_pagamento + timedelta(days=30)
-
-    preencher_empresa_terceira_do_evento(evento)
-    evento.save()
-
-    messages.success(request, "Evento duplicado com sucesso!")
-
-    return redirect_to_event_origin(evento)
+    return duplicate_event_from_request(request, pk, "solicitacao")
 
 
 @login_required
@@ -9497,7 +9631,19 @@ def cadastrar_evento_contrato(request, pk):
 
 @login_required
 def duplicar_evento_contrato(request, pk):
+    return duplicate_event_from_request(request, pk, "contrato")
+
+
+def duplicate_event_from_request(request, pk, origin_name):
     evento = get_object_or_404(Evento, pk=pk)
+
+    if request.method != "POST":
+        messages.warning(request, "Use o botao da tela para duplicar o evento.")
+        return redirect_to_event_origin(evento)
+
+    if not _consume_recent_action(request, f"duplicar_evento:{origin_name}:{pk}"):
+        messages.warning(request, "Este evento ja esta sendo duplicado. Evitei criar uma duplicidade.")
+        return redirect_to_event_origin(evento)
 
     evento.pk = None
     evento.realizado = False
@@ -9673,10 +9819,7 @@ def registrar_entrega(request, pk):
 
     for bm in boletins:
         operational_pending = bm_is_operationally_pending(bm)
-        can_approve_pagamento = (
-            request.user.grupo == "diretoria"
-            and bm_has_operational_approval(bm)
-        )
+        can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
 
         if bm_has_operational_approval(bm):
             row_class = "table-success"
@@ -9721,7 +9864,7 @@ def registrar_entrega(request, pk):
         "contrato": contrato,
         "can_manage_delivery": can_manage_delivery,
         "can_approve_bm_as_lider": request.user.grupo in ["lider_contrato", "gerente_lider"] and can_manage_delivery,
-        "can_approve_bm_as_gerente": user_has_gerente_contrato_role(request.user),
+        "can_approve_bm_as_gerente": request.user.grupo == "gerente_contrato",
         "boletins_detalhados": boletins_detalhados,
         "has_reprovacao_coordenador": has_reprovacao_coordenador,
         "has_reprovacao_gerente": has_reprovacao_gerente,
@@ -9858,15 +10001,22 @@ def avaliar_bm(request, bm_id):
                 "error": "Ação inválida para a diretoria."
             }, status=400)
 
-        if not bm_has_operational_approval(bm):
+        cobre_gerente = user_can_cover_gerente_contrato(usuario) and bm.status_gerente == "pendente"
+
+        if not bm_has_operational_approval(bm) and not cobre_gerente:
             return JsonResponse({
                 "success": False,
                 "error": "O BM ainda não recebeu aprovação operacional de líder ou gerente de contrato."
             }, status=400)
 
         if acao == "aprovar_pagamento":
+            data_avaliacao = timezone.now()
+            if cobre_gerente:
+                bm.status_gerente = "aprovado"
+                bm.data_aprovacao_gerente = data_avaliacao
+                bm.justificativa_reprovacao_gerente = None
             bm.aprovacao_pagamento = "aprovado"
-            bm.data_aprovacao_diretor = timezone.now()
+            bm.data_aprovacao_diretor = data_avaliacao
             bm.justificativa_reprovacao_diretor = None
 
             usuarios_destino = User.objects.filter(grupo__in=["suprimento", "financeiro"])
@@ -9899,8 +10049,13 @@ def avaliar_bm(request, bm_id):
                     "success": False,
                     "error": "A justificativa é obrigatória para reprovar o pagamento do BM."
                 }, status=400)
+            data_avaliacao = timezone.now()
+            if cobre_gerente:
+                bm.status_gerente = "reprovado"
+                bm.data_aprovacao_gerente = data_avaliacao
+                bm.justificativa_reprovacao_gerente = justificativa
             bm.aprovacao_pagamento = "reprovado"
-            bm.data_aprovacao_diretor = timezone.now()
+            bm.data_aprovacao_diretor = data_avaliacao
             bm.justificativa_reprovacao_diretor = justificativa
 
     bm.save()
@@ -10507,6 +10662,7 @@ def previsao_pagamentos(request):
             approval_info = bm_approval_audit_map.get(bm.id, {})
             bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
             bm.aprovacao_gerente_audit = approval_info.get("gerente")
+            bm.can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
             projeto_referencia = (
                 bm.os.cod_projeto
                 if bm.os_id and bm.os and bm.os.cod_projeto
@@ -11349,10 +11505,7 @@ def detalhes_entrega(request, evento_id):
 
     for bm in bms:
         bm.operational_pending = bm_is_operationally_pending(bm)
-        bm.can_approve_pagamento = (
-            request.user.grupo == "diretoria"
-            and bm_has_operational_approval(bm)
-        )
+        bm.can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
         approval_info = bm_approval_audit_map.get(bm.id, {})
         bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
         bm.aprovacao_gerente_audit = approval_info.get("gerente")
@@ -11368,7 +11521,7 @@ def detalhes_entrega(request, evento_id):
         'evento': evento,
         'fornecedor': fornecedor,
         'can_approve_bm_as_lider': request.user.grupo in ["lider_contrato", "gerente_lider"] and can_user_manage_event_delivery(request.user, contrato),
-        'can_approve_bm_as_gerente': user_has_gerente_contrato_role(request.user),
+        'can_approve_bm_as_gerente': request.user.grupo == "gerente_contrato",
         'bms': bms,
         'tem_reprovacao_coordenador': tem_reprovacao_coordenador,
         'tem_reprovacao_gerente': tem_reprovacao_gerente,
@@ -11540,10 +11693,7 @@ def registrar_entrega_os(request, pk):
 
     for bm in boletins:
         operational_pending = bm_is_operationally_pending(bm)
-        can_approve_pagamento = (
-            request.user.grupo == "diretoria"
-            and bm_has_operational_approval(bm)
-        )
+        can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
 
         if bm_has_operational_approval(bm):
             row_class = "table-success"
@@ -11588,7 +11738,7 @@ def registrar_entrega_os(request, pk):
             "form": form,
             "can_manage_delivery": can_user_manage_os_delivery(request.user, os),
             "can_approve_bm_as_lider": request.user.grupo in ["lider_contrato", "gerente_lider"] and can_user_manage_os_delivery(request.user, os),
-            "can_approve_bm_as_gerente": user_has_gerente_contrato_role(request.user),
+            "can_approve_bm_as_gerente": request.user.grupo == "gerente_contrato",
             "boletins_detalhados": boletins_detalhados,
             "has_reprovacao_coordenador": has_reprovacao_coordenador,
             "has_reprovacao_gerente": has_reprovacao_gerente,

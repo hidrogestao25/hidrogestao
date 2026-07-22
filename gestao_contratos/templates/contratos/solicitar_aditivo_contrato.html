@@ -10,8 +10,11 @@
       <p><strong>Contrato:</strong> {{ contrato.num_contrato }} - {{ contrato.empresa_terceira }}</p>
       <p><strong>Projeto:</strong> {{ contrato.cod_projeto }}</p>
 
-      <form method="post">
+      <form method="post" data-prevent-double-submit="true">
         {% csrf_token %}
+        {% if submission_token %}
+          <input type="hidden" name="submission_token" value="{{ submission_token }}">
+        {% endif %}
         <div class="mb-3">
           <label class="form-label" for="{{ form.motivo.id_for_label }}">Motivo</label>
           {{ form.motivo }}

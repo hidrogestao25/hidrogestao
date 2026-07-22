@@ -20,6 +20,56 @@ def _uppercase_model_fields(instance, field_names):
             setattr(instance, field_name, value.upper())
 
 
+def _short_label(value, max_length=80):
+    text = str(value or "").strip()
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 3].rstrip()}..."
+
+
+def _solicitacao_label(instance):
+    if getattr(instance, "contrato_id", None) and getattr(instance, "contrato", None):
+        return f"Solicitação para {instance.contrato}"
+
+    fornecedor = getattr(instance, "fornecedor_escolhido", None)
+    if fornecedor:
+        tipo = "Solicitação guarda-chuva" if getattr(instance, "guarda_chuva", False) else "Solicitação"
+        return f"{tipo} para {fornecedor}"
+
+    descricao = _short_label(getattr(instance, "descricao", None))
+    if descricao:
+        prefixo = "Solicitação guarda-chuva" if getattr(instance, "guarda_chuva", False) else "Solicitação"
+        identificador = f" #{instance.pk}" if instance.pk else ""
+        return f"{prefixo}{identificador} - {descricao}"
+
+    identificador = f" #{instance.pk}" if instance.pk else ""
+    if getattr(instance, "guarda_chuva", False):
+        return f"Solicitação guarda-chuva{identificador}"
+    return f"Solicitação{identificador}"
+
+
+def _forma_pagamento_label(instance):
+    value = getattr(instance, "forma_pagamento", None)
+    if value in (None, ""):
+        return "Não informado"
+
+    labels = dict(getattr(instance, "FORMA_PAGAMENTO_CHOICES", []))
+    normalized = str(value).strip()
+    numeric_days = {"30", "60", "90"}
+
+    if normalized not in numeric_days:
+        try:
+            decimal_value = Decimal(normalized)
+        except Exception:
+            decimal_value = None
+        if decimal_value is not None and decimal_value == decimal_value.to_integral_value():
+            normalized = str(int(decimal_value))
+
+    return labels.get(value) or labels.get(normalized) or (
+        f"{normalized} dias" if normalized in numeric_days else normalized
+    )
+
+
 @deconstructible
 class ShortenedUploadPath:
     def __init__(self, directory, fallback_name="arquivo"):
@@ -335,9 +385,11 @@ class SolicitacaoContrato(models.Model):
         ("reprovado", "Reprovado")
     ]
     FORMA_PAGAMENTO_CHOICES = [
-        (30, "30 dias"),
-        (60, "60 dias"),
-        (90, "90 dias"),
+        ("conforme_pagamento_cliente", "Conforme Pagamento do Cliente"),
+        ("conforme_medicao_aprovada", "Conforme Medição Aprovada"),
+        ("30", "30 dias"),
+        ("60", "60 dias"),
+        ("90", "90 dias"),
     ]
 
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes_contratos', blank=True, null=True)
@@ -354,7 +406,7 @@ class SolicitacaoContrato(models.Model):
     requisitos = models.TextField(blank=True, null=True)
     previsto_no_orcamento = models.BooleanField(default=False)
     justificativa_orcamento = models.TextField(blank=True, null=True)
-    forma_pagamento = models.PositiveIntegerField(choices=FORMA_PAGAMENTO_CHOICES, null=True, blank=True, verbose_name="Forma de Pagamento (dias)")
+    forma_pagamento = models.CharField(max_length=40, choices=FORMA_PAGAMENTO_CHOICES, null=True, blank=True, verbose_name="Forma de Pagamento")
     valor_disponivel = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_provisionado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -407,8 +459,12 @@ class SolicitacaoContrato(models.Model):
 
     solicitante = models.CharField(max_length=50, null=True, blank=True)
 
+    @property
+    def forma_pagamento_label(self):
+        return _forma_pagamento_label(self)
+
     def __str__(self):
-        return f"Solicitação para {self.contrato}"
+        return _solicitacao_label(self)
 
 
 # ---------------------------------------
@@ -426,9 +482,11 @@ class SolicitacaoProspeccao(models.Model):
         ("reprovado", "Reprovado")
     ]
     FORMA_PAGAMENTO_CHOICES = [
-        (30, "30 dias"),
-        (60, "60 dias"),
-        (90, "90 dias"),
+        ("conforme_pagamento_cliente", "Conforme Pagamento do Cliente"),
+        ("conforme_medicao_aprovada", "Conforme Medição Aprovada"),
+        ("30", "30 dias"),
+        ("60", "60 dias"),
+        ("90", "90 dias"),
     ]
 
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name='solicitacoes')
@@ -445,7 +503,7 @@ class SolicitacaoProspeccao(models.Model):
     requisitos = models.TextField(blank=True, null=True)
     previsto_no_orcamento = models.BooleanField(default=False)
     justificativa_orcamento = models.TextField(blank=True, null=True)
-    forma_pagamento = models.PositiveIntegerField(choices=FORMA_PAGAMENTO_CHOICES, null=True, blank=True, verbose_name="Forma de Pagamento (dias)")
+    forma_pagamento = models.CharField(max_length=40, choices=FORMA_PAGAMENTO_CHOICES, null=True, blank=True, verbose_name="Forma de Pagamento")
     valor_disponivel = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_provisionado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     valor_vendido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -500,8 +558,12 @@ class SolicitacaoProspeccao(models.Model):
     )
     solicitante = models.CharField(max_length=50, null=True, blank=True)
 
+    @property
+    def forma_pagamento_label(self):
+        return _forma_pagamento_label(self)
+
     def __str__(self):
-        return f"Solicitação para {self.contrato}"
+        return _solicitacao_label(self)
 
 
 # ---------------------------------
@@ -948,12 +1010,18 @@ class Evento(models.Model):
             return (date.today() - self.data_entrega).days
         return 0
 
+    @property
+    def fornecedor_display(self):
+        fornecedor = (
+            self.empresa_terceira
+            or getattr(self.contrato_terceiro, "empresa_terceira", None)
+            or getattr(self.prospeccao, "fornecedor_escolhido", None)
+            or getattr(self.solicitacao_contrato, "fornecedor_escolhido", None)
+        )
+        return str(fornecedor) if fornecedor else "-"
+
     def __str__(self):
-        try:
-            empresa = self.empresa_terceira or "Sem empresa vinculada"
-        except Exception:
-            empresa = "Sem empresa vinculada"
-        return f"Entrega {self.id} - {self.contrato_terceiro} - {empresa}"
+        return f"Entrega {self.id} - {self.contrato_terceiro or '-'} - {self.fornecedor_display}"
 
 
 class AvaliacaoFornecedor(models.Model):

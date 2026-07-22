@@ -188,7 +188,7 @@
                     {% endif %}
                 {% endif %}
 
-                {% if can_act_as_gerente_contrato and os.status == 'pendente_gerente' %}
+                {% if request.user.grupo == 'gerente_contrato' and os.status == 'pendente_gerente' %}
                     <a href="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}" class="btn btn-success"
                        onclick="return confirm('Confirmar aprovacao da solicitacao de OS?')">
                         Aprovar Solicitacao
@@ -198,7 +198,7 @@
                     </button>
                 {% endif %}
 
-                {% if request.user.grupo == 'diretoria' and os.status == 'pendente_diretoria' %}
+                {% if request.user.grupo == 'diretoria' and os.status == 'pendente_diretoria' or request.user.grupo == 'diretoria' and os.status == 'pendente_gerente' %}
                     <a href="{% url 'aprovar_os_diretoria' os.id 'aprovar' %}" class="btn btn-success"
                        onclick="return confirm('Confirmar aprovacao da solicitacao de OS?')">
                         Aprovar Solicitacao

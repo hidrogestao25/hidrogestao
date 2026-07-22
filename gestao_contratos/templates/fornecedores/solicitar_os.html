@@ -16,8 +16,11 @@
 
     <div class="card-body">
 
-      <form method="post">
+      <form method="post" data-prevent-double-submit="true">
         {% csrf_token %}
+        {% if submission_token %}
+          <input type="hidden" name="submission_token" value="{{ submission_token }}">
+        {% endif %}
 
         {% if seleciona_contrato %}
         <div class="mb-3">

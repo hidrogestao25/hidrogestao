@@ -58,11 +58,11 @@ document.addEventListener("DOMContentLoaded", function() {
             {% if solicitacao.previsto_no_orcamento %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}
         </p>
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>
-        <p><strong>Valor Disponível:</strong>
+        <p><strong>Valor a ser contratado:</strong>
           {% if solicitacao.valor_disponivel %} R$ {{ solicitacao.valor_disponivel }} {% else %} Não informado {% endif %}
         </p>
         <p><strong>Forma de pagamento:</strong>
-          {% if solicitacao.forma_pagamento %} {{ solicitacao.forma_pagamento }} dias após entrega {% else %} Não informado {% endif %}
+          {{ solicitacao.forma_pagamento_label }}
         </p>
         <p><strong>Valor Vendido:</strong>
           {% if solicitacao.valor_vendido %} R$ {{ solicitacao.valor_vendido }} {% else %} Não informado {% endif %}
@@ -118,15 +118,15 @@ document.addEventListener("DOMContentLoaded", function() {
           {% elif solicitacao.status == "Triagem realizada" %}
             A triagem foi enviada para o líder de contrato para selecionar uma das opções.
           {% elif solicitacao.status == "Fornecedor selecionado" %}
-            O líder de contrato selecionou o fornecedor e foi encaminhada a escolha para aprovação da direção e da gerência de contrato.
+            O líder de contrato selecionou o fornecedor, e a escolha foi encaminhada para aprovação da gerência de contrato e da diretoria.
           {% elif solicitacao.status == "Fornecedor aprovado" %}
-            A direção e gerência de contrato aprovaram e a equipe de suprimento deu início ao desenvolvimento das minutas dos Boletins de Medição e do Contrato.
+            A diretoria e a gerência de contrato aprovaram o fornecedor, e a equipe de suprimento iniciou o desenvolvimento das minutas do BM e do contrato.
           {% elif solicitacao.status == "Planejamento do Contrato" %}
             A equipe de suprimentos está desenvolvendo as minutas do boletim de medição e do contrato.
           {% elif solicitacao.status == "Aprovação Final" %}
             A gerência de contrato está avaliando as minutas desenvolvidas pela equipe de suprimento.
           {% elif solicitacao.status == "Aguardando Arquivos Assinados" %}
-            As minutas foram aprovadas pela gerÃªncia de contrato e a equipe de suprimento precisa anexar o contrato assinado.
+            As minutas foram aprovadas pela gerência de contrato, e a equipe de suprimento precisa anexar o contrato assinado.
           {% elif solicitacao.status == "Onboarding" %}
             As minutas foram ambas aprovadas e a equipe de suprimento está marcando uma reunião onboarding com todos os envolvidos.
           {% else %}
@@ -417,10 +417,10 @@ document.addEventListener("DOMContentLoaded", function() {
                           <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
                           <td>
                             {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_contrato gerente_lider' %}
-                                <a href="{% url 'duplicar_evento' evento.id %}" class="btn btn-sm btn-outline-secondary"
-                                   onclick="return confirm('Deseja duplicar este evento?');">
-                                   Duplicar Evento
-                                </a>
+                                <form method="post" action="{% url 'duplicar_evento' evento.id %}" class="d-inline" data-prevent-double-submit="true" onsubmit="return confirm('Deseja duplicar este evento?');">
+                                   {% csrf_token %}
+                                   <button type="submit" class="btn btn-sm btn-outline-secondary">Duplicar Evento</button>
+                                </form>
                                 <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
                                 <a href="{% url 'excluir_evento' evento.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-danger"
                                    onclick="return confirm('Tem certeza que deseja excluir este evento?')">
@@ -559,7 +559,7 @@ document.addEventListener("DOMContentLoaded", function() {
 {% endif %}
 
 <!-- Botões de aprovação para gerente -->
-{% if request.user.atua_como_gerente_contrato %}
+{% if request.user.grupo == 'gerente_contrato' %}
   {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
       <a href="{% url 'aprovar_fornecedor_gerente' solicitacao.id %}" class="btn btn-success mt-3">Avaliar Fornecedor</a>
   {% endif %}

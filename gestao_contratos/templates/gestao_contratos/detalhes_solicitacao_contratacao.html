@@ -61,8 +61,11 @@ document.addEventListener("DOMContentLoaded", function() {
             {% if solicitacao.previsto_no_orcamento %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}
         </p>
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>
-        <p><strong>Valor Disponível:</strong>
+        <p><strong>Valor a ser contratado:</strong>
           {% if solicitacao.valor_disponivel %} R$ {{ solicitacao.valor_disponivel }} {% else %} Não informado {% endif %}
+        </p>
+        <p><strong>Forma de pagamento:</strong>
+          {{ solicitacao.forma_pagamento_label }}
         </p>
         {% if not solicitacao.guarda_chuva %}
         <p><strong>Valor Vendido:</strong>
@@ -78,33 +81,33 @@ document.addEventListener("DOMContentLoaded", function() {
              </p>
         {% endif %}
         <p><strong>Status:</strong> {{ solicitacao.status }}</p>
-        <p><strong>Descricao do Status:</strong>
+        <p><strong>Descrição do Status:</strong>
           {% if solicitacao.status == "Solicitação de contratação" %}
-            A solicitacao foi encaminhada para avaliacao da equipe de suprimento.
+            A solicitação está aguardando avaliação da gerência de contrato e da diretoria.
           {% elif solicitacao.status == "Fornecedor aprovado" %}
             {% if solicitacao.guarda_chuva %}
-              A diretoria e a gerencia de contrato aprovaram a solicitacao, e a equipe de suprimento iniciou a elaboracao da minuta de contrato.
+              A diretoria e a gerência de contrato aprovaram a solicitação, e a equipe de suprimento iniciou a elaboração da minuta de contrato.
             {% else %}
-              A diretoria e a gerencia de contrato aprovaram a solicitacao, e a equipe de suprimento iniciou a elaboracao das minutas de BM e de contrato.
+              A diretoria e a gerência de contrato aprovaram a solicitação, e a equipe de suprimento iniciou a elaboração das minutas de BM e de contrato.
             {% endif %}
           {% elif solicitacao.status == "Planejamento do Contrato" %}
             {% if solicitacao.guarda_chuva %}
-              A equipe de suprimento esta elaborando a minuta do contrato.
+              A equipe de suprimento está elaborando a minuta do contrato.
             {% else %}
-              A equipe de suprimento esta elaborando as minutas do BM e do contrato.
+              A equipe de suprimento está elaborando as minutas do BM e do contrato.
             {% endif %}
           {% elif solicitacao.status == "Aprovação Final" %}
             {% if solicitacao.guarda_chuva %}
-              A gerencia de contrato esta avaliando a minuta do contrato.
+              A gerência de contrato está avaliando a minuta do contrato.
             {% else %}
-              A gerencia de contrato esta avaliando as minutas desenvolvidas pela equipe de suprimento.
+              A gerência de contrato está avaliando as minutas desenvolvidas pela equipe de suprimento.
             {% endif %}
           {% elif solicitacao.status == "Aguardando Arquivos Assinados" %}
-            A gerencia de contrato aprovou as minutas necessarias, e a equipe de suprimento precisa anexar o contrato assinado.
+            A gerência de contrato aprovou as minutas necessárias, e a equipe de suprimento precisa anexar o contrato assinado.
           {% elif solicitacao.status == "Onboarding" %}
-            A solicitacao foi concluida e a equipe de suprimento esta organizando o onboarding com os envolvidos.
+            A solicitação foi concluída e a equipe de suprimento está organizando o onboarding com os envolvidos.
           {% else %}
-            Status sem descricao configurada.
+            Status sem descrição configurada.
           {% endif %}
         </p>
 
@@ -139,7 +142,7 @@ document.addEventListener("DOMContentLoaded", function() {
               | desde {{ sla_display.owner_since|date:"d/m/Y" }}
             {% endif %}
             {% if sla_display.prazo_dias_uteis is not None %}
-              | {{ sla_display.dias_uteis_decorridos }} / {{ sla_display.prazo_dias_uteis }} dias uteis
+              | {{ sla_display.dias_uteis_decorridos }} / {{ sla_display.prazo_dias_uteis }} dias úteis
             {% endif %}
             {% if sla_display.data_limite %}
               | limite em {{ sla_display.data_limite|date:"d/m/Y" }}
@@ -325,10 +328,10 @@ document.addEventListener("DOMContentLoaded", function() {
                               <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
                               <td>
                                 {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_lider gerente_contrato' %}
-                                <a href="{% url 'duplicar_evento_solicitacao' evento.id %}" class="btn btn-sm btn-outline-secondary"
-                                   onclick="return confirm('Deseja duplicar este evento?');">
-                                   Duplicar Evento
-                                </a>
+                                <form method="post" action="{% url 'duplicar_evento_solicitacao' evento.id %}" class="d-inline" data-prevent-double-submit="true" onsubmit="return confirm('Deseja duplicar este evento?');">
+                                  {% csrf_token %}
+                                  <button type="submit" class="btn btn-sm btn-outline-secondary">Duplicar Evento</button>
+                                </form>
                                   <a href="{% url 'editar_evento' evento.id %}" class="btn btn-sm btn-warning">Editar</a>
                                   <a href="{% url 'excluir_evento' evento.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-danger"
                                       onclick="return confirm('Tem certeza que deseja excluir este evento?')">
@@ -422,7 +425,7 @@ document.addEventListener("DOMContentLoaded", function() {
   {% endif %}
 {% endif %}
 
-{% if request.user.atua_como_gerente_contrato and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
+{% if request.user.grupo == 'gerente_contrato' and solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
     <form method="post">
         {% csrf_token %}
         <input type="hidden" name="papel_avaliacao" value="gerente">
@@ -438,7 +441,7 @@ document.addEventListener("DOMContentLoaded", function() {
 {% endif %}
 
 <!-- Botões de aprovação para gerente -->
-{% if request.user.atua_como_gerente_contrato %}
+{% if request.user.grupo == 'gerente_contrato' %}
   {% if not solicitacao.guarda_chuva and solicitacao.minuta_boletins_medicao_contrato %}
     {% if solicitacao.minuta_boletins_medicao_contrato.status_gerente == 'pendente' %}
       <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-primary mt-3">
