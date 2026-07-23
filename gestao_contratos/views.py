@@ -8587,14 +8587,17 @@ def build_addendum_docm_replacements(aditivo):
     descricao = contrato.objeto or aditivo.motivo or "-"
     contract_type_line = "☐ ESPECÍFICO    ☒ GUARDA-CHUVA" if contrato.guarda_chuva else "☒ ESPECÍFICO    ☐ GUARDA-CHUVA"
     valor_aditivo_documento = aditivo.novo_valor_total or contrato.valor_total or Decimal("0.00")
+    data_fim_anterior = aditivo.data_fim_anterior or contrato.data_fim
+    data_inicio_aditivo = data_fim_anterior + timedelta(days=1) if data_fim_anterior else None
+    data_fim_aditivo = aditivo.nova_data_fim or contrato.data_fim
 
     return {
         "__ordem_aditivo__": ordem_label,
         "__ordem_adtivo__": ordem_label,
         "__cpf_cnpj__": fornecedor.cpf_cnpj or "-",
         "__numero_contrato__": contrato.num_contrato or "-",
-        "__data_fim__": format_date_br(aditivo.data_fim_anterior or contrato.data_fim),
-        "__data_fim_aditivo__": format_date_br(aditivo.nova_data_fim),
+        "__data_fim__": format_date_br(data_fim_anterior),
+        "__data_fim_aditivo__": format_date_br(data_fim_aditivo),
         "__descricao__": descricao,
         "__novo_valor _total__": format_currency_br(valor_aditivo_documento, with_symbol=True),
         "__novo_valor _total_extenso__": decimal_to_money_words_pt_br(valor_aditivo_documento),
@@ -8612,9 +8615,10 @@ def build_addendum_docm_replacements(aditivo):
         "__ponto_focal__": fornecedor.ponto_focal or "-",
         "__telefone_focal__": fornecedor.telefone_focal or "-",
         "__email_focal__": fornecedor.email_focal or "-",
-        "__dias_totais_novo__": calculate_inclusive_days(contrato.data_inicio, aditivo.nova_data_fim or contrato.data_fim),
+        "__dias_totais_novo__": calculate_contract_days_after_start(data_inicio_aditivo, data_fim_aditivo),
         "__data_inicio__": format_date_br(contrato.data_inicio),
-        "__nova_data_fim__": format_date_br(aditivo.nova_data_fim),
+        "__data_inicio_aditivo__": format_date_br(data_inicio_aditivo),
+        "__nova_data_fim__": format_date_br(data_fim_aditivo),
         "__data_hoje_completo__": format_date_long_br(timezone.localdate()),
         "__nome_empresa__": fornecedor.nome or "-",
         "__numero_revisao__": "00",

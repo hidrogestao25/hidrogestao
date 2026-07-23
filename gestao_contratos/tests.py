@@ -11049,7 +11049,7 @@ class DocmGenerationTests(BaseUserTestCase):
 
     def test_gerar_aditivo_contrato_docm_substitui_placeholders(self):
         template_path = self.create_docm_template(
-            "__ordem_aditivo__ __numero_contrato__ __data_fim__ __data_fim_aditivo__ __descricao__ __novo_valor _total__ __novo_valor _total_extenso__ __contrato__ __informacoes_bancarias__ __dias_totais_novo__ __data_inicio__ __nova_data_fim__ __data_hoje_completo__ __nome_empresa__",
+            "__ordem_aditivo__ __numero_contrato__ __data_fim__ __data_inicio_aditivo__ __data_fim_aditivo__ __descricao__ __novo_valor _total__ __novo_valor _total_extenso__ __contrato__ __informacoes_bancarias__ __dias_totais_novo__ __data_inicio__ __nova_data_fim__ __data_hoje_completo__ __nome_empresa__",
             "__ordem_aditivo__ __numero_contrato__ __numero_revisao__ __data_hoje__",
         )
         self.client.force_login(self.suprimento)
@@ -11064,13 +11064,14 @@ class DocmGenerationTests(BaseUserTestCase):
         self.assertIn("1º", document_xml)
         self.assertIn("CT-DOCM-01", document_xml)
         self.assertIn("31/05/2026", document_xml)
+        self.assertIn("01/06/2026", document_xml)
         self.assertIn("30/06/2026", document_xml)
         self.assertIn("Servico especializado", document_xml)
         self.assertIn("R$ 2.500,00", document_xml)
         self.assertIn("dois mil e quinhentos reais", document_xml)
         self.assertIn("PRJ-DOCM", document_xml)
         self.assertIn("BANCO XPTO AG 1234 CONTA 56789", document_xml)
-        self.assertIn("61 dias", document_xml)
+        self.assertIn("29 dias", document_xml)
         self.assertIn("FORNECEDOR DOCM", document_xml)
         self.assertIn("CT-DOCM-01", header_xml)
 
