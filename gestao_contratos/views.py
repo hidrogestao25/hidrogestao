@@ -8043,6 +8043,7 @@ def detalhes_solicitacao_contrato(request, pk):
             solicitacao,
             contratacao_audit_map=build_latest_audit_map(SolicitacaoContrato, [solicitacao.pk]),
         ),
+        "can_act_as_gerente_contrato": user_has_gerente_contrato_role(request.user),
     }
 
     return render(request, "gestao_contratos/detalhes_solicitacao_contratacao.html", context)

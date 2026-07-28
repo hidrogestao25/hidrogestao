@@ -9012,6 +9012,67 @@ class ContratacaoFlowTests(BaseUserTestCase):
         )
         self.assertContains(response, "Avaliar Contrato")
 
+    def test_detalhes_solicitacao_contratacao_exibe_botoes_de_minutas_para_diretoria_quando_gerente_ausente(self):
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        documento_bm = DocumentoBM.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            status_gerente="pendente",
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="MIN-DET-DIR-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+        )
+        self.solicitacao_contrato.status = "Aprovação Final"
+        self.solicitacao_contrato.save(update_fields=["status"])
+
+        self.client.force_login(self.diretoria)
+        response = self.client.get(
+            reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk])
+        )
+
+        self.assertContains(response, reverse("detalhe_bm_contrato", args=[documento_bm.pk]))
+        self.assertContains(response, "Avaliar Minuta BM")
+        self.assertContains(
+            response,
+            reverse("detalhes_minuta_contrato", args=[self.solicitacao_contrato.pk]),
+        )
+        self.assertContains(response, "Avaliar Contrato")
+
+    def test_lista_solicitacoes_exibe_botoes_de_minutas_para_diretoria_quando_gerente_ausente(self):
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        documento_bm = DocumentoBM.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            status_gerente="pendente",
+        )
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="MIN-LISTA-DIR-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+            arquivo_contrato=SimpleUploadedFile("minuta-lista-dir.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
+        self.solicitacao_contrato.status = "Aprovação Final"
+        self.solicitacao_contrato.save(update_fields=["status"])
+
+        self.client.force_login(self.diretoria)
+        response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertContains(response, reverse("detalhe_bm_contrato", args=[documento_bm.pk]))
+        self.assertContains(response, "Avaliar Minuta BM")
+        self.assertContains(
+            response,
+            reverse("detalhes_minuta_contrato", args=[self.solicitacao_contrato.pk]),
+        )
+        self.assertContains(response, "Avaliar Contrato")
+
     def test_fluxo_contratacao_notifica_suprimento_para_inserir_contrato_assinado_apos_duas_aprovacoes(self):
         documento_bm = DocumentoBM.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,

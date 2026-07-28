@@ -334,7 +334,7 @@
                           {% endif %}
                       {% endif %}
 
-                      {% if request.user.grupo == 'gerente_contrato' %}
+                      {% if can_act_as_gerente_contrato %}
                           {% if solicitacao.aprovacao_fornecedor_gerente == 'pendente' %}
                           <a href="{% url 'detalhes_solicitacao_contrato' solicitacao.id %}"
                           class="btn btn-success btn-sm">
