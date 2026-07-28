@@ -9261,7 +9261,7 @@ def inserir_minuta_bm_contrato(request, pk):
                 documento_salvo.minuta_boletim_assinado = documento_bm.minuta_boletim_assinado
             documento_salvo.save()
             if hasattr(solicitacao, "minuta_contrato"):
-                solicitacao.status = "Planejamento do Contrato"
+                solicitacao.status = "Aprovação Final"
             solicitacao.save()
             criar_contrato_se_aprovado_minuta(solicitacao)
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")

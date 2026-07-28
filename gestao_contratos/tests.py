@@ -71,6 +71,7 @@ from .views import (
     criar_contrato_se_aprovado_minuta,
     format_request_line,
     get_gerente_contrato_action_groups,
+    get_responsible_groups_for_sla_item,
     get_week_ranges,
     get_signed_files_pending_status,
     get_next_timeline_index,
@@ -8716,6 +8717,36 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertEqual(documento.valor_total, Decimal("1500.00"))
         self.solicitacao_contrato.refresh_from_db()
         self.assertEqual(self.solicitacao_contrato.status, "Planejamento do Contrato")
+
+    def test_inserir_minuta_bm_contratacao_com_contrato_existente_envia_para_aprovacao_final(self):
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="MIN-CONTR-BM-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("inserir_minuta_bm_contrato", args=[self.solicitacao_contrato.pk]),
+            {
+                "minuta_boletim": SimpleUploadedFile(
+                    "minuta-bm.xlsx",
+                    b"conteudo bm",
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            },
+            follow=False,
+        )
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertEqual(self.solicitacao_contrato.status, "Aprovação Final")
+        self.assertIn("diretoria", get_responsible_groups_for_sla_item(self.solicitacao_contrato))
 
     def test_cadastrar_minuta_contrato_notifica_gerente_sem_email_para_diretoria_quando_ausente(self):
         self.gerente_contrato.gerente_contrato_ausente = True
