@@ -6502,6 +6502,39 @@ class CenterScopedViewTests(BaseUserTestCase):
         self.assertIn(self.os_visivel.pk, os_ids)
         self.assertNotIn(self.os_oculta.pk, os_ids)
 
+    def test_lista_solicitacoes_do_gerente_lider_inclui_contratacao_em_que_e_lider(self):
+        solicitacao_como_lider = SolicitacaoContrato.objects.create(
+            contrato=self.base_fora,
+            coordenador=self.coord_fora,
+            lider_contrato=self.gerente_lider,
+            descricao="Contratação liderada pelo gerente lider",
+            status="Solicitação de contratação",
+        )
+        solicitacao_sem_coordenador = SolicitacaoContrato.objects.create(
+            contrato=self.base_fora,
+            coordenador=None,
+            lider_contrato=self.gerente_lider,
+            descricao="Contratação sem coordenador liderada pelo gerente lider",
+            status="Solicitação de contratação",
+        )
+        os_como_lider = self.create_os_request(
+            contrato=self.ct_fora,
+            solicitante=self.gerente_lider,
+            lider_contrato=self.gerente_lider,
+            coordenador=self.coord_fora,
+            titulo="OS liderada pelo gerente lider",
+        )
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertEqual(response.status_code, 200)
+        lista_ids = {item["solicitacao"].pk for item in response.context["lista_solicitacoes"]}
+        os_ids = {item.pk for item in response.context["ordens_servico_page"].object_list}
+        self.assertIn(solicitacao_como_lider.pk, lista_ids)
+        self.assertIn(solicitacao_sem_coordenador.pk, lista_ids)
+        self.assertIn(os_como_lider.pk, os_ids)
+
     def test_detalhes_solicitacao_bloqueia_gerente_lider_fora_do_centro(self):
         self.client.force_login(self.gerente_lider)
 
@@ -6532,6 +6565,23 @@ class CenterScopedViewTests(BaseUserTestCase):
         )
 
         self.assertRedirects(response, reverse("home"))
+
+    def test_detalhes_solicitacao_contrato_permite_gerente_lider_quando_e_lider(self):
+        solicitacao_contrato_liderada = SolicitacaoContrato.objects.create(
+            contrato=self.base_fora,
+            coordenador=self.coord_fora,
+            lider_contrato=self.gerente_lider,
+            descricao="Contratação fora do centro liderada",
+            status="Solicitação de contratação",
+        )
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.get(
+            reverse("detalhes_solicitacao_contrato", args=[solicitacao_contrato_liderada.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Contratação fora do centro liderada")
 
     def test_detalhes_aditivo_bloqueia_gerente_lider_fora_do_centro(self):
         aditivo_fora = AditivoContratoTerceiro.objects.create(

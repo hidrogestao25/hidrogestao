@@ -7248,10 +7248,14 @@ def lista_solicitacoes(request):
         centros_do_gerente = request.user.centros.all()
         # filtra solicitações cujo solicitante tenha pelo menos um centro em comum
         solicitacoes = SolicitacaoProspeccao.objects.filter(
-            coordenador__centros__in=centros_do_gerente
+            Q(coordenador__centros__in=centros_do_gerente) | Q(lider_contrato=request.user)
         ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
-        solicitacoes_c = SolicitacaoContrato.objects.filter(coordenador__centros__in=centros_do_gerente).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = SolicitacaoOrdemServico.objects.filter(coordenador__centros__in=centros_do_gerente).exclude(status__in=["finalizada", "aprovada", "reprovada"]).distinct().order_by('-criado_em')
+        solicitacoes_c = SolicitacaoContrato.objects.filter(
+            Q(coordenador__centros__in=centros_do_gerente) | Q(lider_contrato=request.user)
+        ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
+        os = SolicitacaoOrdemServico.objects.filter(
+            Q(coordenador__centros__in=centros_do_gerente) | Q(lider_contrato=request.user)
+        ).exclude(status__in=["finalizada", "aprovada", "reprovada"]).distinct().order_by('-criado_em')
     elif request.user.grupo == 'gerente_contrato':
         solicitacoes = SolicitacaoProspeccao.objects.filter(
             lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']
@@ -7889,7 +7893,7 @@ def detalhes_solicitacao_contrato(request, pk):
     # Busca a solicitação
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
 
-    if request.user.grupo == "gerente_lider" and not user_shares_center_with_coordinator(request.user, solicitacao.coordenador):
+    if request.user.grupo == "gerente_lider" and solicitacao.lider_contrato_id != request.user.pk and not user_shares_center_with_coordinator(request.user, solicitacao.coordenador):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
@@ -8054,7 +8058,7 @@ def detalhes_solicitacao(request, pk):
     # Busca a solicitação
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
-    if request.user.grupo == "gerente_lider" and not user_shares_center_with_coordinator(request.user, solicitacao.coordenador):
+    if request.user.grupo == "gerente_lider" and solicitacao.lider_contrato_id != request.user.pk and not user_shares_center_with_coordinator(request.user, solicitacao.coordenador):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
@@ -8148,7 +8152,7 @@ def detalhe_os(request, pk):
         return redirect('lista_solicitacoes')
 
     if request.user.grupo == 'gerente_lider':
-        if not user_shares_center_with_coordinator(request.user, os.coordenador):
+        if os.lider_contrato_id != request.user.pk and not user_shares_center_with_coordinator(request.user, os.coordenador):
             messages.error(request, "Você não tem permissão para visualizar esta OS.")
             return redirect('lista_solicitacoes')
 
