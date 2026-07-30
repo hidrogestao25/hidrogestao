@@ -8879,6 +8879,31 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertContains(response, "Inserir Minuta do BM")
         self.assertContains(response, reverse("inserir_minuta_bm_contrato", args=[self.solicitacao_contrato.pk]))
 
+    def test_cadastrar_minuta_contrato_guarda_chuva_envia_para_aprovacao_final_sem_bm(self):
+        self.solicitacao_contrato.guarda_chuva = True
+        self.solicitacao_contrato.save(update_fields=["guarda_chuva"])
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("cadastrar_minuta_contrato", args=[self.solicitacao_contrato.pk]),
+            {
+                "numero_contrato": "MIN-CONTR-GC-001",
+                "objeto": "Objeto da contratação guarda-chuva",
+                "valor_total": "1.500,00",
+                "observacao": "Minuta guarda-chuva",
+                "arquivo_contrato": SimpleUploadedFile(
+                    "minuta-guarda-chuva.pdf",
+                    b"%PDF-1.4 draft",
+                    content_type="application/pdf",
+                ),
+            },
+            follow=False,
+        )
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertEqual(self.solicitacao_contrato.status, "Aprovação Final")
+
     def test_inserir_minuta_bm_contratacao_com_contrato_existente_envia_para_aprovacao_final(self):
         self.gerente_contrato.gerente_contrato_ausente = True
         self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])

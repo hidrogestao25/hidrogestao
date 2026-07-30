@@ -8399,7 +8399,7 @@ def cadastrar_contrato(request, solicitacao_id):
             contrato = form.save(commit=False)
             contrato.solicitacao = solicitacao
             if not is_signed_file_upload_only:
-                if document_bm_has_draft(documento_bm):
+                if getattr(solicitacao, "guarda_chuva", False) or document_bm_has_draft(documento_bm):
                     solicitacao.status = "Aprovação Final"
                 else:
                     solicitacao.status = "Planejamento do Contrato"
@@ -8501,7 +8501,7 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
                 contrato.valor_total = solicitacao.valor_provisionado
             if not is_signed_file_upload_only:
                 solicitacao.aprovacao_gerencia = False
-                if not solicitacao.guarda_chuva and document_bm_has_draft(documento_bm):
+                if solicitacao.guarda_chuva or document_bm_has_draft(documento_bm):
                     solicitacao.status = "Aprovação Final"
                 else:
                     solicitacao.status = "Planejamento do Contrato"
