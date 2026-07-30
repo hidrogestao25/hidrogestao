@@ -112,10 +112,23 @@ def _filter_directoria_email_recipients(recipient_list):
     ]
 
 
+def normalize_email_text(value):
+    if not isinstance(value, str) or not any(marker in value for marker in ("Ã", "Â")):
+        return value
+    try:
+        return value.encode("latin1").decode("utf-8")
+    except UnicodeError:
+        return value
+
+
 def send_mail(subject, message, from_email, recipient_list, *args, **kwargs):
     recipient_list = _filter_directoria_email_recipients(recipient_list)
     if not recipient_list:
         return 0
+    subject = normalize_email_text(subject)
+    message = normalize_email_text(message)
+    if kwargs.get("html_message"):
+        kwargs["html_message"] = normalize_email_text(kwargs["html_message"])
     return django_send_mail(subject, message, from_email, recipient_list, *args, **kwargs)
 
 SLA_STAGE_DEFINITIONS = {
@@ -3559,6 +3572,14 @@ def bm_has_operational_approval(bm):
     ) and bm.status_coordenador != "reprovado" and bm.status_gerente != "reprovado"
 
 
+def document_bm_has_draft(documento_bm):
+    return bool(documento_bm and documento_bm.minuta_boletim)
+
+
+def document_contract_has_draft(documento_contrato):
+    return bool(documento_contrato and documento_contrato.arquivo_contrato)
+
+
 def user_can_approve_bm_payment(user, bm):
     return bool(
         user
@@ -4718,12 +4739,12 @@ def enviar_report_suprimento(request):
         return redirect("home")
 
     assunto = "Report semanal de suprimentos"
-    html_content = build_weekly_supply_report(request.user)
-    mensagem = strip_tags(html_content)
+    html_content = normalize_email_text(build_weekly_supply_report(request.user))
+    mensagem = normalize_email_text(strip_tags(html_content))
 
     try:
         email = EmailMultiAlternatives(
-            subject="Report Semanal de Suprimentos",
+            subject=normalize_email_text("Report Semanal de Suprimentos"),
             body=mensagem,
             from_email=FROM_EMAIL,
             to=[request.user.email],
@@ -8378,7 +8399,7 @@ def cadastrar_contrato(request, solicitacao_id):
             contrato = form.save(commit=False)
             contrato.solicitacao = solicitacao
             if not is_signed_file_upload_only:
-                if DocumentoBM.objects.filter(solicitacao=solicitacao).exists():
+                if document_bm_has_draft(documento_bm):
                     solicitacao.status = "Aprovação Final"
                 else:
                     solicitacao.status = "Planejamento do Contrato"
@@ -8480,7 +8501,7 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
                 contrato.valor_total = solicitacao.valor_provisionado
             if not is_signed_file_upload_only:
                 solicitacao.aprovacao_gerencia = False
-                if not solicitacao.guarda_chuva and hasattr(solicitacao, "minuta_boletins_medicao_contrato"):
+                if not solicitacao.guarda_chuva and document_bm_has_draft(documento_bm):
                     solicitacao.status = "Aprovação Final"
                 else:
                     solicitacao.status = "Planejamento do Contrato"
@@ -9217,7 +9238,7 @@ def inserir_minuta_bm(request, pk):
             if not request.FILES.get("minuta_boletim_assinado") and documento_bm.minuta_boletim_assinado:
                 documento_salvo.minuta_boletim_assinado = documento_bm.minuta_boletim_assinado
             documento_salvo.save()
-            if hasattr(solicitacao, "contrato_relacionado"):
+            if document_contract_has_draft(contrato_doc):
                 solicitacao.status = "Aprovação Final"
             else:
                 solicitacao.status = "Planejamento do Contrato"
@@ -9265,8 +9286,10 @@ def inserir_minuta_bm_contrato(request, pk):
             if not request.FILES.get("minuta_boletim_assinado") and documento_bm.minuta_boletim_assinado:
                 documento_salvo.minuta_boletim_assinado = documento_bm.minuta_boletim_assinado
             documento_salvo.save()
-            if hasattr(solicitacao, "minuta_contrato"):
+            if document_contract_has_draft(contrato_doc):
                 solicitacao.status = "Aprovação Final"
+            else:
+                solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
             criar_contrato_se_aprovado_minuta(solicitacao)
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")

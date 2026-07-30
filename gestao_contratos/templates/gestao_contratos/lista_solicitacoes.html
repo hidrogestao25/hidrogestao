@@ -279,7 +279,8 @@
 
                       {% if request.user.grupo == 'suprimento' %}
 
-                          {% if solicitacao.status == 'Fornecedor aprovado' and not solicitacao.guarda_chuva %}
+                          {% if solicitacao.status == 'Fornecedor aprovado' or solicitacao.status == 'Planejamento do Contrato' %}
+                          {% if not solicitacao.guarda_chuva %}
                             <div>
                             {% if solicitacao.minuta_boletins_medicao_contrato.minuta_boletim %}
                               <a href="{% url 'inserir_minuta_bm_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">
@@ -292,8 +293,9 @@
                             {% endif %}
                             </div>
                           {% endif %}
+                          {% endif %}
 
-                          {% if solicitacao.status == "Fornecedor aprovado" %}
+                          {% if solicitacao.status == "Fornecedor aprovado" or solicitacao.status == "Planejamento do Contrato" %}
                             <div>
                               {% with contrato=solicitacao.minuta_contrato.arquivo_contrato %}
                                   {% if contrato %}

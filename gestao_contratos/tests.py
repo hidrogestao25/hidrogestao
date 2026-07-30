@@ -77,6 +77,7 @@ from .views import (
     get_next_timeline_index,
     _group_emails,
     is_request_concluded,
+    normalize_email_text,
     send_mail as app_send_mail,
     send_request_notification_to_management,
     user_has_gerente_contrato_role,
@@ -2037,6 +2038,26 @@ class PermissionHelperTests(BaseUserTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertCountEqual(mail.outbox[0].to, [email_compartilhado, gerente_contrato.email])
+
+    def test_normalize_email_text_corrige_mojibake_de_acentuacao(self):
+        self.assertEqual(
+            normalize_email_text("SolicitaÃ§Ã£o de contrataÃ§Ã£o aprovada"),
+            "Solicitação de contratação aprovada",
+        )
+
+    def test_send_mail_normaliza_assunto_corpo_e_html(self):
+        app_send_mail(
+            "SolicitaÃ§Ã£o aprovada",
+            "NÃ£o foi possÃ­vel enviar a notificaÃ§Ã£o.",
+            "no-reply@example.com",
+            ["destinatario@example.com"],
+            html_message="<p>AÃ§Ã£o necessÃ¡ria</p>",
+        )
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].subject, "Solicitação aprovada")
+        self.assertEqual(mail.outbox[0].body, "Não foi possível enviar a notificação.")
+        self.assertEqual(mail.outbox[0].alternatives[0][0], "<p>Ação necessária</p>")
 
     def test_can_user_manage_supplier_choice_blocks_gerente_lider_outside_center(self):
         centro_a = self.create_center("CTA", "Centro A")
@@ -8459,6 +8480,40 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertContains(response, 'name="acao" value="aprovar"', html=False)
         self.assertNotContains(response, "Cadastre ao menos um evento antes de aprovar esta solicitacao.")
 
+    def test_detalhes_solicitacao_contrato_exibe_observacao_da_minuta(self):
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="MIN-OBS-CONTR-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+            observacao="Observação importante da minuta de contratação",
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk]))
+
+        self.assertContains(response, "Observações da Minuta do Contrato")
+        self.assertContains(response, "Observação importante da minuta de contratação")
+
+    def test_detalhes_solicitacao_prospeccao_exibe_observacao_da_minuta(self):
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao=self.solicitacao_prospeccao,
+            numero_contrato="MIN-OBS-PROS-001",
+            objeto="Objeto da prospecção",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("2345.67"),
+            observacao="Observação importante da minuta de prospecção",
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.get(reverse("detalhes_solicitacao", args=[self.solicitacao_prospeccao.pk]))
+
+        self.assertContains(response, "Observações da Minuta do Contrato")
+        self.assertContains(response, "Observação importante da minuta de prospecção")
+
     def test_diretoria_aprova_solicitacao_contratacao_e_cobre_gerencia_quando_ausencia_esta_marcada(self):
         self.gerente_contrato.gerente_contrato_ausente = True
         self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
@@ -8500,6 +8555,12 @@ class ContratacaoFlowTests(BaseUserTestCase):
             prazo_inicio=date(2026, 5, 1),
             prazo_fim=date(2026, 6, 1),
             valor_total=Decimal("1500.00"),
+            observacao="Observação visível no contrato desenvolvido",
+            arquivo_contrato=SimpleUploadedFile(
+                "minuta-contrato.pdf",
+                b"%PDF-1.4 draft",
+                content_type="application/pdf",
+            ),
         )
         self.client.force_login(self.diretoria)
 
@@ -8513,6 +8574,24 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.solicitacao_contrato.refresh_from_db()
         self.assertTrue(self.solicitacao_contrato.aprovacao_gerencia)
         self.assertFalse(self.solicitacao_contrato.reprovacao_gerencia)
+
+    def test_detalhes_minuta_contrato_exibe_observacao_no_contrato_desenvolvido(self):
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao_contrato=self.solicitacao_contrato,
+            numero_contrato="MIN-OBS-DET-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1500.00"),
+            observacao="Observação visível no contrato desenvolvido",
+        )
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.get(reverse("detalhes_minuta_contrato", args=[self.solicitacao_contrato.pk]))
+
+        self.assertContains(response, "Contrato Desenvolvido")
+        self.assertContains(response, "Observações")
+        self.assertContains(response, "Observação visível no contrato desenvolvido")
 
     def test_aprovar_solicitacao_prospeccao_exige_evento(self):
         self.solicitacao_prospeccao.status = "Solicitação de prospecção"
@@ -8768,6 +8847,38 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.solicitacao_contrato.refresh_from_db()
         self.assertEqual(self.solicitacao_contrato.status, "Planejamento do Contrato")
 
+    def test_cadastrar_minuta_contrato_com_bm_vazio_mantem_botao_para_inserir_bm(self):
+        DocumentoBM.objects.create(solicitacao_contrato=self.solicitacao_contrato)
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("cadastrar_minuta_contrato", args=[self.solicitacao_contrato.pk]),
+            {
+                "numero_contrato": "MIN-CONTR-BM-VAZIO-001",
+                "objeto": "Objeto da contratação",
+                "valor_total": "1.500,00",
+                "observacao": "Minuta inicial",
+                "arquivo_contrato": SimpleUploadedFile(
+                    "minuta-contrato.pdf",
+                    b"%PDF-1.4 draft",
+                    content_type="application/pdf",
+                ),
+            },
+            follow=False,
+        )
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertEqual(self.solicitacao_contrato.status, "Planejamento do Contrato")
+
+        response = self.client.get(reverse("lista_solicitacoes"))
+        self.assertContains(response, "Inserir Minuta do BM")
+        self.assertContains(response, reverse("inserir_minuta_bm_contrato", args=[self.solicitacao_contrato.pk]))
+
+        response = self.client.get(reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk]))
+        self.assertContains(response, "Inserir Minuta do BM")
+        self.assertContains(response, reverse("inserir_minuta_bm_contrato", args=[self.solicitacao_contrato.pk]))
+
     def test_inserir_minuta_bm_contratacao_com_contrato_existente_envia_para_aprovacao_final(self):
         self.gerente_contrato.gerente_contrato_ausente = True
         self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
@@ -8778,6 +8889,11 @@ class ContratacaoFlowTests(BaseUserTestCase):
             prazo_inicio=date(2026, 5, 1),
             prazo_fim=date(2026, 6, 1),
             valor_total=Decimal("1500.00"),
+            arquivo_contrato=SimpleUploadedFile(
+                "minuta-contrato.pdf",
+                b"%PDF-1.4 draft",
+                content_type="application/pdf",
+            ),
         )
         self.client.force_login(self.suprimento)
 
@@ -8850,6 +8966,34 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertEqual(documento.prazo_inicio, date(2026, 5, 1))
         self.assertEqual(documento.prazo_fim, date(2026, 6, 1))
         self.assertEqual(documento.valor_total, Decimal("2345.67"))
+
+    def test_cadastrar_contrato_com_bm_vazio_mantem_planejamento(self):
+        DocumentoBM.objects.create(solicitacao=self.solicitacao_prospeccao)
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("cadastrar_contrato", args=[self.solicitacao_prospeccao.pk]),
+            {
+                "numero_contrato": "MIN-PROS-BM-VAZIO-001",
+                "objeto": "Objeto da prospecção",
+                "valor_total": "2.345,67",
+                "observacao": "Contrato de prospecção",
+                "arquivo_contrato": SimpleUploadedFile(
+                    "minuta.pdf",
+                    b"%PDF-1.4 draft",
+                    content_type="application/pdf",
+                ),
+            },
+            follow=False,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("detalhes_solicitacao", kwargs={"pk": self.solicitacao_prospeccao.pk}),
+            fetch_redirect_response=False,
+        )
+        self.solicitacao_prospeccao.refresh_from_db()
+        self.assertEqual(self.solicitacao_prospeccao.status, "Planejamento do Contrato")
 
     def test_cadastrar_contrato_com_minuta_notifica_gerente_sem_email_para_diretoria_quando_ausente(self):
         self.gerente_contrato.gerente_contrato_ausente = True

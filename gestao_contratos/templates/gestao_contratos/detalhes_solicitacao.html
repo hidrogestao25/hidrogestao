@@ -141,6 +141,13 @@ document.addEventListener("DOMContentLoaded", function() {
                 Não há contrato com cliente cadastrado no banco
             {% endif %}
         </p>
+        {% with contrato_minuta=solicitacao.contrato_relacionado %}
+          {% if contrato_minuta %}
+            <p><strong>Observações da Minuta do Contrato:</strong>
+              {{ contrato_minuta.observacao|default:"Não informado" }}
+            </p>
+          {% endif %}
+        {% endwith %}
         {% if solicitacao.justificativa_gerencia %}
           <p><strong>Justificativa da Gerência:</strong> {{ solicitacao.justificativa_gerencia }}</p>
         {% endif %}
