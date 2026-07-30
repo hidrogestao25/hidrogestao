@@ -1039,6 +1039,17 @@ def get_next_timeline_index(completed_index, total_steps):
     return max(0, min(completed_index + 1, total_steps - 1))
 
 
+def get_request_timeline_current_index(solicitacao, status_order):
+    completed_index = status_order.index(solicitacao.status) if solicitacao.status in status_order else 0
+    if (
+        solicitacao.status == "Aprovação Final"
+        and not solicitacao.aprovacao_gerencia
+        and not solicitacao.reprovacao_gerencia
+    ):
+        return completed_index
+    return get_next_timeline_index(completed_index, len(status_order))
+
+
 def get_sla_stage_mapping_rows(config_map):
     rows = []
     for tipo_fluxo, stages in SLA_STAGE_DEFINITIONS.items():
@@ -8048,7 +8059,7 @@ def detalhes_solicitacao_contrato(request, pk):
     eventos = solicitacao.evento_set.all()
 
     completed_index = status_order.index(solicitacao.status) if solicitacao.status in status_order else 0
-    current_index = get_next_timeline_index(completed_index, len(status_order))
+    current_index = get_request_timeline_current_index(solicitacao, status_order)
     progress_percent = calculate_timeline_progress_percent(
         current_index,
         len(status_order),
@@ -8116,7 +8127,7 @@ def detalhes_solicitacao(request, pk):
     eventos = solicitacao.evento_set.all()
 
     completed_index = status_order.index(solicitacao.status) if solicitacao.status in status_order else 0
-    current_index = get_next_timeline_index(completed_index, len(status_order))
+    current_index = get_request_timeline_current_index(solicitacao, status_order)
     progress_percent = calculate_timeline_progress_percent(
         current_index,
         len(status_order),

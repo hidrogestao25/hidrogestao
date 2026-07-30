@@ -2896,6 +2896,24 @@ class ProspeccaoFlowAdjustmentsTests(BaseUserTestCase):
         self.assertEqual(response.context["progress_percent"], calculate_timeline_progress_percent(6, 9))
         self.assertContains(response, '<div class="step active">', html=False)
 
+    def test_timeline_solicitacao_prospeccao_aprovacao_final_pendente_fica_na_etapa_atual(self):
+        solicitacao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Prospecção aguardando aprovação final",
+            status="Aprovação Final",
+            aprovacao_gerencia=False,
+            reprovacao_gerencia=False,
+        )
+        self.client.force_login(self.gerente_lider)
+
+        response = self.client.get(reverse("detalhes_solicitacao", kwargs={"pk": solicitacao.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["status_order"][response.context["current_index"]], "Aprovação Final")
+        self.assertEqual(response.context["progress_percent"], calculate_timeline_progress_percent(6, 9))
+
     def test_timeline_solicitacao_prospeccao_aguardando_assinados_marca_onboarding_sem_barra_cheia(self):
         solicitacao = SolicitacaoProspeccao.objects.create(
             contrato=self.contrato,
@@ -8411,6 +8429,21 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertEqual(response.context["status_order"][response.context["current_index"]], "Aprovação Final")
         self.assertEqual(response.context["progress_percent"], calculate_timeline_progress_percent(3, 6))
         self.assertContains(response, '<div class="step active">', html=False)
+
+    def test_timeline_solicitacao_contratacao_aprovacao_final_pendente_fica_na_etapa_atual(self):
+        self.solicitacao_contrato.status = "Aprovação Final"
+        self.solicitacao_contrato.aprovacao_gerencia = False
+        self.solicitacao_contrato.reprovacao_gerencia = False
+        self.solicitacao_contrato.save(update_fields=["status", "aprovacao_gerencia", "reprovacao_gerencia"])
+        self.client.force_login(self.gerente_contrato)
+
+        response = self.client.get(
+            reverse("detalhes_solicitacao_contrato", kwargs={"pk": self.solicitacao_contrato.pk})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["status_order"][response.context["current_index"]], "Aprovação Final")
+        self.assertEqual(response.context["progress_percent"], calculate_timeline_progress_percent(3, 6))
 
     def test_timeline_solicitacao_contratacao_aguardando_assinados_marca_onboarding_sem_barra_cheia(self):
         self.solicitacao_contrato.status = get_signed_files_pending_status()
