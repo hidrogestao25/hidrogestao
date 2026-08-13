@@ -1413,6 +1413,8 @@ def get_sla_stage_owner_label(stage):
 
     if isinstance(objeto, SolicitacaoOrdemServico):
         if stage_slug == "aprovacao_gerencia":
+            if has_absent_gerente_contrato():
+                return "Diretoria"
             return "Gerência de Contrato"
         if stage_slug == "aprovacao_diretoria":
             return "Diretoria"
@@ -7191,6 +7193,9 @@ def aprovar_os_diretoria(request, pk, acao):
 
     if os.status not in ['pendente_gerente', 'pendente_diretoria']:
         messages.warning(request, "Esta OS nao esta pendente da Diretoria.")
+        return redirect('detalhe_ordem_servico', pk=os.pk)
+    if os.status == 'pendente_gerente' and not user_can_cover_gerente_contrato(request.user):
+        messages.error(request, "Esta OS ainda aguarda a Gerência de Contrato.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
     if acao not in ['aprovar', 'reprovar']:

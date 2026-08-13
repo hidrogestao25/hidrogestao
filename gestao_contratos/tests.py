@@ -2003,6 +2003,21 @@ class PermissionHelperTests(BaseUserTestCase):
 
         self.assertEqual(get_gerente_contrato_action_groups(), {"gerente_contrato", "diretoria"})
 
+    def test_menu_diretoria_nao_exibe_atalhos_de_criacao_ao_cobrir_gerente_contrato(self):
+        diretoria = self.create_user("dir_menu_cobertura", "diretoria")
+        gerente_contrato = self.create_user("gc_menu_ausente", "gerente_contrato")
+        gerente_contrato.gerente_contrato_ausente = True
+        gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        self.client.force_login(diretoria)
+
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Lista de Solicitações")
+        self.assertNotContains(response, "Solicitação de Contratação")
+        self.assertNotContains(response, "Solicitação de Prospecção")
+        self.assertNotContains(response, "Solicitação de Contrato Guarda-chuva")
+
     def test_group_emails_expande_gerente_contrato_e_envio_remove_email_da_diretoria(self):
         gerente_contrato = self.create_user("gc_email_ausente", "gerente_contrato", email="gc.ausente@example.com")
         diretoria = self.create_user("dir_email_ausente", "diretoria", email="dir.ausente@example.com")
@@ -6699,6 +6714,7 @@ class CenterScopedViewTests(BaseUserTestCase):
 class ListaSolicitacoesOSTests(BaseUserTestCase):
     def setUp(self):
         self.gerente_contrato = self.create_user("gclistaos", "gerente_contrato")
+        self.diretoria = self.create_user("dirlistaos", "diretoria")
         self.lider = self.create_user("liderlistaos", "lider_contrato")
         self.coordenador = self.create_user("coordlistaos", "coordenador")
         self.contrato_base = self.create_contract(
@@ -6731,6 +6747,42 @@ class ListaSolicitacoesOSTests(BaseUserTestCase):
         os_ids = {item.pk for item in response.context["ordens_servico_page"].object_list}
         self.assertIn(self.os_pendente.pk, os_ids)
         self.assertContains(response, "Solicitação OS pendente para gerente")
+
+    def test_lista_solicitacoes_exibe_aprovacao_de_os_para_diretoria_quando_gerente_ausente(self):
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        self.client.force_login(self.diretoria)
+
+        response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertEqual(response.status_code, 200)
+        os_ids = {item.pk for item in response.context["ordens_servico_page"].object_list}
+        self.assertIn(self.os_pendente.pk, os_ids)
+        self.assertContains(response, reverse("aprovar_os_diretoria", args=[self.os_pendente.pk, "aprovar"]))
+        self.assertContains(response, "Aprovar Solicitação")
+
+    def test_lista_solicitacoes_exibe_aprovacao_de_minuta_os_para_diretoria_quando_gerente_ausente(self):
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        self.os_pendente.status = "pendente_minuta_gerente"
+        self.os_pendente.aprovacao_gerente = "aprovado"
+        self.os_pendente.aprovacao_diretor = "aprovado"
+        self.os_pendente.arquivo_os = SimpleUploadedFile(
+            "minuta-os.pdf",
+            b"pdf-content",
+            content_type="application/pdf",
+        )
+        self.os_pendente.save(update_fields=["status", "aprovacao_gerente", "aprovacao_diretor", "arquivo_os"])
+        self.client.force_login(self.diretoria)
+
+        response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertEqual(response.status_code, 200)
+        os_ids = {item.pk for item in response.context["ordens_servico_page"].object_list}
+        self.assertIn(self.os_pendente.pk, os_ids)
+        self.assertContains(response, reverse("aprovar_os_gerente_contrato", args=[self.os_pendente.pk, "aprovar"]))
+        self.assertContains(response, "Aprovar Minuta")
+        self.assertNotContains(response, "Editar")
 
 
 class DeliveryRegistrationTests(BaseUserTestCase):
@@ -7810,6 +7862,71 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         )
         os_request.refresh_from_db()
         self.assertEqual(os_request.status, "pendente_suprimento")
+        self.assertEqual(os_request.aprovacao_diretor, "aprovado")
+
+    def test_detalhe_os_exibe_aprovacao_para_diretoria_quando_gerente_ausente(self):
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        os_request = self.create_os_request(
+            contrato=self.contrato_terceiro,
+            solicitante=self.lider,
+            lider_contrato=self.lider,
+            coordenador=self.coordenador,
+            status="pendente_gerente",
+        )
+        self.client.force_login(self.diretoria)
+
+        response = self.client.get(reverse("detalhe_ordem_servico", args=[os_request.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]))
+        self.assertContains(response, "Aprovar Solicitacao")
+        self.assertNotContains(response, "Editar OS")
+        self.assertNotContains(response, reverse("editar_ordem_servico", args=[os_request.pk]))
+
+    def test_aprovar_os_diretoria_bloqueia_pendente_gerente_sem_ausencia(self):
+        os_request = self.create_os_request(
+            contrato=self.contrato_terceiro,
+            solicitante=self.lider,
+            lider_contrato=self.lider,
+            coordenador=self.coordenador,
+            status="pendente_gerente",
+        )
+        self.client.force_login(self.diretoria)
+
+        response = self.client.get(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
+
+        self.assertRedirects(
+            response,
+            reverse("detalhe_ordem_servico", kwargs={"pk": os_request.pk}),
+            fetch_redirect_response=False,
+        )
+        os_request.refresh_from_db()
+        self.assertEqual(os_request.status, "pendente_gerente")
+        self.assertNotEqual(os_request.aprovacao_diretor, "aprovado")
+
+    def test_aprovar_os_diretoria_cobre_gerente_ausente_e_envia_para_suprimento(self):
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        os_request = self.create_os_request(
+            contrato=self.contrato_terceiro,
+            solicitante=self.lider,
+            lider_contrato=self.lider,
+            coordenador=self.coordenador,
+            status="pendente_gerente",
+        )
+        self.client.force_login(self.diretoria)
+
+        response = self.client.get(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
+
+        self.assertRedirects(
+            response,
+            reverse("detalhe_ordem_servico", kwargs={"pk": os_request.pk}),
+            fetch_redirect_response=False,
+        )
+        os_request.refresh_from_db()
+        self.assertEqual(os_request.status, "pendente_suprimento")
+        self.assertEqual(os_request.aprovacao_gerente, "aprovado")
         self.assertEqual(os_request.aprovacao_diretor, "aprovado")
 
     def test_upload_minuta_envia_para_avaliacao_do_gerente(self):

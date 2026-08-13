@@ -504,6 +504,71 @@
                         Detalhes
                     </a>
 
+                    {% if request.user.grupo == 'diretoria' and os.status == 'pendente_diretoria' or request.user.grupo == 'diretoria' and can_act_as_gerente_contrato and os.status == 'pendente_gerente' %}
+                        <a href="{% url 'aprovar_os_diretoria' os.id 'aprovar' %}" class="btn btn-sm btn-success">
+                            Aprovar Solicitação
+                        </a>
+                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarOSDiretoria{{ os.id }}">
+                            Reprovar Solicitação
+                        </button>
+
+                        <div class="modal fade" id="modalReprovarOSDiretoria{{ os.id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <form method="post" action="{% url 'aprovar_os_diretoria' os.id 'reprovar' %}">
+                                        {% csrf_token %}
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Reprovar solicitação de OS</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <label for="justificativa_os_diretoria_{{ os.id }}" class="form-label">Justificativa</label>
+                                            <textarea id="justificativa_os_diretoria_{{ os.id }}" name="justificativa" class="form-control" rows="4" required></textarea>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                            <button type="submit" class="btn btn-danger">Confirmar reprovação</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    {% if can_act_as_gerente_contrato and os.status == 'pendente_minuta_gerente' %}
+                        <form method="post" action="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-success">
+                                Aprovar Minuta
+                            </button>
+                        </form>
+                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarMinutaOS{{ os.id }}">
+                            Reprovar Minuta
+                        </button>
+
+                        <div class="modal fade" id="modalReprovarMinutaOS{{ os.id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <form method="post" action="{% url 'aprovar_os_gerente_contrato' os.id 'reprovar' %}">
+                                        {% csrf_token %}
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Reprovar minuta da OS</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <label for="justificativa_minuta_os_{{ os.id }}" class="form-label">Justificativa</label>
+                                            <textarea id="justificativa_minuta_os_{{ os.id }}" name="justificativa" class="form-control" rows="4" required></textarea>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                            <button type="submit" class="btn btn-danger">Confirmar reprovação</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+
                     {% if request.user.grupo in 'gerente,gerente_contrato,gerente_lider,suprimento' %}
                         <a href="{% url 'editar_ordem_servico' os.id %}" class="btn btn-sm btn-outline-warning">
                             Editar
