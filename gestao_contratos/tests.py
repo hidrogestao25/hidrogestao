@@ -10292,6 +10292,27 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         self.assertTrue(can_user_request_contract_addendum(self.gerente_contrato, self.contrato_terceiro))
         self.assertFalse(can_user_request_contract_addendum(self.suprimento, self.contrato_terceiro))
 
+    def test_gerente_lider_lider_do_contrato_sem_coordenador_pode_solicitar_aditivo(self):
+        contrato_base = self.create_contract(
+            codigo="PRJ-ADITIVO-GL",
+            coordenador=None,
+            lider_contrato=self.gerente_lider,
+        )
+        contrato_terceiro = self.create_supplier_contract(
+            cod_projeto=contrato_base,
+            coordenador=None,
+            lider_contrato=self.gerente_lider,
+            num_contrato="CT-ADITIVO-GL",
+        )
+
+        self.assertTrue(can_user_request_contract_addendum(self.gerente_lider, contrato_terceiro))
+
+        self.client.force_login(self.gerente_lider)
+        response = self.client.get(reverse("contrato_fornecedor_detalhe", kwargs={"pk": contrato_terceiro.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("solicitar_aditivo_contrato", args=[contrato_terceiro.pk]))
+
     def test_timeline_aditivo_etapa_atual_fica_ativa_com_barra_ate_a_etapa(self):
         aditivo = self.create_aditivo()
         aditivo.status_gerente = "aprovado"

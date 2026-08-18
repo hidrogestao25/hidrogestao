@@ -3446,7 +3446,7 @@ def can_user_request_contract_addendum(user, contrato):
     if user.grupo == "lider_contrato":
         return user == contrato_lider
     if user.grupo == "gerente_lider":
-        return user_shares_center_with_contract_coordinators(user, contrato)
+        return can_gerente_lider_access_supplier_contract(user, contrato)
     if user_has_gerente_contrato_role(user):
         return True
     return False
