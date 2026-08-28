@@ -48,6 +48,25 @@ CONTRACT_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Mode
 ADDENDUM_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Aditivo.docm"
 OS_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Ordem de Serviço.docm"
 SIGNED_FILES_PENDING_STATUS = "Aguardando Arquivos Assinados"
+PROSPECCAO_STATUS_ORDER = [
+    "Solicitação de prospecção",
+    "Aprovada pelo suprimento",
+    "Triagem realizada",
+    "Fornecedor selecionado",
+    "Fornecedor aprovado",
+    "Planejamento do Contrato",
+    "Aprovação Final",
+    SIGNED_FILES_PENDING_STATUS,
+    "Onboarding",
+]
+CONTRATACAO_STATUS_ORDER = [
+    "Solicitação de contratação",
+    "Fornecedor aprovado",
+    "Planejamento do Contrato",
+    "Aprovação Final",
+    SIGNED_FILES_PENDING_STATUS,
+    "Onboarding",
+]
 DISABLE_DIRETORIA_EMAIL_NOTIFICATIONS = True
 DUPLICATE_SUBMISSION_MESSAGE = "Esta solicitacao ja foi enviada. Evitei criar uma duplicidade."
 
@@ -1397,6 +1416,8 @@ def get_sla_stage_owner_label(stage):
 
     if isinstance(objeto, SolicitacaoContrato):
         if stage_slug == "solicitacao":
+            if contract_request_supplier_rejected(objeto):
+                return "Líder de Contrato"
             gerente_pendente = objeto.aprovacao_fornecedor_gerente != "aprovado"
             diretoria_pendente = objeto.aprovacao_fornecedor_diretor != "aprovado"
             if gerente_pendente and diretoria_pendente:
@@ -2128,6 +2149,11 @@ def get_responsible_groups_for_sla_item(objeto):
 
     if isinstance(objeto, SolicitacaoContrato):
         if objeto.status in ["Solicitação de contratação", "Em análise"]:
+            if contract_request_supplier_rejected(objeto):
+                lider = getattr(objeto, "lider_contrato", None)
+                if lider and getattr(lider, "grupo", None):
+                    return {lider.grupo}
+                return {"lider_contrato", "gerente_lider"}
             groups = set()
             if objeto.aprovacao_fornecedor_gerente == "pendente":
                 groups.update(get_gerente_contrato_action_groups())
@@ -3450,6 +3476,85 @@ def can_user_request_contract_addendum(user, contrato):
     if user_has_gerente_contrato_role(user):
         return True
     return False
+
+
+def contract_request_supplier_rejected(solicitacao):
+    return bool(
+        solicitacao
+        and (
+            solicitacao.aprovacao_fornecedor_gerente == "reprovado"
+            or solicitacao.aprovacao_fornecedor_diretor == "reprovado"
+        )
+    )
+
+
+def can_user_adjust_rejected_contract_request(user, solicitacao):
+    return bool(
+        user
+        and solicitacao
+        and contract_request_supplier_rejected(solicitacao)
+        and solicitacao.lider_contrato_id == user.pk
+    )
+
+
+def can_user_edit_contract_request(user, solicitacao):
+    return bool(
+        user
+        and solicitacao
+        and (
+            user.grupo == "suprimento"
+            or can_user_adjust_rejected_contract_request(user, solicitacao)
+        )
+    )
+
+
+def can_supply_regress_request(user, solicitacao):
+    return bool(
+        user
+        and solicitacao
+        and user.grupo == "suprimento"
+    )
+
+
+def get_request_status_order(solicitacao):
+    if isinstance(solicitacao, SolicitacaoProspeccao):
+        return PROSPECCAO_STATUS_ORDER
+    if isinstance(solicitacao, SolicitacaoContrato):
+        return CONTRATACAO_STATUS_ORDER
+    return []
+
+
+def get_regression_options_for_request(user, solicitacao):
+    if not can_supply_regress_request(user, solicitacao):
+        return []
+    status_order = get_request_status_order(solicitacao)
+    if solicitacao.status not in status_order:
+        return []
+    current_index = status_order.index(solicitacao.status)
+    return [
+        {"status": status, "label": status}
+        for status in status_order[:current_index]
+    ]
+
+
+def can_supply_regress_request_to_status(user, solicitacao, target_status):
+    status_order = get_request_status_order(solicitacao)
+    if (
+        not can_supply_regress_request(user, solicitacao)
+        or solicitacao.status not in status_order
+        or target_status not in status_order
+    ):
+        return False
+    return status_order.index(target_status) < status_order.index(solicitacao.status)
+
+
+def can_supply_regress_supplier_approval(user, solicitacao):
+    target_status = (
+        "Fornecedor selecionado"
+        if isinstance(solicitacao, SolicitacaoProspeccao)
+        else "Solicitação de contratação"
+    )
+    return can_supply_regress_request_to_status(user, solicitacao, target_status)
 
 
 def can_user_view_addendum(user, aditivo):
@@ -6277,6 +6382,276 @@ def nova_solicitacao_contrato(request):
 
 
 @login_required
+def editar_solicitacao_contrato(request, pk):
+    solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
+
+    if not can_user_edit_contract_request(request.user, solicitacao):
+        messages.error(request, "Você não tem permissão para editar esta solicitação.")
+        return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+
+    clientes = Cliente.objects.all().order_by("nome")
+    if request.method == "POST":
+        form = SolicitacaoContratoForm(
+            request.POST,
+            request.FILES,
+            instance=solicitacao,
+            user=request.user,
+        )
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Solicitação atualizada com sucesso.")
+            return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+        messages.error(request, "Por favor, corrija os erros abaixo e tente novamente.")
+    else:
+        form = SolicitacaoContratoForm(instance=solicitacao, user=request.user)
+
+    return render(
+        request,
+        "fornecedores/nova_solicitacao_contrato.html",
+        {
+            "form": form,
+            "clientes": clientes,
+            "solicitacao": solicitacao,
+            "page_title": "Editar Solicitação de Contratação",
+            "submit_label": "Salvar Alterações",
+            "cancel_url": reverse("detalhes_solicitacao_contrato", kwargs={"pk": solicitacao.pk}),
+        },
+    )
+
+
+@login_required
+def reenviar_solicitacao_contrato_aprovacao(request, pk):
+    solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
+
+    if request.method != "POST":
+        return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+
+    if not can_user_adjust_rejected_contract_request(request.user, solicitacao):
+        messages.error(request, "Você não tem permissão para reenviar esta solicitação.")
+        return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+
+    solicitacao.aprovacao_fornecedor_gerente = "pendente"
+    solicitacao.aprovacao_fornecedor_diretor = "pendente"
+    solicitacao.aprocacao_fornecedor_gerente_em = None
+    solicitacao.aprocacao_fornecedor_diretor_em = None
+    solicitacao.justificativa_gerencia = None
+    solicitacao.justificativa_diretoria = None
+    solicitacao.status = "Solicitação de contratação"
+    solicitacao.save(
+        update_fields=[
+            "aprovacao_fornecedor_gerente",
+            "aprovacao_fornecedor_diretor",
+            "aprocacao_fornecedor_gerente_em",
+            "aprocacao_fornecedor_diretor_em",
+            "justificativa_gerencia",
+            "justificativa_diretoria",
+            "status",
+        ]
+    )
+
+    nome_solicitante = request.user.get_full_name() or request.user.username
+    assunto = f"Solicitação de contratação #{solicitacao.id} reenviada para aprovação"
+    mensagem = (
+        f"Olá,\n\n"
+        f"A solicitação de contratação #{solicitacao.id} foi revisada por {nome_solicitante} "
+        "e reenviada para aprovação do fornecedor.\n\n"
+        f"Fornecedor: {solicitacao.fornecedor_escolhido or '-'}\n"
+        f"Descrição: {solicitacao.descricao or '-'}\n\n"
+        "Acesse o sistema HIDROGestão para avaliar a solicitação.\n"
+        "https://hidrogestao.pythonanywhere.com/"
+    )
+    try:
+        send_request_notification_to_management(assunto, mensagem)
+    except Exception as e:
+        messages.warning(request, f"Erro ao enviar e-mail para diretoria e gerente de contrato: {e}")
+
+    messages.success(request, "Solicitação reenviada para aprovação da gerência e diretoria.")
+    return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+
+
+def _request_stage_owner_label(solicitacao, target_status):
+    if isinstance(solicitacao, SolicitacaoProspeccao):
+        if target_status in ["Solicitação de prospecção", "Aprovada pelo suprimento", "Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS]:
+            return "Suprimento"
+        if target_status == "Triagem realizada":
+            return "Líder de Contrato"
+        if target_status == "Fornecedor selecionado":
+            return "Gerência de Contrato e Diretoria"
+        if target_status == "Aprovação Final":
+            return "Gerência de Contrato"
+    if isinstance(solicitacao, SolicitacaoContrato):
+        if target_status == "Solicitação de contratação":
+            return "Gerência de Contrato e Diretoria"
+        if target_status in ["Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS]:
+            return "Suprimento"
+        if target_status == "Aprovação Final":
+            return "Gerência de Contrato"
+    return "responsável"
+
+
+def _request_stage_recipients(solicitacao, target_status):
+    if isinstance(solicitacao, SolicitacaoProspeccao):
+        if target_status in ["Solicitação de prospecção", "Aprovada pelo suprimento", "Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS]:
+            return list(_group_emails("suprimento"))
+        if target_status == "Triagem realizada":
+            return [_safe_user_email(solicitacao.lider_contrato or solicitacao.coordenador)]
+        if target_status == "Fornecedor selecionado":
+            return list(_group_emails(*(get_gerente_contrato_action_groups() | {"diretoria"})))
+        if target_status == "Aprovação Final":
+            return list(_group_emails(*get_gerente_contrato_action_groups()))
+    if isinstance(solicitacao, SolicitacaoContrato):
+        if target_status == "Solicitação de contratação":
+            return list(_group_emails(*(get_gerente_contrato_action_groups() | {"diretoria"})))
+        if target_status in ["Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS]:
+            return list(_group_emails("suprimento"))
+        if target_status == "Aprovação Final":
+            return list(_group_emails(*get_gerente_contrato_action_groups()))
+    return []
+
+
+def _set_common_final_approvals_for_regression(solicitacao, target_status):
+    before_final_approval = target_status in [
+        "Solicitação de prospecção",
+        "Aprovada pelo suprimento",
+        "Triagem realizada",
+        "Fornecedor selecionado",
+        "Fornecedor aprovado",
+        "Planejamento do Contrato",
+        "Aprovação Final",
+        "Solicitação de contratação",
+    ]
+    if before_final_approval:
+        solicitacao.aprovacao_gerencia = False
+        solicitacao.reprovacao_gerencia = False
+        solicitacao.justificativa_gerencia = None
+        solicitacao.justificativa_diretoria = None
+        if hasattr(solicitacao, "aprovacao_diretoria"):
+            solicitacao.aprovacao_diretoria = False
+        if hasattr(solicitacao, "reprovacao_diretoria"):
+            solicitacao.reprovacao_diretoria = False
+
+
+def apply_request_regression(solicitacao, target_status):
+    solicitacao.status = target_status
+    _set_common_final_approvals_for_regression(solicitacao, target_status)
+
+    if isinstance(solicitacao, SolicitacaoProspeccao):
+        if target_status in ["Solicitação de prospecção"]:
+            solicitacao.aprovado = None
+            solicitacao.aprovado_por = None
+            solicitacao.data_aprovacao = None
+            solicitacao.triagem_realizada = False
+            solicitacao.fornecedor_escolhido = None
+            solicitacao.aprovacao_fornecedor_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_diretor = "pendente"
+            solicitacao.aprocacao_fornecedor_gerente_em = None
+            solicitacao.aprocacao_fornecedor_diretor_em = None
+        elif target_status == "Aprovada pelo suprimento":
+            solicitacao.aprovado = True
+            solicitacao.triagem_realizada = False
+            solicitacao.fornecedor_escolhido = None
+            solicitacao.aprovacao_fornecedor_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_diretor = "pendente"
+            solicitacao.aprocacao_fornecedor_gerente_em = None
+            solicitacao.aprocacao_fornecedor_diretor_em = None
+        elif target_status == "Triagem realizada":
+            solicitacao.aprovado = True
+            solicitacao.triagem_realizada = True
+            solicitacao.fornecedor_escolhido = None
+            solicitacao.aprovacao_fornecedor_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_diretor = "pendente"
+            solicitacao.aprocacao_fornecedor_gerente_em = None
+            solicitacao.aprocacao_fornecedor_diretor_em = None
+        elif target_status == "Fornecedor selecionado":
+            solicitacao.aprovado = True
+            solicitacao.triagem_realizada = True
+            solicitacao.aprovacao_fornecedor_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_diretor = "pendente"
+            solicitacao.aprocacao_fornecedor_gerente_em = None
+            solicitacao.aprocacao_fornecedor_diretor_em = None
+        elif target_status in ["Fornecedor aprovado", "Planejamento do Contrato", "Aprovação Final", SIGNED_FILES_PENDING_STATUS]:
+            solicitacao.aprovado = True
+            solicitacao.triagem_realizada = True
+            solicitacao.aprovacao_fornecedor_gerente = "aprovado"
+            solicitacao.aprovacao_fornecedor_diretor = "aprovado"
+
+    if isinstance(solicitacao, SolicitacaoContrato):
+        if target_status == "Solicitação de contratação":
+            solicitacao.aprovacao_fornecedor_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_diretor = "pendente"
+            solicitacao.aprocacao_fornecedor_gerente_em = None
+            solicitacao.aprocacao_fornecedor_diretor_em = None
+        elif target_status in ["Fornecedor aprovado", "Planejamento do Contrato", "Aprovação Final", SIGNED_FILES_PENDING_STATUS]:
+            solicitacao.aprovacao_fornecedor_gerente = "aprovado"
+            solicitacao.aprovacao_fornecedor_diretor = "aprovado"
+
+    solicitacao.save()
+
+
+def _notify_request_regression(solicitacao, tipo_label, usuario, target_status):
+    nome_usuario = usuario.get_full_name() or usuario.username
+    fornecedor = getattr(solicitacao, "fornecedor_escolhido", None)
+    owner_label = _request_stage_owner_label(solicitacao, target_status)
+    assunto = f"{tipo_label} #{solicitacao.id} voltou para {target_status}"
+    mensagem = (
+        f"Olá,\n\n"
+        f"A {tipo_label.lower()} #{solicitacao.id} foi regredida por {nome_usuario} "
+        f"para a etapa {target_status}.\n\n"
+        f"Fornecedor: {fornecedor or '-'}\n"
+        f"Descrição: {solicitacao.descricao or '-'}\n\n"
+        f"A próxima ação está com: {owner_label}.\n"
+        "https://hidrogestao.pythonanywhere.com/"
+    )
+    _send_stage_return_notification(assunto, mensagem, _request_stage_recipients(solicitacao, target_status))
+
+
+@login_required
+def regredir_solicitacao_aprovacao_fornecedor(request, pk):
+    solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+
+    if request.method != "POST":
+        return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+
+    target_status = request.POST.get("target_status") or "Fornecedor selecionado"
+    if not can_supply_regress_request_to_status(request.user, solicitacao, target_status):
+        messages.error(request, "Você não tem permissão para regredir esta solicitação.")
+        return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+
+    apply_request_regression(solicitacao, target_status)
+
+    try:
+        _notify_request_regression(solicitacao, "Solicitação de prospecção", request.user, target_status)
+    except Exception as e:
+        messages.warning(request, f"Erro ao enviar e-mail para os responsáveis da etapa: {e}")
+
+    messages.success(request, f"Solicitação regredida para {target_status}.")
+    return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+
+
+@login_required
+def regredir_solicitacao_contrato_aprovacao_fornecedor(request, pk):
+    solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
+
+    if request.method != "POST":
+        return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+
+    target_status = request.POST.get("target_status") or "Solicitação de contratação"
+    if not can_supply_regress_request_to_status(request.user, solicitacao, target_status):
+        messages.error(request, "Você não tem permissão para regredir esta solicitação.")
+        return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+
+    apply_request_regression(solicitacao, target_status)
+
+    try:
+        _notify_request_regression(solicitacao, "Solicitação de contratação", request.user, target_status)
+    except Exception as e:
+        messages.warning(request, f"Erro ao enviar e-mail para os responsáveis da etapa: {e}")
+
+    messages.success(request, f"Solicitação regredida para {target_status}.")
+    return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+
+
+@login_required
 def aprovar_solicitacao_contrato(request, pk):
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
 
@@ -7387,6 +7762,8 @@ def lista_solicitacoes(request):
             config_map=sla_config_map,
             holiday_dates=sla_holiday_dates,
         )
+        solicitacao.can_regress_supplier_approval = can_supply_regress_supplier_approval(request.user, solicitacao)
+        solicitacao.regression_options = get_regression_options_for_request(request.user, solicitacao)
     for solicitacao in page_obj_c:
         solicitacao.sla_display = build_request_sla_display(
             solicitacao,
@@ -7394,6 +7771,10 @@ def lista_solicitacoes(request):
             config_map=sla_config_map,
             holiday_dates=sla_holiday_dates,
         )
+        solicitacao.can_edit_contract_request = can_user_edit_contract_request(request.user, solicitacao)
+        solicitacao.can_adjust_rejected_supplier = can_user_adjust_rejected_contract_request(request.user, solicitacao)
+        solicitacao.can_regress_supplier_approval = can_supply_regress_supplier_approval(request.user, solicitacao)
+        solicitacao.regression_options = get_regression_options_for_request(request.user, solicitacao)
     for solicitacao_os in page_obj_os:
         solicitacao_os.sla_display = build_request_sla_display(
             solicitacao_os,
@@ -7934,14 +8315,7 @@ def detalhes_solicitacao_contrato(request, pk):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
-    status_order = [
-        "Solicitação de contratação",
-        "Fornecedor aprovado",
-        "Planejamento do Contrato",
-        "Aprovação Final",
-        SIGNED_FILES_PENDING_STATUS,
-        "Onboarding",
-    ]
+    status_order = CONTRATACAO_STATUS_ORDER
 
     if request.method == "POST":
         acao = request.POST.get("acao")
@@ -8085,6 +8459,10 @@ def detalhes_solicitacao_contrato(request, pk):
             contratacao_audit_map=build_latest_audit_map(SolicitacaoContrato, [solicitacao.pk]),
         ),
         "can_act_as_gerente_contrato": user_has_gerente_contrato_role(request.user),
+        "can_edit_contract_request": can_user_edit_contract_request(request.user, solicitacao),
+        "can_adjust_rejected_supplier": can_user_adjust_rejected_contract_request(request.user, solicitacao),
+        "can_regress_supplier_approval": can_supply_regress_supplier_approval(request.user, solicitacao),
+        "regression_options": get_regression_options_for_request(request.user, solicitacao),
     }
 
     return render(request, "gestao_contratos/detalhes_solicitacao_contratacao.html", context)
@@ -8099,17 +8477,7 @@ def detalhes_solicitacao(request, pk):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
-    status_order = [
-        "Solicitação de prospecção",
-        "Aprovada pelo suprimento",
-        "Triagem realizada",
-        "Fornecedor selecionado",
-        "Fornecedor aprovado",
-        "Planejamento do Contrato",
-        "Aprovação Final",
-        SIGNED_FILES_PENDING_STATUS,
-        "Onboarding",
-    ]
+    status_order = PROSPECCAO_STATUS_ORDER
 
     fornecedor_escolhido = solicitacao.fornecedor_escolhido
     fornecedores_selecionados = solicitacao.fornecedores_selecionados.all()
@@ -8171,6 +8539,8 @@ def detalhes_solicitacao(request, pk):
             solicitacao,
             prospeccao_audit_map=build_latest_audit_map(SolicitacaoProspeccao, [solicitacao.pk]),
         ),
+        "can_regress_supplier_approval": can_supply_regress_supplier_approval(request.user, solicitacao),
+        "regression_options": get_regression_options_for_request(request.user, solicitacao),
     }
 
     return render(request, "gestao_contratos/detalhes_solicitacao.html", context)

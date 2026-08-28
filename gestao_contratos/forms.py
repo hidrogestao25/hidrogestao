@@ -421,7 +421,7 @@ class SolicitacaoContratoForm(forms.ModelForm):
                 Q(coordenador__centros__in=user.centros.all()) |
                 Q(lider_contrato=user)
             ).distinct()
-        elif user and user.grupo in ['gerente_contrato', 'lider_contrato']:
+        elif user and user.grupo in ['gerente_contrato', 'lider_contrato', 'suprimento']:
             self.fields['contrato'].queryset = Contrato.objects.all()
         else:
             self.fields['contrato'].queryset = Contrato.objects.none()

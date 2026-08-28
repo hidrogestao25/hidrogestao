@@ -6,7 +6,7 @@
     <div class="card shadow-sm">
 
     <div class="card-header card-header-custom text-white">
-      <h5>Nova Solicitação de Contratação</h5>
+      <h5>{{ page_title|default:"Nova Solicitação de Contratação" }}</h5>
     </div>
 
     <div class="card-body">
@@ -144,8 +144,8 @@
               {% endif %}
           </div>
 
-          <button type="submit" class="btn btn-primary">Enviar Solicitação</button>
-          <a href="{% url 'lista_contratos' %}" class="btn btn-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-primary">{{ submit_label|default:"Enviar Solicitação" }}</button>
+          <a href="{{ cancel_url|default_if_none:'' }}{% if not cancel_url %}{% url 'lista_contratos' %}{% endif %}" class="btn btn-secondary">Cancelar</a>
       </form>
     </div>
     </div>

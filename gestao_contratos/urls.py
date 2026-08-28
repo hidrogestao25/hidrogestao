@@ -40,6 +40,7 @@ path('aditivos_fornecedor/eventos/<int:pk>/editar/', views.editar_evento_aditivo
     path('fornecedores/solicitar/', views.nova_solicitacao_prospeccao, name='nova_solicitacao_prospeccao'),
     path('fornecedores/solicitacoes/', views.lista_solicitacoes, name='lista_solicitacoes'),
     path('report/suprimento/', views.enviar_report_suprimento, name='enviar_report_suprimento'),
+    path('fornecedores/solicitacoes/<int:pk>/regredir-aprovacao-fornecedor/', views.regredir_solicitacao_aprovacao_fornecedor, name='regredir_solicitacao_aprovacao_fornecedor'),
     path('fornecedores/solicitacoes/<int:pk>/<str:acao>/', views.aprovar_solicitacao, name='aprovar_solicitacao'),
     path('fornecedores/solicitacoes/triagem/<int:pk>/', views.triagem_fornecedores, name='triagem_fornecedores'),
     path('solicitacoes/<int:pk>/aprovar_fornecedor_gerente/', views.aprovar_fornecedor_gerente, name='aprovar_fornecedor_gerente'),
@@ -49,6 +50,9 @@ path('aditivos_fornecedor/eventos/<int:pk>/editar/', views.editar_evento_aditivo
 
     path('solicitacoes/<int:pk>/detalhes/', views.detalhes_solicitacao, name='detalhes_solicitacao'),
     path('contrato/<int:pk>/detalhes/', views.detalhes_solicitacao_contrato, name='detalhes_solicitacao_contrato'),
+    path('contrato/<int:pk>/editar-solicitacao/', views.editar_solicitacao_contrato, name='editar_solicitacao_contrato'),
+    path('contrato/<int:pk>/reenviar-aprovacao/', views.reenviar_solicitacao_contrato_aprovacao, name='reenviar_solicitacao_contrato_aprovacao'),
+    path('contrato/<int:pk>/regredir-aprovacao-fornecedor/', views.regredir_solicitacao_contrato_aprovacao_fornecedor, name='regredir_solicitacao_contrato_aprovacao_fornecedor'),
     path("solicitacao/<int:pk>/evento/novo/", views.cadastrar_evento, name="cadastrar_evento"),
     path("solicitacao_contrato/<int:pk>/evento/novo/", views.cadastrar_evento_solicitacao, name="cadastrar_evento_solicitacao"),
     path("contrato/<int:pk>/evento/novo/", views.cadastrar_evento_contrato, name="cadastrar_evento_contrato"),

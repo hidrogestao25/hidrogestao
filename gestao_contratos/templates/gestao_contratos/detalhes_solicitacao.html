@@ -57,6 +57,12 @@ document.addEventListener("DOMContentLoaded", function() {
         <p><strong>Previsto no Planejamento:</strong>
             {% if solicitacao.previsto_no_orcamento %}Sim{% else %}<span style="color:red;">Não</span>{% endif %}
         </p>
+        {% if solicitacao.justificativa_orcamento %}
+          <p><strong>Justificativa para contratação dos serviços sem planejamento:</strong> {{ solicitacao.justificativa_orcamento }}</p>
+        {% endif %}
+        {% if solicitacao.requisitos %}
+          <p><strong>Observação de contratação:</strong> {{ solicitacao.requisitos }}</p>
+        {% endif %}
         <p><strong>Período de atuação:</strong> {{ solicitacao.data_inicio }} - {{ solicitacao.data_fim }}</p>
         <p><strong>Valor a ser contratado:</strong>
           {% if solicitacao.valor_disponivel %} R$ {{ solicitacao.valor_disponivel }} {% else %} Não informado {% endif %}
@@ -498,6 +504,21 @@ document.addEventListener("DOMContentLoaded", function() {
 
 <!-- Botões de aprovação para suprimento-->
 {% if request.user.grupo == 'suprimento' %}
+    {% if regression_options %}
+        <form method="post" action="{% url 'regredir_solicitacao_aprovacao_fornecedor' solicitacao.id %}" class="d-inline-flex gap-2 align-items-center mt-3" data-prevent-double-submit="true" onsubmit="return confirm('Tem certeza que deseja voltar esta solicitação para a etapa selecionada?');">
+            {% csrf_token %}
+            <select name="target_status" class="form-select form-select-sm" required>
+                <option value="">Voltar para...</option>
+                {% for option in regression_options %}
+                    <option value="{{ option.status }}">{{ option.label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-outline-warning">
+                Regredir Fluxo
+            </button>
+        </form>
+    {% endif %}
+
     {% if solicitacao.aprovado == None %}
         {% if eventos or solicitacao.guarda_chuva %}
         <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success mt-3">Aprovar</a>

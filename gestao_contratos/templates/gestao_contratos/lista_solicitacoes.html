@@ -65,6 +65,21 @@
                         <!-- Ações -->
                         <td>
                             {% if request.user.grupo == 'suprimento' %}
+                                {% if solicitacao.regression_options %}
+                                    <form method="post" action="{% url 'regredir_solicitacao_aprovacao_fornecedor' solicitacao.id %}" class="d-inline-flex gap-1 align-items-center" data-prevent-double-submit="true" onsubmit="return confirm('Tem certeza que deseja voltar esta solicitação para a etapa selecionada?');">
+                                        {% csrf_token %}
+                                        <select name="target_status" class="form-select form-select-sm" required>
+                                            <option value="">Voltar para...</option>
+                                            {% for option in solicitacao.regression_options %}
+                                                <option value="{{ option.status }}">{{ option.label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <button type="submit" class="btn btn-outline-warning btn-sm">
+                                            Regredir
+                                        </button>
+                                    </form>
+                                {% endif %}
+
                                 {% if solicitacao.aprovado == None %}
                                     <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success btn-sm">Aprovar</a>
                                     <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalReprovarSolicitacao{{ solicitacao.id }}">Reprovar</button>
@@ -277,6 +292,41 @@
                     <!-- AÇÕES -->
                   <td onclick="event.stopPropagation();">
 
+                      {% if solicitacao.regression_options %}
+                          <div>
+                              <form method="post" action="{% url 'regredir_solicitacao_contrato_aprovacao_fornecedor' solicitacao.id %}" class="d-inline-flex gap-1 align-items-center" data-prevent-double-submit="true" onsubmit="return confirm('Tem certeza que deseja voltar esta solicitação para a etapa selecionada?');">
+                                  {% csrf_token %}
+                                  <select name="target_status" class="form-select form-select-sm" required>
+                                      <option value="">Voltar para...</option>
+                                      {% for option in solicitacao.regression_options %}
+                                          <option value="{{ option.status }}">{{ option.label }}</option>
+                                      {% endfor %}
+                                  </select>
+                                  <button type="submit" class="btn btn-outline-warning btn-sm">
+                                      Regredir
+                                  </button>
+                              </form>
+                          </div>
+                      {% endif %}
+
+                      {% if solicitacao.can_edit_contract_request %}
+                          <div>
+                              <a href="{% url 'editar_solicitacao_contrato' solicitacao.id %}" class="btn btn-warning btn-sm">
+                                  Editar Solicitação
+                              </a>
+                          </div>
+                      {% endif %}
+                      {% if solicitacao.can_adjust_rejected_supplier %}
+                          <div>
+                              <form method="post" action="{% url 'reenviar_solicitacao_contrato_aprovacao' solicitacao.id %}" class="d-inline" data-prevent-double-submit="true">
+                                  {% csrf_token %}
+                                  <button type="submit" class="btn btn-success btn-sm">
+                                      Reenviar para Aprovação
+                                  </button>
+                              </form>
+                          </div>
+                      {% endif %}
+
                       {% if request.user.grupo == 'suprimento' %}
 
                           {% if solicitacao.status == 'Fornecedor aprovado' or solicitacao.status == 'Planejamento do Contrato' %}
@@ -350,7 +400,7 @@
                                   </a>
                               {% else %}
                                   <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-warning btn-sm">
-                                      
+
                                   </a>
                               {% endif %}
                           {% endif %}
