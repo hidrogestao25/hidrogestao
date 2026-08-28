@@ -8768,6 +8768,74 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.solicitacao_contrato.refresh_from_db()
         self.assertEqual(self.solicitacao_contrato.status, "Planejamento do Contrato")
 
+    def test_solicitante_pode_editar_contratacao_apos_regressao_do_suprimento(self):
+        self.solicitacao_contrato.status = get_signed_files_pending_status()
+        self.solicitacao_contrato.solicitante = self.lider.username
+        self.solicitacao_contrato.aprovacao_fornecedor_gerente = "aprovado"
+        self.solicitacao_contrato.aprovacao_fornecedor_diretor = "aprovado"
+        self.solicitacao_contrato.aprovacao_gerencia = True
+        self.solicitacao_contrato.aprovacao_diretoria = True
+        self.solicitacao_contrato.save(
+            update_fields=[
+                "status",
+                "solicitante",
+                "aprovacao_fornecedor_gerente",
+                "aprovacao_fornecedor_diretor",
+                "aprovacao_gerencia",
+                "aprovacao_diretoria",
+            ]
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("regredir_solicitacao_contrato_aprovacao_fornecedor", args=[self.solicitacao_contrato.pk]),
+            {"target_status": "Planejamento do Contrato"},
+            follow=False,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("detalhes_solicitacao_contrato", kwargs={"pk": self.solicitacao_contrato.pk}),
+            fetch_redirect_response=False,
+        )
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertEqual(self.solicitacao_contrato.status, "Planejamento do Contrato")
+        self.assertTrue(can_user_edit_contract_request(self.lider, self.solicitacao_contrato))
+
+        self.client.force_login(self.lider)
+        detail_response = self.client.get(reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk]))
+        list_response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertContains(detail_response, reverse("editar_solicitacao_contrato", args=[self.solicitacao_contrato.pk]))
+        self.assertContains(list_response, reverse("editar_solicitacao_contrato", args=[self.solicitacao_contrato.pk]))
+
+        edit_response = self.client.post(
+            reverse("editar_solicitacao_contrato", args=[self.solicitacao_contrato.pk]),
+            {
+                "contrato": self.contrato_base.pk,
+                "fornecedor_escolhido": self.fornecedor.pk,
+                "coordenador": self.coordenador.pk,
+                "descricao": "Escopo revisado depois da regressão",
+                "justificativa_fornecedor_escolhido": "Fornecedor mantido após regressão",
+                "previsto_no_orcamento": "on",
+                "requisitos": "Observações revisadas depois da regressão",
+                "data_inicio": "01-05-2026",
+                "data_fim": "01-06-2026",
+                "valor_disponivel": "1.500,00",
+                "valor_vendido": "2.000,00",
+                "forma_pagamento": "30",
+            },
+            follow=False,
+        )
+
+        self.assertRedirects(
+            edit_response,
+            reverse("detalhes_solicitacao_contrato", kwargs={"pk": self.solicitacao_contrato.pk}),
+            fetch_redirect_response=False,
+        )
+        self.solicitacao_contrato.refresh_from_db()
+        self.assertEqual(self.solicitacao_contrato.descricao, "Escopo revisado depois da regressão")
+
     def test_timeline_solicitacao_contratacao_marca_proxima_etapa_quando_status_foi_concluido(self):
         self.solicitacao_contrato.status = "Fornecedor aprovado"
         self.solicitacao_contrato.save(update_fields=["status"])

@@ -3497,6 +3497,23 @@ def can_user_adjust_rejected_contract_request(user, solicitacao):
     )
 
 
+def _user_matches_requester(user, solicitacao):
+    requester = (getattr(solicitacao, "solicitante", None) or "").strip()
+    if not user or not requester:
+        return False
+    candidates = {user.username, user.email, user.get_full_name()}
+    return requester.lower() in {candidate.strip().lower() for candidate in candidates if candidate}
+
+
+def can_requester_edit_active_request(user, solicitacao):
+    status_order = get_request_status_order(solicitacao)
+    return bool(
+        _user_matches_requester(user, solicitacao)
+        and solicitacao.status in status_order
+        and solicitacao.status != "Onboarding"
+    )
+
+
 def can_user_edit_contract_request(user, solicitacao):
     return bool(
         user
@@ -3504,6 +3521,7 @@ def can_user_edit_contract_request(user, solicitacao):
         and (
             user.grupo == "suprimento"
             or can_user_adjust_rejected_contract_request(user, solicitacao)
+            or can_requester_edit_active_request(user, solicitacao)
         )
     )
 
