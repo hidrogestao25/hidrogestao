@@ -23,6 +23,10 @@ def guard_writes(execute,sql,params,many,context):
             'hidro_financial_audit_no_update','hidro_financial_audit_no_delete'}
         with context['connection'].cursor() as cursor:
             found={row[0] for row in cursor.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'hidro_%'")}
+            dual=cursor.execute("SELECT 1 FROM django_migrations WHERE app='gestao_contratos' AND name='0127_bm_aprovacao_duas_liderancas'").fetchone()
+        if dual:
+            expected|={'hidro_bm_dual_insert','hidro_bm_dual_decision','hidro_bm_dual_revision',
+                'hidro_bm_dual_director','hidro_pagamento_dual_bm','hidro_evento_dual_revision'}
         from .payment_context import _mode,LEDGER_TRIGGERS
         if not _mode.get().get('bootstrap') and (target.group(1).lower() not in {'gestao_contratos_nf','gestao_contratos_registroauditoria'} or 'hidro_nf_compat_insert' in found):
             expected|=LEDGER_TRIGGERS

@@ -30,7 +30,9 @@
                                 {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
                             </div>
 
-                            {% if bm.evento %}
+                            {% if bm.compartilhado_entre_contratos %}
+                                <a href="{% url 'detalhe_bm_financeiro' bm.pk %}" class="btn btn-outline-primary btn-sm">Ver BM</a>
+                            {% elif bm.evento %}
                                 <a href="{% url 'detalhes_entrega' bm.evento.id %}"
                                    class="btn btn-outline-primary btn-sm">
                                     Ver BM

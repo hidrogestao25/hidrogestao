@@ -215,6 +215,7 @@
         </a>
         <form method="post" action="{% url 'duplicar_os_cadastrada' os.id %}" class="d-inline">
           {% csrf_token %}
+          <input type="hidden" name="submission_token" value="{{ duplicate_submission_token }}">
           <button type="submit" class="btn btn-outline-primary">Duplicar OS</button>
         </form>
         {% endif %}

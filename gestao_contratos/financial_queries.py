@@ -1,7 +1,8 @@
 """Consultas de acompanhamento: não grava, aprova, liquida ou deduplica documentos.
 
-Os indicadores agregam cada tabela separadamente. Filas BM são disjuntas entre
-si; filas NF também. A atenção reúne tipos distintos, nunca uma soma financeira.
+Os indicadores agregam cada tabela separadamente. Uma NF parcialmente paga
+pode aparecer tanto em saldo pendente quanto em pagamentos registrados.
+A atenção reúne tipos distintos, nunca uma soma financeira.
 """
 from decimal import Decimal
 from urllib.parse import urlencode
@@ -21,8 +22,8 @@ QUEUE_DEFINITIONS = (
     ("aprovacao", "A", "Boletins Pendentes de Aprovação", "Acompanhamento operacional e da Diretoria.", "bm"),
     ("sem_nf", "B", "BMs autorizados sem NF", "Participações liberadas que ainda não possuem NF vinculada.", "bm"),
     ("autorizacao", "C", "NFs aguardando autorização", "Documento recebido; pagamento ainda não liberado.", "nf"),
-    ("pagamento", "D", "NFs aguardando pagamento", "Autorização válida; pagamento ainda não registrado.", "nf"),
-    ("pagos", "E", "Pagamentos registrados", "NFs pagas. Casos que exigem revisão aparecem na fila F.", "nf"),
+    ("pagamento", "D", "NFs aguardando pagamento", "Autorização válida com saldo pendente, incluindo NFs parcialmente pagas.", "nf"),
+    ("pagos", "E", "Pagamentos registrados", "NFs com pagamento líquido e movimentos no período. Casos que exigem revisão aparecem na fila F.", "nf"),
     ("atencao", "F", "Registros que exigem atenção", "Revisar o contexto e o histórico, sem correção automática.", "nf"),
 )
 
@@ -37,7 +38,8 @@ def can_view_exclusive_financial_panel(user):
 
 
 def operational_query(prefix=""):
-    return (Q(**{prefix + "status_coordenador": "aprovado"}) | Q(**{prefix + "status_gerente": "aprovado"})) & ~(
+    from .bm_approvals import shared_query,complete_query
+    return (~shared_query(prefix)|complete_query(prefix)) & (Q(**{prefix + "status_coordenador": "aprovado"}) | Q(**{prefix + "status_gerente": "aprovado"})) & ~(
         Q(**{prefix + "status_coordenador": "reprovado"}) | Q(**{prefix + "status_gerente": "reprovado"}))
 
 

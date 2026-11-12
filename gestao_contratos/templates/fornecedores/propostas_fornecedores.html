@@ -4,21 +4,25 @@
     <h2>Propostas - {{ solicitacao.contrato }}</h2>
     <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
+        {{ formset.management_form }}
+        {{ formset.non_form_errors }}
         <table class="table table-bordered">
             <thead>
                 <tr>
                     <th>Fornecedor</th>
                     <th>Valor da Proposta</th>
+                    <th>Condição de pagamento</th>
                     <th>Arquivo PDF</th>
                 </tr>
             </thead>
             <tbody>
                 {% for form in formset %}
                 <tr>
-                    <td>{{ form.instance.fornecedor.nome }}</td>
-                    <td>{{ form.valor_proposta }}</td>
+                    <td>{% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}<input type="hidden" name="{{ form.prefix }}-fornecedor_identidade" value="{{ form.instance.fornecedor_id }}">{{ form.instance.fornecedor.nome }}{{ form.non_field_errors }}</td>
+                    <td>{{ form.valor_proposta.errors }}{{ form.valor_proposta }}</td>
+                    <td>{{ form.condicao_pagamento.errors }}{{ form.condicao_pagamento }}</td>
                     <td>
-                        {{ form.arquivo_proposta }}
+                        {{ form.arquivo_proposta.errors }}{{ form.arquivo_proposta }}
                         {% if form.instance.arquivo_proposta %}
                             <a href="{{ form.instance.arquivo_proposta.url }}" target="_blank">📄 Ver Proposta</a>
                         {% endif %}

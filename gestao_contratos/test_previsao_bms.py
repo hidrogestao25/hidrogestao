@@ -120,8 +120,11 @@ class PrevisaoBMsTests(BaseUserTestCase):
         self.assertIsNone(self.excel()['Boletins de Medição'].cell(2,12).value)
 
     def test_excel_filtro_coordenador_e_contrato_financeiro_bm_compartilhado(self):
-        self.approved(index=1,evento=self.events[0],arquivo_bm='BM/compartilhado.pdf')
+        bm=self.approved(index=1,evento=self.events[0],arquivo_bm='BM/compartilhado.pdf')
+        from .test_bm_duas_liderancas import approve_shared_fixture
+        approve_shared_fixture(self,bm,timezone.make_aware(datetime(2026,9,10,12)))
         self.approved(index=1,arquivo_bm='BM/compartilhado.pdf')
+        self.client.force_login(self.finance)
         sheet=self.excel(data_limite='2026-09-30',coordenador=self.coord.pk)['Boletins de Medição']
         self.assertEqual(sheet.max_row,2)
         self.assertEqual(sheet.cell(2,4).value,self.projects[0].cod_projeto)

@@ -222,6 +222,9 @@ class DadosBancariosFornecedorForm(forms.ModelForm):
 class ContratoFornecedorForm(forms.ModelForm):
     preserve_lider_contrato_for_guarda_chuva = False
 
+    valor_total = forms.CharField(required=False, widget=forms.TextInput(
+        attrs={'class': 'form-control', 'id': 'id_valor_total'}))
+
     data_inicio = forms.DateField(
         required=False,
         widget=forms.DateInput(

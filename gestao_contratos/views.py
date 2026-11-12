@@ -15,12 +15,15 @@ from . import financial_reconciliation as fr
 from .permissions import (object_access, can_view_object, can_access_document, accessible_document_bms,
                           INTERNAL_ROLES, can_change_nf, financeiro_read_only,
                           bm_has_valid_operational_approval, PAID_NF_READ_ONLY_MESSAGE,
-                          can_read_os, can_write_os_scope)
+                          can_read_os, can_write_os_scope, is_internal)
 from .workflows import locked_action, sync_paid_total, lock_payment_origin, claim_once, audit_nf_deletion
 from .forms import parse_decimal_from_form_value, DadosBancariosFornecedorForm, FiltroFinanceiroForm
 from .forms import RenegociacaoValorForm, RenegociacaoPrazoForm, RevisaoProspeccaoForm
 from . import prospeccao_services as prospect_services
+from . import bm_approvals
 from django.forms.models import model_to_dict
+from django.forms import inlineformset_factory
+from .forms import PropostaFornecedorForm
 from . import payment_queries as pq
 from .solicitacao_services import preparar_controles, proteger_fluxo_solicitacao, eventos_operacionais, pode_consultar
 import logging
@@ -2625,11 +2628,11 @@ def indicadores_suprimento(request):
     )
 
     eventos_sem_nf_count = Evento.objects.filter(
-        boletins_medicao__aprovacao_pagamento="aprovado",
+        boletins_medicao__in=BM.objects.filter(
+            bm_operational_approval_query(),
+            aprovacao_pagamento="aprovado",
+        ),
         nota_fiscal__isnull=True,
-    ).filter(
-        Q(boletins_medicao__status_coordenador="aprovado")
-        | Q(boletins_medicao__status_gerente="aprovado")
     ).distinct().count()
 
     eventos_atrasados_count = Evento.objects.filter(contrato_terceiro__in=contratos_ativos_qs).filter(
@@ -3512,6 +3515,8 @@ def can_user_manage_os_delivery(user, os):
 def can_user_manage_bm_operational_approval(user, bm):
     if not user or not bm:
         return False
+    if bm_approvals.shared(bm):
+        return bool(bm_approvals.pending_sides(user,bm))
     if bm.os_id:
         return can_user_manage_os_delivery(user, bm.os)
     if bm.evento_id:
@@ -3900,11 +3905,7 @@ def get_visible_addendums_for_user(user):
 
 
 def bm_operational_approval_query():
-    return (
-        Q(status_coordenador="aprovado", status_gerente="pendente")
-        | Q(status_coordenador="pendente", status_gerente="aprovado")
-        | Q(status_coordenador="aprovado", status_gerente="aprovado")
-    )
+    return fq.operational_query()
 
 
 def bm_has_operational_approval(bm):
@@ -4024,12 +4025,14 @@ def user_can_approve_bm_payment(user, bm):
         and bm.aprovacao_pagamento == "pendente"
         and (
             bm_has_operational_approval(bm)
-            or (user_can_cover_gerente_contrato(user) and bm.status_gerente == "pendente" and bm.status_coordenador != "reprovado")
+            or (not bm_approvals.shared(bm) and user_can_cover_gerente_contrato(user) and bm.status_gerente == "pendente" and bm.status_coordenador != "reprovado")
         )
     )
 
 
 def bm_is_operationally_pending(bm):
+    if bm_approvals.shared(bm):
+        return not bm_approvals.complete(bm) and not bm_approvals.rejected(bm) and bm.status_gerente!='reprovado'
     return bm.status_coordenador == "pendente" and bm.status_gerente == "pendente"
 
 
@@ -4242,6 +4245,7 @@ def editar_os_cadastrada(request, pk):
 
 
 @login_required
+@locked_action(OS, sqlite_immediate=True)
 def duplicar_os_cadastrada(request, pk):
     if request.user.grupo != "suprimento":
         messages.error(request, "Você não tem permissão para isso.")
@@ -4251,6 +4255,9 @@ def duplicar_os_cadastrada(request, pk):
         return redirect("detalhes_os", pk=pk)
 
     os_original = get_object_or_404(OS, pk=pk)
+    if not _consume_submission_token(request, f"duplicar_os:{os_original.pk}"):
+        messages.warning(request, DUPLICATE_SUBMISSION_MESSAGE)
+        return redirect("detalhes_os", pk=pk)
     nova_os = OS.objects.create(
         contrato=os_original.contrato,
         solicitacao=None,
@@ -4973,7 +4980,7 @@ def home(request):
         # BM aprovados por Coordenador e Gerente mas pendentes na Diretoria
         bm_diretoria_pending_query = bm_operational_approval_query()
         if user_can_cover_gerente_contrato(user):
-            bm_diretoria_pending_query |= Q(status_gerente="pendente")
+            bm_diretoria_pending_query |= Q(status_gerente="pendente") & ~bm_approvals.shared_query()
 
         bms_pendentes = BM.objects.filter(
             Q(aprovacao_pagamento="pendente")
@@ -5083,6 +5090,12 @@ def home(request):
         context.update(build_financial_home_context(request))
 
 
+    if user.is_authenticated and user.grupo in {'lider_contrato','gerente_lider','gerente_contrato'}:
+        current=list(context.get('bms_pendentes',[]))
+        known={bm.pk for bm in current}
+        extra=list(BM.objects.filter(bm_approvals.pending_query(user)).exclude(pk__in=known).select_related(
+            'contrato','contrato__empresa_terceira','evento__contrato_terceiro','contrato__cod_projeto'))
+        context['bms_pendentes']=current+attach_bm_home_sla_displays(extra)
     return render(request, "home.html", context)
 
 
@@ -5441,6 +5454,8 @@ def cadastrar_fornecedor(request):
                 "nome": fornecedor.nome
             })
         return JsonResponse({"errors": form.errors}, status=400)
+
+    return JsonResponse({"errors": {"__all__": ["Método inválido."]}}, status=405)
 
 
 @login_required
@@ -7320,6 +7335,8 @@ def add_contrato(request):
         else:
             return JsonResponse({"errors": form.errors}, status=400)
 
+    return JsonResponse({"errors": {"__all__": ["Método inválido."]}}, status=405)
+
 
 @login_required
 def solicitar_os(request, contrato_id):
@@ -9082,26 +9099,41 @@ def lista_ordens_servico(request):
 @financeiro_read_only
 @object_access(SolicitacaoProspeccao)
 @proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
+@locked_action(SolicitacaoProspeccao, sqlite_immediate=True)
 def propostas_fornecedores(request, pk):
     if request.user.grupo == "financeiro":
         return redirect("detalhes_solicitacao", pk=pk)
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
-    fornecedores = solicitacao.fornecedores_selecionados.all()
-    PropostaFormSet = modelformset_factory( PropostaFornecedor, form=PropostaFornecedorForm, extra=0, can_delete=False)
-
-    for f in fornecedores:
-        PropostaFornecedor.objects.get_or_create(solicitacao=solicitacao, fornecedor=f)
-
-    queryset = PropostaFornecedor.objects.filter(solicitacao=solicitacao)
+    queryset = PropostaFornecedor.objects.filter(solicitacao=solicitacao).order_by('pk')
+    fornecedores_novos = list(solicitacao.fornecedores_selecionados.exclude(
+        pk__in=queryset.values_list('fornecedor_id', flat=True)).order_by('pk'))
+    PropostaFormSet = inlineformset_factory(
+        SolicitacaoProspeccao, PropostaFornecedor, fk_name='solicitacao',
+        form=PropostaFornecedorForm, extra=len(fornecedores_novos), can_delete=False,
+        max_num=queryset.count() + len(fornecedores_novos), validate_max=True)
     if request.method == "POST":
-        formset = PropostaFormSet(request.POST, request.FILES, queryset=queryset)
+        formset = PropostaFormSet(request.POST, request.FILES, instance=solicitacao, queryset=queryset, prefix='form')
+        if formset.management_form.is_valid() and formset.initial_form_count() != queryset.count():
+            return JsonResponse({'error': 'As propostas mudaram. Recarregue a página antes de salvar.'}, status=409)
+    elif request.method in {"GET", "HEAD"}:
+        formset = PropostaFormSet(instance=solicitacao, queryset=queryset, prefix='form')
+    else:
+        return JsonResponse({'error': 'Método inválido.'}, status=405)
+    # Instâncias ainda não persistidas: abrir a tela não cria propostas vazias.
+    for form, fornecedor in zip(formset.extra_forms, fornecedores_novos):
+        form.instance.fornecedor = fornecedor
+        form.empty_permitted = False
+    if request.method == "POST":
+        if formset.management_form.is_valid() and any(
+            request.POST.get(f'{form.prefix}-fornecedor_identidade') != str(form.instance.fornecedor_id)
+            for form in formset.forms
+        ):
+            return JsonResponse({'error': 'Os fornecedores das propostas mudaram. Recarregue a página antes de salvar.'}, status=409)
         if formset.is_valid():
             formset.save()
             messages.success(request, "Propostas salvas com sucesso!")
             return redirect("lista_solicitacoes")
-    else:
-        formset = PropostaFormSet(queryset=queryset)
 
     context = {"solicitacao": solicitacao, "formset": formset}
 
@@ -9154,12 +9186,17 @@ def cadastrar_propostas(request, pk):
 #@user_passes_test(is_financeiro)
 @financeiro_read_only
 def elaboracao_contrato(request):
+    administrative = request.user.is_active and request.user.is_superuser
+    if not administrative and not is_internal(request.user):
+        return HttpResponse('Acesso restrito.', status=403)
     solicitacoes = SolicitacaoProspeccao.objects.operacionais().filter(
         fornecedor_escolhido__isnull=False, aprovacao_fornecedor_gerente="aprovado"
     ).select_related("fornecedor_escolhido").exclude(status="Onboarding")
 
     lista_solicitacoes = []
     for s in solicitacoes:
+        if not administrative and not can_view_object(request.user, s):
+            continue
         proposta_escolhida = PropostaFornecedor.objects.filter(
             solicitacao=s,
             fornecedor=s.fornecedor_escolhido
@@ -10694,6 +10731,7 @@ def registrar_entrega(request, pk):
 
     for bm in boletins:
         operational_pending = bm_is_operationally_pending(bm)
+        bm.shared_can_decide=bool(bm_approvals.pending_sides(request.user,bm))
         can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
 
         if bm_has_operational_approval(bm):
@@ -10772,6 +10810,7 @@ def avaliar_bm(request, bm_id):
         return redirect("home")
 
     before={field:getattr(bm,field) for field in ('status_coordenador','status_gerente','aprovacao_pagamento','justificativa_reprovacao_gerente','justificativa_reprovacao_diretor','justificativa_aprovacao_diretor')}
+    if bm_approvals.shared(bm):before.update(bm_approvals.snapshot(bm))
     notifications=[]
     def defer_notification(func,*args,**kwargs):
         notifications.append(lambda:func(*args,**kwargs))
@@ -10788,7 +10827,37 @@ def avaliar_bm(request, bm_id):
             "error": "Ação inválida.",
         }, status=400)
 
-    if usuario.grupo in ["lider_contrato", "gerente_lider"]:
+    if bm_approvals.shared(bm) and acao in ('aprovar','reprovar'):
+        if request.POST.get('versao_bm') and request.POST['versao_bm']!=bm_approvals.version(bm):
+            return JsonResponse({'success':False,'error':'O BM foi alterado. Atualize a página e confira a medição antes de decidir.'},status=409)
+        sides=bm_approvals.pending_sides(usuario,bm)
+        if not sides:
+            return JsonResponse({'success':False,'error':'Decisão indisponível: somente o líder de cada contrato pode registrar sua aprovação pendente; uma reprovação exige revisão do BM.'},status=403)
+        if not bm_event_has_evaluation(bm):
+            return JsonResponse({'success':False,'error':'Avalie o evento antes de aprovar ou reprovar o BM.','redirect_url':redirect_url},status=400)
+        if acao=='reprovar' and not justificativa:
+            return JsonResponse({'success':False,'error':'A justificativa é obrigatória para reprovar o BM.'},status=400)
+        instant=timezone.now()
+        for side in sides:
+            setattr(bm,f'status_lider_{side}','aprovado' if acao=='aprovar' else 'reprovado')
+            setattr(bm,f'aprovador_lider_{side}',usuario)
+            setattr(bm,f'data_lider_{side}',instant)
+            setattr(bm,f'justificativa_lider_{side}',justificativa or None)
+        bm.status_coordenador='reprovado' if bm_approvals.rejected(bm) else 'aprovado' if bm_approvals.complete(bm) else 'pendente'
+        bm.data_aprovacao_coordenador=instant if bm.status_coordenador!='pendente' else None
+        bm.justificativa_reprovacao_coordenador=justificativa if acao=='reprovar' else None
+        # A decisão antiga não é atribuída retroativamente a nenhum dos líderes.
+        bm.status_gerente='pendente';bm.data_aprovacao_gerente=None;bm.justificativa_reprovacao_gerente=None
+        bm.aprovacao_pagamento='pendente';bm.data_aprovacao_diretor=None
+        bm.justificativa_aprovacao_diretor=None;bm.justificativa_reprovacao_diretor=None
+        leaders=[c.referencia_lider_contrato for c in bm_approvals.contracts(bm).values()]
+        recipients=list(dict.fromkeys(u.email for u in leaders if u and u.email and u.pk!=usuario.pk))
+        if recipients:
+            notify(f'BM {bm.numero_bm} compartilhado — aprovação das lideranças',
+                f'Foi registrada uma decisão de {usuario.get_full_name() or usuario.username}. '
+                f'Os contratos {bm.contrato.num_contrato} e {contrato.num_contrato} exigem aprovação de ambos os líderes. '
+                f'Situação operacional: {bm.status_coordenador}.',FROM_EMAIL,recipients,fail_silently=False)
+    elif usuario.grupo in ["lider_contrato", "gerente_lider"]:
         if not can_user_manage_bm_operational_approval(usuario, bm):
             return JsonResponse({
                 "success": False,
@@ -10893,7 +10962,7 @@ def avaliar_bm(request, bm_id):
         if bm.aprovacao_pagamento!='pendente':
             return JsonResponse({'success':False,'error':'Este BM já recebeu uma decisão de pagamento. Uma revisão do BM deve reabrir a autorização.'},status=409)
 
-        cobre_gerente = user_can_cover_gerente_contrato(usuario) and bm_is_operationally_pending(bm)
+        cobre_gerente = not bm_approvals.shared(bm) and user_can_cover_gerente_contrato(usuario) and bm_is_operationally_pending(bm)
 
         if not bm_has_operational_approval(bm) and not cobre_gerente:
             return JsonResponse({
@@ -10956,9 +11025,13 @@ def avaliar_bm(request, bm_id):
     else:
         return JsonResponse({'success':False,'error':'Ação inválida para este perfil.'},status=400)
 
-    after={field:getattr(bm,field) for field in before}
+    after={field:(getattr(bm,field).isoformat() if field.startswith('data_lider_') and getattr(bm,field) else getattr(bm,field)) for field in before}
     bm._audit_bm_decision={'before':dict(bm_id=bm.pk,contrato_id=contrato.pk,evento_id=bm.evento_id,os_id=bm.os_id,**before),
         'after':dict(bm_id=bm.pk,contrato_id=contrato.pk,evento_id=bm.evento_id,os_id=bm.os_id,**after),'reason':justificativa}
+    if bm_approvals.shared(bm):
+        for state in ('before','after'):
+            bm._audit_bm_decision[state].update(contrato_documental_id=bm.contrato_id,contrato_financeiro_id=contrato.pk,
+                valor_medido=str(bm.valor_pago),numero_bm=bm.numero_bm,versao_bm=bm_approvals.version(bm))
     bm._audit_operation=f'Avaliação de BM: {acao}; pagamento {before["aprovacao_pagamento"]} → {bm.aprovacao_pagamento}; justificativa: {justificativa or "Não informada"}'
     bm.save()
 
@@ -11091,7 +11164,7 @@ def prepare_forecast_bms(user,queryset):
                 faltando.append('Líder / Gerente-Líder')
             if bm.status_gerente != 'aprovado':
                 faltando.append('Gerente de Contrato')
-            bm.falta_aprovar = ', '.join(faltando)
+            bm.falta_aprovar = ', '.join('Líder do contrato '+d['contract'].num_contrato for d in bm_approvals.rows(bm) if d['status']!='aprovado') if bm_approvals.shared(bm) else ', '.join(faltando)
 
     bm_approval_audit_map = build_bm_approval_audit_map(bms)
 
@@ -12485,6 +12558,7 @@ def detalhes_entrega(request, evento_id):
 
     for bm in bms:
         bm.operational_pending = bm_is_operationally_pending(bm)
+        bm.shared_can_decide=bool(bm_approvals.pending_sides(request.user,bm))
         bm.can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
         approval_info = bm_approval_audit_map.get(bm.id, {})
         bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
@@ -12644,6 +12718,7 @@ def detalhes_os(request, pk):
         'indicadores': indicadores,
         'avaliacao_os': avaliacao_os,
         'can_evaluate_os': can_evaluate_os,
+        'duplicate_submission_token': _get_submission_token(request, f"duplicar_os:{os.pk}") if request.user.grupo == 'suprimento' else None,
     }
 
     return render(request, "gestao_contratos/os.html", context)
@@ -12672,6 +12747,7 @@ def registrar_entrega_os(request, pk):
 
     for bm in boletins:
         operational_pending = bm_is_operationally_pending(bm)
+        bm.shared_can_decide=bool(bm_approvals.pending_sides(request.user,bm))
         can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
 
         if bm_has_operational_approval(bm):
@@ -12804,10 +12880,10 @@ def financial_kpi_cards(stats):
         ('medido','Medido','Participações de BM; data de referência do BM.'),
         ('autorizado','Autorizado pela Diretoria','Medição com aprovação operacional e autorização válidas; não é pagamento.'),
         ('faturado','Faturado','NFs de fornecedores cadastradas, pagas ou não.'),
-        ('pago','Pago','NFs marcadas como pagas, inclusive as que exigem revisão.'),
-        ('nao_autorizado','NF ainda não autorizada','NFs não pagas da fila C.'),
-        ('a_pagar','NF liberada a pagar','NFs não pagas da fila D.'),
-        ('em_revisao','NF não paga em revisão','NFs não pagas da fila F; avaliar o contexto.'),
+        ('pago','Pago','Pagamentos menos estornos, pelas datas efetivas dos movimentos, inclusive registros em revisão.'),
+        ('nao_autorizado','NF ainda não autorizada','Saldo pendente das NFs da fila C.'),
+        ('a_pagar','NF liberada a pagar','Saldo pendente das NFs da fila D, incluindo pagamentos parciais.'),
+        ('em_revisao','NF com saldo em revisão','Saldo pendente das NFs da fila F; avaliar o contexto.'),
     )
     return [dict(key=k,label=label,help=help_text,value=stats[k]) for k,label,help_text in specs]
 
@@ -12968,6 +13044,7 @@ def detalhe_bm_financeiro(request,bm_id):
     if not fq.can_view_financial_panel(request.user):
         if not bm.contrato_financeiro: raise Http404
         qs=qs.filter(evento_id=bm.evento_id,os_id=bm.os_id,contrato_id=bm.contrato_financeiro.pk)
+        qs=qs.filter(pk__in=[nf.pk for nf in qs if can_view_object(request.user,nf) and can_access_document(request.user,nf)])
     reconciliation=fr.bm_totals(bm,qs)
     page=Paginator(qs,20).get_page(request.GET.get('page'))
     back=approval_return_url(request,reverse('home'))
@@ -12978,6 +13055,7 @@ def detalhe_bm_financeiro(request,bm_id):
         reconciliation=reconciliation, return_url=back,can_delete=request.user.grupo in {'financeiro','suprimento'} and not NF.objects.filter(bm=bm).exists(),
         bm_history=RegistroAuditoria.objects.filter(content_type=ContentType.objects.get_for_model(BM),object_id=bm.pk).select_related('usuario').order_by('-data_hora','-pk')[:20] if fq.can_view_financial_panel(request.user) else [],
         can_approve_pagamento=user_can_approve_bm_payment(request.user,bm),
+        shared_can_decide=bool(bm_approvals.pending_sides(request.user,bm)),
         delete_url=reverse('deletar_bm',args=[bm.pk])))
 
 

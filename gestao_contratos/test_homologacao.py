@@ -276,6 +276,8 @@ class HomologacaoTests(BaseUserTestCase):
     def test_cross_contract_report_filter_follows_event_coordinator(self):
         bm = m.BM.objects.create(contrato=self.contracts[1], evento=self.events[0], numero_bm=30,
             parcela_paga=2, valor_pago=100, status_gerente="aprovado", data_aprovacao_gerente=timezone.now())
+        from .test_bm_duas_liderancas import approve_shared_fixture
+        approve_shared_fixture(self,bm)
         self.client.force_login(self.finance)
         for i in range(2):
             response = self.client.get(reverse("previsao_pagamentos"), {**self.filters(), "coordenador": self.coords[i].pk})

@@ -26,6 +26,10 @@ def can_change_nf(user, nf):
 
 
 def bm_has_valid_operational_approval(bm):
+    from .bm_approvals import shared,complete,rejected
+    if shared(bm):
+        return bool(complete(bm) and not rejected(bm) and bm.status_coordenador!='reprovado' and bm.status_gerente!='reprovado'
+            and (bm.status_coordenador=='aprovado' or bm.status_gerente=='aprovado'))
     return bool(bm and (
         bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado"
     ) and bm.status_coordenador != "reprovado" and bm.status_gerente != "reprovado")
@@ -104,6 +108,11 @@ def can_view_object(user, obj):
         parent = obj.contrato_terceiro or obj.prospeccao or obj.solicitacao_contrato or obj.aditivo
         return can_view_object(user, parent)
     if isinstance(obj, (models.BM, models.NF)):
+        if isinstance(obj,models.BM):
+            from .bm_approvals import shared,contracts
+            if shared(obj) and user.grupo in {'lider_contrato','gerente_lider','gerente_contrato'} and any(
+                getattr(c.referencia_lider_contrato,'pk',None)==user.pk for c in contracts(obj).values()):
+                return True
         return can_view_object(user, obj.os or obj.evento or obj.contrato)
     if isinstance(obj, (models.DocumentoBM, models.DocumentoContratoTerceiro)):
         return can_view_object(user, obj.solicitacao or obj.solicitacao_contrato)

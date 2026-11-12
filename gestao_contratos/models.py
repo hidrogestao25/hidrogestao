@@ -1272,6 +1272,34 @@ class BM(BusinessValidationMixin, models.Model):
         ('aprovado', 'Aprovado'),
         ('reprovado', 'Reprovado'),
     ]
+    status_lider_documental=models.CharField(max_length=20,choices=STATUS_CHOICES,null=True,blank=True,editable=False)
+    aprovador_lider_documental=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='+',db_index=False,editable=False)
+    data_lider_documental=models.DateTimeField(null=True,blank=True,editable=False)
+    justificativa_lider_documental=models.TextField(null=True,blank=True,editable=False)
+    status_lider_financeiro=models.CharField(max_length=20,choices=STATUS_CHOICES,null=True,blank=True,editable=False)
+    aprovador_lider_financeiro=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='+',db_index=False,editable=False)
+    data_lider_financeiro=models.DateTimeField(null=True,blank=True,editable=False)
+    justificativa_lider_financeiro=models.TextField(null=True,blank=True,editable=False)
+
+    @property
+    def aprovacoes_contratos(self):
+        from .bm_approvals import rows
+        return rows(self)
+
+    @property
+    def compartilhado_entre_contratos(self):
+        from .bm_approvals import shared
+        return shared(self)
+
+    @property
+    def aprovacao_operacional_completa(self):
+        from .permissions import bm_has_valid_operational_approval
+        return bm_has_valid_operational_approval(self)
+
+    @property
+    def versao_aprovacao(self):
+        from .bm_approvals import version
+        return version(self)
     contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.PROTECT, related_name="boletins_medicao")
     evento = models.ForeignKey(Evento, on_delete=models.PROTECT, related_name='boletins_medicao', null=True, blank=True)
     os = models.ForeignKey(OS, on_delete=models.PROTECT, related_name='boletins_medicao', null=True, blank=True)
@@ -1365,6 +1393,10 @@ class BM(BusinessValidationMixin, models.Model):
                 return (value.name or "") if key == "arquivo_bm" else value
             if old and any(comparable(old, key) != comparable(self, key) for key in relevant):
                 reset = []
+                from .bm_approvals import FIELDS
+                for field in FIELDS:
+                    setattr(self,field,None)
+                    reset.append(field)
                 for field in ["status_coordenador", "status_gerente", "aprovacao_pagamento"]:
                     setattr(self, field, "pendente")
                     reset.append(field)

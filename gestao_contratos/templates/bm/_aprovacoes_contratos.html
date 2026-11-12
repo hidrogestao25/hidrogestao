@@ -1,0 +1,28 @@
+{% if bm.compartilhado_entre_contratos %}
+<section class="border rounded p-3 my-2">
+  <h3 class="h6">Aprovação dos dois contratos</h3>
+  <p class="small">Este BM exige a aprovação dos líderes dos dois contratos antes da autorização de pagamento.</p>
+  {% for decision in bm.aprovacoes_contratos %}
+  <div class="small mb-2">
+    <strong>Contrato {{ decision.contract.num_contrato }}</strong> · {{ decision.status|title }}<br>
+    Líder: {{ decision.leader|default:'Não definido — regularizar responsável' }}
+    {% if decision.actor %}<br>Decisão por {{ decision.actor }} · {{ decision.date|date:'d/m/Y H:i' }}{% endif %}
+    {% if decision.reason %}<br>Justificativa: {{ decision.reason }}{% endif %}
+  </div>
+  {% endfor %}
+  {% if can_decide %}
+  <form method="post" action="{% url 'avaliar_bm' bm.pk %}" data-bm-shared-decision>
+    {% csrf_token %}
+    <input type="hidden" name="versao_bm" value="{{ bm.versao_aprovacao }}">
+    <label class="small d-block">Justificativa (obrigatória para reprovar)
+      <textarea name="justificativa" maxlength="4000" class="form-control" rows="2"></textarea>
+    </label>
+    <div class="d-flex gap-2 mt-2">
+      <button type="submit" name="acao" value="aprovar" class="btn btn-sm btn-success">Aprovar minha participação</button>
+      <button type="submit" name="acao" value="reprovar" class="btn btn-sm btn-danger">Reprovar minha participação</button>
+    </div>
+    <p class="small mt-2 mb-0" data-bm-decision-message role="status"></p>
+  </form>
+  {% endif %}
+</section>
+{% endif %}

@@ -45,6 +45,12 @@ def export_bms(user,bms,approval_map,*,first,last,mode,notice=''):
         operational='\n'.join(label+approval_text(bm,status,day,info.get(role)) for role,label,status,day in (
             ('coordenador','Liderança: ','status_coordenador','data_aprovacao_coordenador'),
             ('gerente','Gerência: ','status_gerente','data_aprovacao_gerente')))
+        if bm.compartilhado_entre_contratos:
+            operational='\n'.join(
+                f"Contrato {d['contract'].num_contrato}: {d['status']} — "
+                f"{d['actor'].get_full_name() or d['actor'].username if d['actor'] else 'sem decisão registrada'}"
+                +(f" — {timezone.localtime(d['date']):%d/%m/%Y %H:%M}" if d['date'] else '')
+                for d in bm.aprovacoes_contratos)
         paid_dates=sorted(dates.get(bm.pk,()))
         paid_date=paid_dates[0] if len(paid_dates)==1 else '\n'.join(day.strftime('%d/%m/%Y') for day in paid_dates) if paid_dates else None
         planned=(bm.evento.valor_previsto if bm.evento_id else bm.os.valor if bm.os_id else None)

@@ -132,10 +132,15 @@ class DecisaoPagamentoBMTests(BaseUserTestCase):
         bm.refresh_from_db();self.assertEqual(bm.aprovacao_pagamento,'pendente')
 
     def test_bm_documental_compartilhado_notifica_contrato_financeiro(self):
-        bm=self.bm(index=1,evento=self.events[0],operational='aprovado')
+        bm=self.bm(index=1,evento=self.events[0])
+        m.AvaliacaoFornecedor.objects.create(empresa_terceira=self.supplier,contrato_terceiro=self.contracts[0],
+            evento=self.events[0],area_avaliadora=self.leader.grupo,avaliador=self.leader,nota_gestao=5)
+        for user in (self.other,self.leader):
+            self.assertEqual(self.decide(bm,action='aprovar',user=user).status_code,200)
         self.assertEqual(self.decide(bm,reason='Participação conferida').status_code,200)
         self.assertIn(self.contracts[0].num_contrato,mail.outbox[-1].body)
-        self.assertEqual(self.history(bm).get().estado_posterior['contrato_id'],self.contracts[0].pk)
+        self.assertEqual(self.history(bm).count(),3)
+        self.assertEqual(self.history(bm).get(usuario=self.director).estado_posterior['contrato_id'],self.contracts[0].pk)
 
     def test_excel_gerencia_e_justificativa_opcional_da_diretoria(self):
         bm=self.bm(operational='aprovado',data_aprovacao_gerente=timezone.now(),justificativa_reprovacao_gerente=' =Texto gerencial legado')

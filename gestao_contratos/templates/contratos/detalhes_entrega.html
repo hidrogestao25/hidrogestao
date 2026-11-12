@@ -71,7 +71,7 @@
             <tbody>
               {% for bm in bms %}
                 <tr id="bm-row-{{ bm.id }}"
-                    class="{% if bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado' %}table-danger{% elif bm.status_coordenador == 'aprovado' or bm.status_gerente == 'aprovado' %}table-success{% else %}table-warning{% endif %}">
+                    class="{% if bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado' %}table-danger{% elif bm.aprovacao_operacional_completa %}table-success{% else %}table-warning{% endif %}">
                   <td><a href="{% url 'detalhe_bm_financeiro' bm.id %}?next={{ request.get_full_path|urlencode }}">{{ bm.numero_bm }}</a></td>
                   <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
                   <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
@@ -160,7 +160,7 @@
                     {% endif %}
                   </td>
                   <td>
-                    {% if can_approve_bm_as_lider %}
+                    {% if bm.compartilhado_entre_contratos %}{% include "bm/_aprovacoes_contratos.html" with bm=bm can_decide=bm.shared_can_decide %}{% elif can_approve_bm_as_lider %}
                         <div class="d-flex gap-1">
                             <small class="text-muted d-block mb-2 w-100">
                                 Basta uma aprovacao do lider ou do gerente.
