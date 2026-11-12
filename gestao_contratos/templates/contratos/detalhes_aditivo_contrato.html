@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 
+{% load static %}
 {% block content %}
 <div class="container mt-4">
-  {% include "contratos/_timeline_aditivo.html" %}
+  {% include "gestao_contratos/_historico_arquivo_solicitacao.html" with solicitacao=aditivo %}
+  {% if not aditivo.cancelada %}{% include "contratos/_timeline_aditivo.html" %}{% endif %}
 
   <div class="card shadow-sm">
     <div class="card-header card-header-custom text-white">
@@ -177,4 +179,5 @@
     </div>
   </div>
 </div>
+<script src="{% static 'js/solicitacoes_arquivo.js' %}" defer></script>
 {% endblock %}

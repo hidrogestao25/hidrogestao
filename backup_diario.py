@@ -1,198 +1,122 @@
-import datetime
+"""Backup SQLite e avisos. Importar este módulo não executa a rotina."""
+import argparse
+from contextlib import closing
+from datetime import datetime, timezone as datetime_timezone
+import logging
 import os
-import shutil
-import sys
-import time
+from pathlib import Path
+import sqlite3
 
-import django
-from django.conf import settings
-from django.core.mail import EmailMultiAlternatives, send_mail as django_send_mail
-from django.utils.html import strip_tags
+logger = logging.getLogger(__name__)
 
 
-# --- 1. BACKUP DO BANCO ---
-db_path = "/home/hidrogestao/hidrogestao/db.sqlite3"
-backup_dir = "/home/hidrogestao/backups"
-os.makedirs(backup_dir, exist_ok=True)
-
-data = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-backup_file = os.path.join(backup_dir, f"backup_{data}.sqlite3")
-shutil.copy(db_path, backup_file)
-print(f"Backup criado: {backup_file}")
-
-
-# --- 2. LIMPEZA DE BACKUPS ANTIGOS ---
-limite_dias = 30
-agora = time.time()
-
-for arquivo in os.listdir(backup_dir):
-    caminho_arquivo = os.path.join(backup_dir, arquivo)
-    if os.path.isfile(caminho_arquivo):
-        idade_dias = (agora - os.path.getmtime(caminho_arquivo)) / 86400
-        if idade_dias > limite_dias:
-            os.remove(caminho_arquivo)
-            print(f"Backup removido: {arquivo}")
+def create_backup(database, backup_dir):
+    database = Path(database).resolve(strict=True)
+    backup_dir = Path(backup_dir).resolve()
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    target = backup_dir / f"backup_{datetime.now(datetime_timezone.utc):%Y-%m-%d_%H-%M-%S_%f}.sqlite3"
+    # A API captura uma imagem consistente, inclusive com SQLite em WAL.
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as source:
+        with closing(sqlite3.connect(target)) as destination:
+            source.backup(destination)
+            if destination.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise RuntimeError("A cópia não passou na verificação de integridade.")
+    return target
 
 
-# --- 3. CONFIGURA DJANGO ---
-sys.path.append("/home/hidrogestao/hidrogestao")
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "HIDROGestao.settings")
-django.setup()
-
-from gestao_contratos.models import ContratoTerceiros, Evento, User
-from gestao_contratos.views import build_weekly_supply_report
-
-
-def get_from_email():
-    return getattr(settings, "DEFAULT_FROM_EMAIL", "hidro.gestao25@gmail.com")
-
-
-def filter_directoria_email_recipients(recipient_list):
-    if not recipient_list:
-        return recipient_list
-
-    diretoria_emails = {
-        email.strip().lower()
-        for email in User.objects.filter(grupo="diretoria")
-        .exclude(email__isnull=True)
-        .exclude(email__exact="")
-        .values_list("email", flat=True)
-    }
-
-    return [
-        email
-        for email in recipient_list
-        if email and email.strip().lower() not in diretoria_emails
-    ]
-
-
-def send_mail(subject, message, from_email, recipient_list, *args, **kwargs):
-    recipient_list = filter_directoria_email_recipients(recipient_list)
-    if not recipient_list:
-        return 0
-    return django_send_mail(subject, message, from_email, recipient_list, *args, **kwargs)
-
-
-hoje = datetime.date.today()
-
-
-# --- 4. VERIFICACAO DE EVENTOS (data_prevista = hoje) ---
-eventos_hoje = Evento.objects.filter(data_prevista=hoje)
-
-for evento in eventos_hoje:
-    contrato = evento.contrato_terceiro
-    if contrato.status != "encerrado":
-        destinatarios = []
-
-        if contrato and contrato.coordenador and contrato.coordenador.email:
-            destinatarios.append(contrato.coordenador.email)
-        if contrato and contrato.lider_contrato and contrato.lider_contrato.email:
-            destinatarios.append(contrato.lider_contrato.email)
-
-        destinatarios = list(set(destinatarios))
-
-        if destinatarios:
-            coordenador = contrato.coordenador
-            nome_destino = (
-                coordenador.first_name or coordenador.username
-                if coordenador
-                else "responsavel"
-            )
-            print(f"Usuarios notificados do evento: {destinatarios}")
-            assunto = f"Lembrete de entrega - Evento #{evento.id}"
-            mensagem = (
-                f"Ola {nome_destino},\n\n"
-                f"Este e um lembrete automatico para a entrega prevista hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
-                f"Fornecedor: {evento.empresa_terceira}\n"
-                f"Descricao: {evento.descricao}\n"
-                f"Contrato: {contrato.num_contrato or 'N/A'}\n\n"
-                f"Atenciosamente,\nSistema HIDROGestao"
-            )
-            try:
-                send_mail(assunto, mensagem, get_from_email(), destinatarios)
-                print(f"E-mail enviado para {destinatarios} (Evento {evento.id})")
-            except Exception as e:
-                print(f"Erro ao enviar e-mail para {destinatarios}: {e}")
-
-
-# --- 5. VERIFICACAO DE CONTRATOS (data_fim = hoje) ---
-contratos_hoje = ContratoTerceiros.objects.filter(data_fim=hoje)
-
-usuarios_suprimento = User.objects.filter(grupo="suprimento").exclude(email__isnull=True).exclude(email="")
-emails_suprimento = [u.email for u in usuarios_suprimento]
-print(f"Usuarios suprimento: {emails_suprimento}")
-
-for contrato in contratos_hoje:
-    if contrato.status != "encerrado":
-        destinatarios = []
-
-        if contrato.coordenador and contrato.coordenador.email:
-            destinatarios.append(contrato.coordenador.email)
-        if contrato.lider_contrato and contrato.lider_contrato.email:
-            destinatarios.append(contrato.lider_contrato.email)
-
-        destinatarios.extend(emails_suprimento)
-        destinatarios = list(set(destinatarios))
-
-        if not destinatarios:
-            print(f"Nenhum destinatario encontrado para contrato {contrato.id}")
+def cleanup_backups(backup_dir, retention_days=30):
+    if retention_days < 1:
+        raise ValueError("A retenção deve ser de pelo menos um dia.")
+    root = Path(backup_dir).resolve(strict=True)
+    cutoff = datetime.now(datetime_timezone.utc).timestamp() - retention_days * 86400
+    removed = 0
+    for candidate in root.glob("backup_*.sqlite3"):
+        if candidate.is_symlink() or candidate.resolve().parent != root:
             continue
-
-        assunto = f"Encerramento de contrato - {contrato.empresa_terceira}"
-        mensagem = (
-            f"Ola,\n\n"
-            f"O contrato n {contrato.num_contrato or 'N/A'} referente ao projeto {contrato.cod_projeto} "
-            f"com a empresa {contrato.empresa_terceira} encerra hoje ({hoje.strftime('%d/%m/%Y')}).\n\n"
-            f"Por favor, verifique as providencias necessarias.\n\n"
-            f"Atenciosamente,\nSistema HIDROGestao"
-        )
-        try:
-            send_mail(assunto, mensagem, get_from_email(), destinatarios)
-            print(f"E-mail enviado: Contrato {contrato.id} -> {destinatarios}")
-        except Exception as e:
-            print(f"Erro ao enviar e-mail para {destinatarios}: {e}")
+        if candidate.is_file() and candidate.stat().st_mtime < cutoff:
+            candidate.unlink()
+            removed += 1
+    return removed
 
 
-# --- 6. REPORT SEMANAL AUTOMATICO (SEGUNDA-FEIRA) ---
-if hoje.weekday() == 0:
-    usuario_report = (
-        User.objects.filter(grupo="suprimento", is_active=True)
-        .exclude(email__isnull=True)
-        .exclude(email="")
-        .order_by("id")
-        .first()
+def send_reminders():
+    from django.conf import settings
+    from django.core.mail import EmailMultiAlternatives
+    from django.utils import timezone
+    from django.utils.html import strip_tags
+    from gestao_contratos.models import ContratoTerceiros, Evento, User
+    from gestao_contratos.views import build_weekly_supply_report, send_mail
+
+    today = timezone.localdate()
+    failed = 0
+    events = Evento.objects.filter(
+        data_prevista=today, contrato_terceiro__isnull=False, realizado=False,
+    ).exclude(contrato_terceiro__status="encerrado").select_related(
+        "contrato_terceiro__coordenador", "contrato_terceiro__lider_contrato",
+        "contrato_terceiro__empresa_terceira",
     )
-    emails_report = sorted(
-        set(
-            User.objects.filter(
-                grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
-                is_active=True,
-            )
-            .exclude(email__isnull=True)
-            .exclude(email="")
-            .values_list("email", flat=True)
-        )
-    )
+    supply = list(User.objects.filter(grupo="suprimento", is_active=True).exclude(email="").values_list("email", flat=True))
 
-    if usuario_report and emails_report:
-        try:
-            html_content = build_weekly_supply_report(usuario_report)
-            mensagem = strip_tags(html_content)
-            email = EmailMultiAlternatives(
-                subject="Report Semanal de Suprimentos",
-                body=mensagem,
-                from_email=get_from_email(),
-                to=emails_report,
-            )
-            email.attach_alternative(html_content, "text/html")
-            email.send()
-            print("Report semanal enviado para: " + ", ".join(emails_report))
-        except Exception as e:
-            print(f"Erro ao enviar report semanal: {e}")
-    elif not usuario_report:
-        print("Nenhum usuario de suprimento ativo encontrado para montar o report semanal.")
-    else:
-        print("Nenhum destinatario ativo encontrado para o report semanal.")
+    def recipients(contract):
+        people = contract.referencia_todos_coordenadores
+        leader = contract.referencia_lider_contrato
+        if leader:
+            people = [*people, leader]
+        return {person.email for person in people if person.is_active and person.email}
+
+    def send(subject, body, emails):
+        nonlocal failed
+        if emails and not send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, sorted(emails), fail_silently=False):
+            failed += 1
+
+    for event in events:
+        contract = event.contrato_terceiro
+        send(f"Lembrete de entrega - Evento #{event.pk}",
+             f"Entrega prevista hoje ({today:%d/%m/%Y}).\nFornecedor: {contract.empresa_terceira}\nDescrição: {event.descricao}\nContrato: {contract.num_contrato or 'N/A'}",
+             recipients(contract))
+
+    for contract in ContratoTerceiros.objects.filter(data_fim=today).exclude(status="encerrado"):
+        send(f"Encerramento de contrato - {contract.empresa_terceira}",
+             f"O contrato {contract.num_contrato or 'N/A'} encerra hoje ({today:%d/%m/%Y}). Verifique as providências necessárias.",
+             recipients(contract) | set(supply))
+
+    if today.weekday() == 0:
+        report_user = User.objects.filter(grupo="suprimento", is_active=True).exclude(email="").first()
+        emails = sorted(set(User.objects.filter(
+            grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"], is_active=True,
+        ).exclude(email="").values_list("email", flat=True)))
+        if report_user and emails:
+            try:
+                html = build_weekly_supply_report(report_user)
+                email = EmailMultiAlternatives("Report Semanal de Suprimentos", strip_tags(html), settings.DEFAULT_FROM_EMAIL, emails)
+                email.attach_alternative(html, "text/html")
+                email.send()
+            except Exception as exc:
+                # Não imprimir destinatários, conteúdo ou credenciais do SMTP.
+                logger.warning("Falha no report semanal (%s).", type(exc).__name__)
+                failed += 1
+    return failed
 
 
-print("Rotina concluida com sucesso.")
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backup-dir", type=Path)
+    parser.add_argument("--retention-days", type=int, default=30)
+    parser.add_argument("--skip-notifications", action="store_true")
+    args = parser.parse_args(argv)
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "HIDROGestao.settings")
+    import django
+    django.setup()
+    from django.conf import settings
+    if settings.DATABASES["default"]["ENGINE"] != "django.db.backends.sqlite3":
+        raise RuntimeError("Esta rotina exige SQLite; use o backup nativo do banco configurado.")
+    backup_dir = args.backup_dir or Path(os.environ.get("DJANGO_BACKUP_DIR", settings.BASE_DIR / "backups"))
+    target = create_backup(settings.DATABASES["default"]["NAME"], backup_dir)
+    cleanup_backups(backup_dir, args.retention_days)
+    logger.info("Backup verificado: %s", target.name)
+    return 1 if not args.skip_notifications and send_reminders() else 0
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    raise SystemExit(main())

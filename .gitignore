@@ -10,6 +10,7 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.audit-venv/
 venv/
 env/
 ENV/
@@ -26,6 +27,7 @@ local_settings.py
 
 # User-uploaded and generated files
 media/
+backups/
 staticfiles/
 
 # Test, coverage, and tooling caches
@@ -70,3 +72,12 @@ desktop.ini
 
 # Local command outputs
 test_full_output.txt
+
+# Cópias privadas do banco usadas na homologação
+auditoria/**/*.sqlite3
+auditoria/**/*.sqlite3-*
+
+# Evidências locais e documentação excluídas da publicação
+/auditoria/
+*.[mM][dD]
+/servidor/

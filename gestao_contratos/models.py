@@ -11,6 +11,8 @@ from django.utils.deconstruct import deconstructible
 from django.conf import settings
 
 from datetime import date
+from django.core.exceptions import ValidationError
+from .validation import BusinessValidationMixin, validate_upload
 
 
 def _uppercase_model_fields(instance, field_names):
@@ -160,7 +162,7 @@ class User(AbstractUser):
         ).exists()
 
 
-class CentroDeTrabalho(models.Model):
+class CentroDeTrabalho(BusinessValidationMixin, models.Model):
     codigo = models.CharField(max_length=10, unique=True)
     nome = models.CharField(max_length=100)
 
@@ -173,7 +175,7 @@ class CentroDeTrabalho(models.Model):
 # -----------------
 # Cliente
 # -----------------
-class Cliente(models.Model):
+class Cliente(BusinessValidationMixin, models.Model):
     nome = models.CharField(max_length=200)
     razao_social = models.CharField(max_length=200, blank=True, null=True)
     cpf_cnpj = models.CharField(max_length=18, unique=True)
@@ -215,7 +217,7 @@ class Cliente(models.Model):
 # -----------------
 # Empresa Terceira
 # -----------------
-class EmpresaTerceira(models.Model):
+class EmpresaTerceira(BusinessValidationMixin, models.Model):
     nome = models.CharField(max_length=200)
     setor_de_atuacao = models.TextField(blank=True, null=True)
     cpf_cnpj = models.CharField(max_length=18, unique=True)
@@ -268,7 +270,7 @@ class EmpresaTerceira(models.Model):
 # ---------
 # Proposta (interna)
 # ---------
-class Proposta(models.Model):
+class Proposta(BusinessValidationMixin, models.Model):
     STATUS_CHOICES = [
         ('analise', 'Em análise'),
         ('aprovada', 'Aprovada'),
@@ -304,7 +306,7 @@ class Proposta(models.Model):
 # --------------------------
 # Contrato com Cliente
 # --------------------------
-class Contrato(models.Model):
+class Contrato(BusinessValidationMixin, models.Model):
     STATUS_CHOICES = [
         ('em_elaboracao', 'Em elaboração'),
         ('aguardando_assinatura', 'Aguardando assinatura'),
@@ -373,7 +375,51 @@ class Contrato(models.Model):
 # ---------------------------------------
 # Solicitação de Contratação de fornecedor
 # ---------------------------------------
-class SolicitacaoContrato(models.Model):
+class SolicitacaoQuerySet(models.QuerySet):
+    def operacionais(self):
+        queryset = self.filter(arquivada=False, cancelada_em__isnull=True)
+        if any(field.name == "status" for field in self.model._meta.fields):
+            queryset = queryset.exclude(status__in=["Cancelada", "cancelada"])
+        return queryset
+
+    def em_visualizacao(self, visualizacao):
+        if visualizacao == "todas":
+            return self.all()
+        queryset = self.filter(arquivada=visualizacao == "arquivadas")
+        if self.model._meta.model_name in {"solicitacaoprospeccao", "solicitacaocontrato"}:
+            queryset = queryset.exclude(status="Onboarding")
+        return queryset
+
+
+class EstadoSolicitacao(models.Model):
+    """Visibilidade e encerramento são estados independentes do fluxo de aprovação."""
+    arquivada = models.BooleanField(default=False, db_index=True, editable=False)
+    arquivada_em = models.DateTimeField(null=True, blank=True, editable=False)
+    arquivada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                     null=True, blank=True, related_name="+", editable=False)
+    motivo_arquivamento = models.TextField(blank=True, default="", editable=False)
+    cancelada_em = models.DateTimeField(null=True, blank=True, editable=False)
+    cancelada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                     null=True, blank=True, related_name="+", editable=False)
+    motivo_cancelamento = models.TextField(blank=True, default="", editable=False)
+
+    objects = SolicitacaoQuerySet.as_manager()
+
+    class Meta:
+        abstract = True
+
+    @property
+    def cancelada(self):
+        return bool(self.cancelada_em or self.status in {"Cancelada", "cancelada"})
+
+
+class SolicitacaoContrato(BusinessValidationMixin, EstadoSolicitacao):
+    class Meta:
+        permissions = [
+            ("arquivar_solicitacaocontrato", "Pode arquivar e desarquivar contratações"),
+            ("cancelar_solicitacaocontrato", "Pode cancelar contratações"),
+        ]
+
     ACAO_CHOICES = [
         ('renegociar_valor', 'Renegociar Valor'),
         ('renegociar_prazo', 'Renegociar Prazo'),
@@ -470,7 +516,13 @@ class SolicitacaoContrato(models.Model):
 # ---------------------------------------
 # Solicitação de Prospecção de fornecedor
 # ---------------------------------------
-class SolicitacaoProspeccao(models.Model):
+class SolicitacaoProspeccao(BusinessValidationMixin, EstadoSolicitacao):
+    class Meta:
+        permissions = [
+            ("arquivar_solicitacaoprospeccao", "Pode arquivar e desarquivar prospecções"),
+            ("cancelar_solicitacaoprospeccao", "Pode cancelar prospecções"),
+        ]
+
     ACAO_CHOICES = [
         ('renegociar_valor', 'Renegociar Valor'),
         ('renegociar_prazo', 'Renegociar Prazo'),
@@ -569,7 +621,7 @@ class SolicitacaoProspeccao(models.Model):
 # ---------------------------------
 # Proposta da empresa terceirizada
 # ---------------------------------
-class PropostaFornecedor(models.Model):
+class PropostaFornecedor(BusinessValidationMixin, models.Model):
     CONDICOES_CHOICES = [
         ('Conforme Medição Aprovada', 'Conforme Medição Aprovada'),
         ('Conforme Pagamento do Cliente', 'Conforme Pagamento do Cliente'),
@@ -603,7 +655,7 @@ class PropostaFornecedor(models.Model):
 # --------------------------
 # Solicitação de Contratação
 # --------------------------
-class TriagemFornecedor(models.Model):
+class TriagemFornecedor(BusinessValidationMixin, models.Model):
     solicitacao = models.ForeignKey(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="triagens")
     fornecedor = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
     selecionado = models.BooleanField(default=False)
@@ -612,7 +664,7 @@ class TriagemFornecedor(models.Model):
 # --------------------------
 # Contrato com terceiro
 # --------------------------
-class ContratoTerceiros(models.Model):
+class ContratoTerceiros(BusinessValidationMixin, models.Model):
     STATUS_CHOICES = [
         ('em_elaboracao', 'Em elaboração'),
         ('aguardando_assinatura', 'Aguardando assinatura'),
@@ -697,7 +749,7 @@ class ContratoTerceiros(models.Model):
     def dias_para_vencer(self):
         data_vencimento = getattr(self, "data_vencimento_home", None) or self.data_fim
         if data_vencimento:
-            return (data_vencimento - date.today()).days
+            return (data_vencimento - timezone.localdate()).days
         return None
 
     @property
@@ -784,56 +836,41 @@ class ContratoTerceiros(models.Model):
 
     @property
     def IS_gestao(self):
-        """Índice de Satisfação - Gestão (avaliado apenas neste contrato)"""
-        avaliacoes = AvaliacaoFornecedor.objects.filter(
-            contrato_terceiro=self
-        )
-        total_avaliacoes = avaliacoes.count()
-        if total_avaliacoes == 0:
-            return 0
-        soma_notas = sum(a.nota_gestao for a in avaliacoes if a.nota_gestao)
-        media = soma_notas / total_avaliacoes
-        return (media / 5) * 100
+        average = AvaliacaoFornecedor.objects.filter(contrato_terceiro=self).aggregate(average=models.Avg("nota_gestao"))["average"]
+        return (average / 5) * 100 if average is not None else 0
 
     @property
     def IS_tecnica(self):
-        """Índice de Satisfação - Técnica (avaliado apenas neste contrato)"""
-        avaliacoes = AvaliacaoFornecedor.objects.filter(
-            contrato_terceiro=self
-        )
-        total_avaliacoes = avaliacoes.count()
-        if total_avaliacoes == 0:
-            return 0
-        soma_notas = sum(a.nota_tecnica for a in avaliacoes if a.nota_tecnica)
-        media = soma_notas / total_avaliacoes
-        return (media / 5) * 100
+        average = AvaliacaoFornecedor.objects.filter(contrato_terceiro=self).aggregate(average=models.Avg("nota_tecnica"))["average"]
+        return (average / 5) * 100 if average is not None else 0
 
     @property
     def IS_entrega(self):
-        """Índice de Satisfação - Entrega (avaliado apenas neste contrato)"""
-        avaliacoes = AvaliacaoFornecedor.objects.filter(
-            contrato_terceiro=self
-        )
-        total_avaliacoes = avaliacoes.count()
-        if total_avaliacoes == 0:
-            return 0
-        soma_notas = sum(a.nota_entrega for a in avaliacoes if a.nota_entrega)
-        media = soma_notas / total_avaliacoes
-        return (media / 5) * 100
+        average = AvaliacaoFornecedor.objects.filter(contrato_terceiro=self).aggregate(average=models.Avg("nota_entrega"))["average"]
+        return (average / 5) * 100 if average is not None else 0
 
 
 # ---------------------------
 # Solicitação de Ordens de Serviços para Contratos Guarda-chuvas
 # ---------------------------
-class SolicitacaoOrdemServico(models.Model):
+class SolicitacaoOrdemServico(BusinessValidationMixin, EstadoSolicitacao):
+    class Meta:
+        permissions = [
+            ("arquivar_solicitacaoordemservico", "Pode arquivar e desarquivar solicitações de OS"),
+            ("cancelar_solicitacaoordemservico", "Pode cancelar solicitações de OS"),
+        ]
+
     STATUS_CHOICES = [
         ('solicitacao_os', 'Solicitação de OS'),
         ('pendente_lider', 'Pendente Líder'),
         ('pendente_gerente', 'Pendente Gerente'),
+        ('pendente_diretoria', 'Pendente Diretoria'),
+        ('pendente_minuta_gerente', 'Pendente Avaliação da Minuta'),
         ('pendente_suprimento', 'Pendente Suprimento'),
         ('aprovada', 'Aprovada'),
         ('reprovada', 'Reprovada'),
         ('finalizada', 'Finalizada'),
+        ('cancelada', 'Cancelada'),
     ]
 
     contrato = models.ForeignKey(
@@ -890,7 +927,21 @@ class SolicitacaoOrdemServico(models.Model):
 # ---------------------------
 # ordem de Serviço
 # ---------------------------
-class OS(models.Model):
+class OS(BusinessValidationMixin, models.Model):
+    def clean(self):
+        super().clean()
+        from .os_integrity import validate_os_identity
+        validate_os_identity(self)
+
+    def save(self, *args, **kwargs):
+        from .os_integrity import validate_os_identity, os_identity_transaction
+        with os_identity_transaction(self, using=kwargs.get("using")):
+            validate_os_identity(self, using=kwargs.get("using"), update_fields=kwargs.get("update_fields"))
+            return super().save(*args, **kwargs)
+
+    @property
+    def nf_paid(self):
+        return Decimal(getattr(self,'nf_paid_centavos',0))/100
     STATUS_CHOICES = [
         ('em_execucao', "Em Execução"),
         ('paralizada', "Paralizada"),
@@ -949,10 +1000,16 @@ class OS(models.Model):
     data_pagamento = models.DateField(null=True, blank=True)
     observacao = models.TextField(null=True, blank=True)
 
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["solicitacao"], condition=models.Q(solicitacao__isnull=False),
+            name="unique_os_por_solicitacao",
+        )]
+
     @property
     def dias_atraso(self):
-        if self.prazo_execucao and self.prazo_execucao < date.today():
-            return (date.today() - self.prazo_execucao).days
+        if self.prazo_execucao and self.prazo_execucao < timezone.localdate():
+            return (timezone.localdate() - self.prazo_execucao).days
         return 0
     def __str__(self):
         return f"OS {self.id} - {self.titulo} - {self.contrato.empresa_terceira}"
@@ -961,7 +1018,10 @@ class OS(models.Model):
 # ---------------------------
 # Indicadores do fornecedor
 # ---------------------------
-class Evento(models.Model):
+class Evento(BusinessValidationMixin, models.Model):
+    @property
+    def nf_paid(self):
+        return Decimal(getattr(self,'nf_paid_centavos',0))/100
     AVALIACAO_CHOICES = [
         ('Aprovado', 'Aprovado'),
         ('Reprovado', 'Reprovado'),
@@ -995,19 +1055,19 @@ class Evento(models.Model):
     @property
     def dias_atraso(self):
         if self.data_prevista and not self.data_entrega:
-            return (date.today() - self.data_prevista).days
+            return (timezone.localdate() - self.data_prevista).days
         return 0
 
     @property
     def dias_para_entrega(self):
         if self.data_prevista:
-            return (self.data_prevista - date.today()).days
+            return (self.data_prevista - timezone.localdate()).days
         return None
 
     @property
     def dias_sem_avaliacao(self):
         if self.data_entrega:
-            return (date.today() - self.data_entrega).days
+            return (timezone.localdate() - self.data_entrega).days
         return 0
 
     @property
@@ -1024,7 +1084,7 @@ class Evento(models.Model):
         return f"Entrega {self.id} - {self.contrato_terceiro or '-'} - {self.fornecedor_display}"
 
 
-class AvaliacaoFornecedor(models.Model):
+class AvaliacaoFornecedor(BusinessValidationMixin, models.Model):
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
     contrato_terceiro = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE)
     evento = models.ForeignKey(Evento, on_delete=models.CASCADE, blank=True, null=True, related_name="avaliacoes")
@@ -1041,7 +1101,7 @@ class AvaliacaoFornecedor(models.Model):
         return f"Avaliação {self.id} - {self.empresa_terceira}"
 
 
-class Indicadores(models.Model):
+class Indicadores(BusinessValidationMixin, models.Model):
     empresa_terceira = models.ForeignKey(EmpresaTerceira, on_delete=models.CASCADE)
 
     def __str__(self):
@@ -1093,45 +1153,24 @@ class Indicadores(models.Model):
 
     @property
     def IS_gestao(self):
-        avaliacoes = AvaliacaoFornecedor.objects.filter(
-            empresa_terceira=self.empresa_terceira
-        )
-        total_avaliacoes = avaliacoes.count()
-        if total_avaliacoes == 0:
-            return 0
-        soma_notas = sum(a.nota_gestao for a in avaliacoes)
-        media = soma_notas / total_avaliacoes
-        return (media / 5) * 100
+        average = AvaliacaoFornecedor.objects.filter(empresa_terceira=self.empresa_terceira).aggregate(average=models.Avg("nota_gestao"))["average"]
+        return (average / 5) * 100 if average is not None else 0
 
     @property
     def IS_tecnica(self):
-        avaliacoes = AvaliacaoFornecedor.objects.filter(
-            empresa_terceira=self.empresa_terceira
-        )
-        total_avaliacoes = avaliacoes.count()
-        if total_avaliacoes == 0:
-            return 0
-        soma_notas = sum(a.nota_tecnica for a in avaliacoes)
-        media = soma_notas / total_avaliacoes
-        return (media / 5) * 100
+        average = AvaliacaoFornecedor.objects.filter(empresa_terceira=self.empresa_terceira).aggregate(average=models.Avg("nota_tecnica"))["average"]
+        return (average / 5) * 100 if average is not None else 0
 
     @property
     def IS_entrega(self):
-        avaliacoes = AvaliacaoFornecedor.objects.filter(
-            empresa_terceira=self.empresa_terceira
-        )
-        total_avaliacoes = avaliacoes.count()
-        if total_avaliacoes == 0:
-            return 0
-        soma_notas = sum(a.nota_entrega for a in avaliacoes)
-        media = soma_notas / total_avaliacoes
-        return (media / 5) * 100
+        average = AvaliacaoFornecedor.objects.filter(empresa_terceira=self.empresa_terceira).aggregate(average=models.Avg("nota_entrega"))["average"]
+        return (average / 5) * 100 if average is not None else 0
 
 
 """# ---------------------
 # Aditivos contratuais (cliente)
 # ---------------------
-class Aditivo(models.Model):
+class Aditivo(BusinessValidationMixin, models.Model):
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name="aditivos")
     descricao = models.TextField()
     motivo = models.TextField(blank=True, null=True)
@@ -1146,7 +1185,7 @@ class Aditivo(models.Model):
 # ----------------------------------
 # Aditivos contratuais de terceiros
 # ----------------------------------
-class AditivoTerceiro(models.Model):
+class AditivoTerceiro(BusinessValidationMixin, models.Model):
     contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="aditivos")
     descricao = models.TextField()
     motivo = models.TextField(blank=True, null=True)
@@ -1161,7 +1200,7 @@ class AditivoTerceiro(models.Model):
 # -------------
 # Documento BM
 # -------------
-class DocumentoBM(models.Model):
+class DocumentoBM(BusinessValidationMixin, models.Model):
     STATUS_CHOICES = [
         ('pendente', 'Pendente'),
         ('aprovado', 'Aprovado'),
@@ -1209,20 +1248,33 @@ class DocumentoBM(models.Model):
         return self.status_gerente == "aprovado"
 
     @property
+    def status_avaliacao(self):
+        if self.status_gerente != "pendente":
+            return self.status_gerente
+        return self.status_coordenador
+
+    @property
+    def aprovado(self):
+        return self.status_avaliacao == "aprovado"
+
+    @property
     def reprovado_por_alguem(self):
         return self.status_coordenador == "reprovado" or self.status_gerente == "reprovado"
 # ------
 # BM (Boletim de Medição) - contrato de terceiros
 # ------
-class BM(models.Model):
+class BM(BusinessValidationMixin, models.Model):
+    @property
+    def nf_paid(self):
+        return Decimal(getattr(self,'nf_paid_centavos',0))/100
     STATUS_CHOICES = [
         ('pendente', 'Pendente'),
         ('aprovado', 'Aprovado'),
         ('reprovado', 'Reprovado'),
     ]
-    contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="boletins_medicao")
-    evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='boletins_medicao', null=True, blank=True)
-    os = models.ForeignKey(OS, on_delete=models.CASCADE, related_name='boletins_medicao', null=True, blank=True)
+    contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.PROTECT, related_name="boletins_medicao")
+    evento = models.ForeignKey(Evento, on_delete=models.PROTECT, related_name='boletins_medicao', null=True, blank=True)
+    os = models.ForeignKey(OS, on_delete=models.PROTECT, related_name='boletins_medicao', null=True, blank=True)
     numero_bm = models.PositiveIntegerField()
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     parcela_paga = models.PositiveIntegerField()
@@ -1237,6 +1289,9 @@ class BM(models.Model):
 
     aprovacao_pagamento = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
     data_aprovacao_diretor = models.DateTimeField(null=True, blank=True)
+
+    justificativa_aprovacao_diretor = models.TextField(
+        'Justificativa da aprovação de pagamento pela Diretoria',null=True,blank=True)
 
     justificativa_reprovacao_coordenador = models.TextField(
         null=True, blank=True,
@@ -1264,34 +1319,83 @@ class BM(models.Model):
         return f"Parcela {self.parcela_paga} - {self.valor_pago}"
 
     @property
+    def contrato_financeiro(self):
+        """O Evento (ou OS) define a participação; contrato é o vínculo documental."""
+        if self.evento_id:
+            return self.evento.contrato_terceiro
+        if self.os_id:
+            return self.os.contrato
+        return self.contrato
+
+    @property
     def total_pago(self):
-        """Calcula o valor total pago do contrato"""
+        """Soma as participações medidas do contrato financeiro, sem deduplicar arquivo."""
         from django.db.models import Sum
+        contract = self.contrato_financeiro
+        if contract is None:
+            return Decimal('0.00')
         total = BM.objects.filter(
-            contrato=self.contrato
+            models.Q(evento__contrato_terceiro=contract)
+            | models.Q(os__contrato=contract)
+            | models.Q(evento__isnull=True, os__isnull=True, contrato=contract)
         ).aggregate(Sum('valor_pago'))['valor_pago__sum']
         return total or Decimal('0.00')
 
+    def clean(self):
+        super().clean()
+        if self.evento_id and self.os_id:
+            raise ValidationError("Um BM deve referenciar evento ou OS, nunca ambos.")
+        # Um BM pode documentar mais de um contrato. No vínculo cruzado,
+        # a participação financeira continua pertencendo ao Evento.
+        if self.os_id and self.os.contrato_id != self.contrato_id:
+            raise ValidationError("A OS deve pertencer ao contrato do BM.")
+
     def save(self, *args, **kwargs):
-        """Se o arquivo for atualizado, reinicia as aprovações"""
+        # DateField com default timezone.now começa como datetime em memória.
+        # Normalize antes de comparar para não invalidar uma aprovação por tipo.
+        self.data_pagamento = self._meta.get_field("data_pagamento").to_python(self.data_pagamento)
+        self.clean()
+        relevant = ["contrato_id", "evento_id", "os_id", "numero_bm", "parcela_paga",
+                    "valor_pago", "data_pagamento", "data_inicial_medicao",
+                    "data_final_medicao", "arquivo_bm"]
         if self.pk:
             old = BM.objects.filter(pk=self.pk).first()
-            if old and old.arquivo_bm != self.arquivo_bm:
-                self.status_coordenador = 'pendente'
-                self.status_gerente = 'pendente'
-                self.data_aprovacao_coordenador = None
-                self.data_aprovacao_gerente = None
+            def comparable(instance, key):
+                value = getattr(instance, key)
+                return (value.name or "") if key == "arquivo_bm" else value
+            if old and any(comparable(old, key) != comparable(self, key) for key in relevant):
+                reset = []
+                for field in ["status_coordenador", "status_gerente", "aprovacao_pagamento"]:
+                    setattr(self, field, "pendente")
+                    reset.append(field)
+                for field in ["data_aprovacao_coordenador", "data_aprovacao_gerente",
+                              "data_aprovacao_diretor", "justificativa_reprovacao_coordenador",
+                              "justificativa_reprovacao_gerente", "justificativa_reprovacao_diretor",
+                              "justificativa_aprovacao_diretor"]:
+                    setattr(self, field, None)
+                    reset.append(field)
+                if kwargs.get("update_fields") is not None:
+                    kwargs["update_fields"] = set(kwargs["update_fields"]) | set(reset)
         super().save(*args, **kwargs)
 
 
-# -------------
-# Nota Fiscal
-#--------------
-class NF(models.Model):
-    contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.CASCADE, related_name="nota_fiscal")
-    evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='nota_fiscal', null=True, blank=True)
-    os = models.ForeignKey(OS, on_delete=models.CASCADE, related_name='nota_fiscal', null=True, blank=True)
-    bm = models.ForeignKey(BM, on_delete=models.CASCADE, related_name='nota_fiscal', blank=True, null=True)
+class NF(BusinessValidationMixin, models.Model):
+    vencimento_original=models.DateField(null=True,blank=True)
+    cancelada_em=models.DateTimeField(null=True,blank=True,editable=False)
+    cancelada_por=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='+',editable=False)
+    motivo_cancelamento=models.TextField(blank=True,default='',editable=False)
+    numero_nf = models.CharField('Número da NF', max_length=64, null=True, blank=True, db_index=True)
+    serie = models.CharField('Série', max_length=32, null=True, blank=True)
+    data_emissao = models.DateField('Data de emissão', null=True, blank=True)
+    chave_acesso = models.CharField('Chave de acesso (quando aplicável)', max_length=120, null=True, blank=True, db_index=True)
+    tipo_documento = models.CharField('Tipo de documento fiscal', max_length=40, null=True, blank=True)
+    comprovante_pagamento = models.FileField('Comprovante de pagamento',
+        upload_to=ShortenedUploadPath('NF/Comprovantes', 'comprovante'), null=True, blank=True,
+        max_length=255, validators=[validate_upload])
+    contrato = models.ForeignKey(ContratoTerceiros, on_delete=models.PROTECT, related_name="nota_fiscal")
+    evento = models.ForeignKey(Evento, on_delete=models.PROTECT, related_name='nota_fiscal', null=True, blank=True)
+    os = models.ForeignKey(OS, on_delete=models.PROTECT, related_name='nota_fiscal', null=True, blank=True)
+    bm = models.ForeignKey(BM, on_delete=models.PROTECT, related_name='nota_fiscal', blank=True, null=True)
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     parcela_paga = models.PositiveIntegerField()
     data_pagamento = models.DateField(default=timezone.now)
@@ -1305,6 +1409,67 @@ class NF(models.Model):
     financeiro_autorizou = models.BooleanField(default=False)
     nf_dentro_prazo = models.BooleanField(default=False)
 
+    def clean(self):
+        super().clean()
+        # O schema permanece nullable para compatibilidade com históricos.
+        from .payment_queries import cents
+        try:cents(self.valor_pago)
+        except (ValueError,ArithmeticError) as error:raise ValidationError({'valor_pago':str(error)}) from error
+        if self.comprovante_pagamento and not self.comprovante_pagamento._committed:
+            validate_upload(self.comprovante_pagamento.file)
+        # Novos registros e edições exigem o vínculo, inclusive fora dos forms.
+        if not self.bm_id:
+            raise ValidationError({"bm": "Toda NF de fornecedor deve estar vinculada a um BM."})
+        if self.evento_id and self.os_id:
+            raise ValidationError("Uma NF deve referenciar evento ou OS, nunca ambos.")
+        if self.evento_id and self.evento.contrato_terceiro_id != self.contrato_id:
+            raise ValidationError("O evento deve pertencer ao contrato da NF.")
+        if self.os_id and self.os.contrato_id != self.contrato_id:
+            raise ValidationError("A OS deve pertencer ao contrato da NF.")
+        if self.bm_id and (self.bm.contrato_financeiro is None
+                           or self.bm.contrato_financeiro.pk != self.contrato_id
+                           or self.bm.evento_id != self.evento_id or self.bm.os_id != self.os_id):
+            raise ValidationError("O BM deve pertencer à mesma origem e contrato da NF.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        from .financial_audit import financial_audit_context, validate_nf_save
+        from .middleware import get_current_user, get_current_request
+        request = get_current_request()
+        if request is None and not hasattr(self, '_audit_user') and not hasattr(self, '_audit_reason'):
+            validate_nf_save(self)
+            return super().save(*args, **kwargs)
+        user = getattr(self, '_audit_user', None) or get_current_user()
+        reason = getattr(self, '_audit_reason', None)
+        if reason is None:
+            reason = request.POST.get('justificativa_correcao', '') if request else ''
+        with financial_audit_context(user, reason):
+            validate_nf_save(self)
+            super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        from .financial_audit import financial_audit_context
+        from .middleware import get_current_user, get_current_request
+        request = get_current_request()
+        if self.movimentos.exists() or self.programacoes.exists() or self.reprogramacoes.exists():
+            from .payment_services import cancel_invoice
+            import json
+            from .financial_audit import metadata
+            info=json.loads(metadata())
+            user=getattr(self,'_audit_user',None) or get_current_user() or (User.objects.filter(pk=info.get('usuario_id')).first() if info.get('usuario_id') else None)
+            reason=getattr(self,'_audit_reason',None) or info.get('justificativa','')
+            cancel_invoice(nf_id=self.pk,user=user,motivo=reason)
+            self.refresh_from_db()
+            return 0,{}
+        if request is None and not hasattr(self, '_audit_user') and not hasattr(self, '_audit_reason'):
+            return super().delete(*args, **kwargs)
+        user = getattr(self, '_audit_user', None) or get_current_user()
+        reason = getattr(self, '_audit_reason', None)
+        if reason is None:
+            reason = request.POST.get('justificativa_correcao', '') if request else ''
+        with financial_audit_context(user, reason):
+            return super().delete(*args, **kwargs)
+
     def __str__(self):
         referencia = None
         if self.evento:
@@ -1315,12 +1480,39 @@ class NF(models.Model):
             referencia = "Sem referência"
         return f"Nota Fiscal {self.id} - {referencia}"
 
+    @property
+    def total_pago(self):
+        from .payment_queries import invoice_paid_cents,money
+        return money(invoice_paid_cents(self))
+
+    def refresh_from_db(self,*args,**kwargs):
+        for key in list(self.__dict__):
+            if key.startswith('ledger_'):self.__dict__.pop(key,None)
+        return super().refresh_from_db(*args,**kwargs)
+
+    @property
+    def saldo_pendente(self):
+        return Decimal('0') if self.cancelada_em else self.valor_pago-self.total_pago
+
+    @property
+    def possui_pagamentos(self):
+        return getattr(self,'ledger_has_payments',None) if hasattr(self,'ledger_has_payments') else self.movimentos.exists()
+
+    @property
+    def possui_historico_financeiro(self):
+        return self.possui_pagamentos or (self.ledger_has_program_history if hasattr(self,'ledger_has_program_history') else self.programacoes.exists()) or (self.ledger_renegotiated if hasattr(self,'ledger_renegotiated') else self.reprogramacoes.exists())
+
+    @property
+    def situacao_liquidacao(self):
+        paid=self.total_pago
+        return 'Integralmente paga' if paid>0 and paid==self.valor_pago else 'Parcialmente paga' if paid>0 else 'Não paga'
+
 
 # -------------
 # Nota Fiscal para o Cliente
 #--------------
-class NFCliente(models.Model):
-    contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name="nota_fiscal")
+class NFCliente(BusinessValidationMixin, models.Model):
+    contrato = models.ForeignKey(Contrato, on_delete=models.PROTECT, related_name="nota_fiscal")
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     parcela_paga = models.PositiveIntegerField()
     data_emissao = models.DateField(default=timezone.now)
@@ -1332,7 +1524,7 @@ class NFCliente(models.Model):
         max_length=255,
     )
     observacao = models.TextField(null=True, blank=True)
-    inserido_por = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    inserido_por = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True)
 
     def __str__(self):
         return f"Nota Fiscal {self.id} - Parcela {self.parcela_paga} - {self.contrato}"
@@ -1341,7 +1533,7 @@ class NFCliente(models.Model):
 # -----------
 # Documentos (cliente)
 # -----------
-class DocumentoContrato(models.Model):
+class DocumentoContrato(BusinessValidationMixin, models.Model):
     contrato = models.ForeignKey(Contrato, on_delete=models.CASCADE, related_name="documentos")
     arquivo = models.FileField(upload_to=DOCUMENTO_CONTRATO_UPLOAD_PATH, max_length=255)
     descricao = models.CharField(max_length=200, blank=True, null=True)
@@ -1359,7 +1551,7 @@ class DocumentoContrato(models.Model):
 # -----------
 # Documentos (terceiros)
 # -----------
-class DocumentoContratoTerceiro(models.Model):
+class DocumentoContratoTerceiro(BusinessValidationMixin, models.Model):
     solicitacao = models.OneToOneField(SolicitacaoProspeccao, on_delete=models.CASCADE, related_name="contrato_relacionado", null=True, blank=True)
     solicitacao_contrato = models.OneToOneField(SolicitacaoContrato, on_delete=models.CASCADE, related_name="minuta_contrato", null=True, blank=True)
     numero_contrato = models.CharField(max_length=100, unique=True)
@@ -1393,7 +1585,7 @@ class DocumentoContratoTerceiro(models.Model):
 
 
 
-class CalendarioPagamento(models.Model):
+class CalendarioPagamento(BusinessValidationMixin, models.Model):
     data_pagamento = models.DateField(unique=True)
     observacao = models.TextField(null=True, blank=True)
 
@@ -1401,7 +1593,13 @@ class CalendarioPagamento(models.Model):
         return self.data_pagamento.strftime('%d/%m/%Y')
 
 
-class RegistroAuditoria(models.Model):
+class RegistroAuditoria(BusinessValidationMixin, models.Model):
+    operacao_financeira = models.CharField(max_length=40, null=True, blank=True, db_index=True)
+    estado_anterior = models.JSONField(null=True, blank=True)
+    estado_posterior = models.JSONField(null=True, blank=True)
+    justificativa = models.TextField(null=True, blank=True)
+    autor_nome = models.CharField(max_length=255, null=True, blank=True)
+    autor_grupo = models.CharField(max_length=50, null=True, blank=True)
     ACAO_CHOICES = [
         ("criado", "Criado"),
         ("atualizado", "Atualizado"),
@@ -1425,12 +1623,13 @@ class RegistroAuditoria(models.Model):
 
     class Meta:
         ordering = ["-data_hora"]
+        indexes = [models.Index(fields=['content_type','object_id','-data_hora'],name='financial_object_history_idx')]
 
     def __str__(self):
         return f"{self.get_acao_display()} - {self.modelo} #{self.object_id}"
 
 
-class ConfiguracaoSLA(models.Model):
+class ConfiguracaoSLA(BusinessValidationMixin, models.Model):
     TIPO_FLUXO_CHOICES = [
         ("prospeccao", "Prospeccao"),
         ("contratacao", "Contratacao"),
@@ -1456,7 +1655,7 @@ class ConfiguracaoSLA(models.Model):
         return f"{self.get_tipo_fluxo_display()} - {self.nome_etapa} ({self.prazo_dias_uteis} dias uteis)"
 
 
-class Feriado(models.Model):
+class Feriado(BusinessValidationMixin, models.Model):
     nome = models.CharField(max_length=150)
     data = models.DateField(unique=True)
     ativo = models.BooleanField(default=True)
@@ -1470,7 +1669,13 @@ class Feriado(models.Model):
         return f"{self.nome} - {self.data.strftime('%d/%m/%Y')}"
 
 
-class AditivoContratoTerceiro(models.Model):
+class ChaveIdempotencia(models.Model):
+    """Somente hashes técnicos; não armazena conteúdo de requisições."""
+    chave = models.CharField(max_length=64, primary_key=True)
+    expira_em = models.DateTimeField(db_index=True)
+
+
+class AditivoContratoTerceiro(BusinessValidationMixin, EstadoSolicitacao):
     STATUS_CHOICES = [
         ("pendente", "Pendente"),
         ("aprovado", "Aprovado"),
@@ -1522,6 +1727,19 @@ class AditivoContratoTerceiro(models.Model):
 
     class Meta:
         ordering = ["-criado_em"]
+        permissions = [
+            ("arquivar_aditivocontratoterceiro", "Pode arquivar e desarquivar solicitações de aditivo"),
+            ("cancelar_aditivocontratoterceiro", "Pode cancelar solicitações de aditivo"),
+        ]
+
+    @property
+    def cancelada(self):
+        return bool(self.cancelada_em)
+
+    @property
+    def status(self):
+        """Rótulo derivado; as aprovações existentes continuam sendo a fonte da etapa."""
+        return self.etapa_atual
 
     def __str__(self):
         return f"Aditivo {self.id} - {self.contrato.num_contrato or self.contrato.id}"
@@ -1560,6 +1778,8 @@ class AditivoContratoTerceiro(models.Model):
 
     @property
     def etapa_atual(self):
+        if self.cancelada:
+            return "Cancelada"
         if self.aprovado_totalmente:
             return "Concluido"
         if self.minuta_aprovada:
@@ -1573,3 +1793,7 @@ class AditivoContratoTerceiro(models.Model):
         if self.solicitacao_reprovada_por_alguem:
             return "Solicitacao Reprovada"
         return "Aguardando Aprovacao da Solicitacao"
+
+
+# Entidades financeiras registradas no mesmo app, sem duplicar NF ou BM.
+from .payment_models import PagamentoNF,ProgramacaoPagamento,ReprogramacaoPagamento

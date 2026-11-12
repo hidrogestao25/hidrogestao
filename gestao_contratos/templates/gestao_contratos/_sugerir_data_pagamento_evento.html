@@ -1,0 +1,60 @@
+<script>
+$(function() {
+    const entrega = $("#id_data_prevista");
+    const pagamento = $("#id_data_prevista_pagamento");
+    let consultaAtual = null;
+    let numeroConsulta = 0;
+    let edicoesManuais = 0;
+
+    pagamento.on("input change", function() {
+        edicoesManuais += 1;
+    });
+
+    entrega.on("change", function() {
+        const dataEntrega = entrega.val();
+        const consulta = ++numeroConsulta;
+
+        if (consultaAtual) {
+            consultaAtual.abort();
+        }
+        if (!dataEntrega) {
+            return;
+        }
+
+        const edicoesAntesDaConsulta = edicoesManuais;
+        consultaAtual = $.getJSON("{% url 'buscar_proxima_data_pagamento' %}", {
+            data_prevista: dataEntrega
+        }).done(function(resposta) {
+            if (consulta !== numeroConsulta || entrega.val() !== dataEntrega ||
+                    edicoesManuais !== edicoesAntesDaConsulta) {
+                return;
+            }
+
+            pagamento.val(resposta.data || "");
+            mostrarMensagem(
+                resposta.data ? "Data de pagamento sugerida automaticamente." :
+                    "Nenhuma data de pagamento encontrada.",
+                !resposta.data
+            );
+        }).fail(function(xhr, status) {
+            if (status !== "abort" && consulta === numeroConsulta) {
+                mostrarMensagem("Não foi possível consultar o calendário de pagamentos.", true);
+            }
+        });
+    });
+
+    function mostrarMensagem(texto, erro) {
+        $("#mensagem-sugestao").remove();
+        const mensagem = $("<div>", {
+            id: "mensagem-sugestao",
+            class: "alert " + (erro ? "alert-warning" : "alert-info") + " mt-2",
+            role: "alert",
+            text: texto
+        });
+        pagamento.after(mensagem);
+        setTimeout(function() {
+            mensagem.fadeOut(500, function() { mensagem.remove(); });
+        }, 4000);
+    }
+});
+</script>

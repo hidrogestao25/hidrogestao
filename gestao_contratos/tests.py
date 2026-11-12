@@ -1,4 +1,4 @@
-﻿from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -16,7 +16,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 import zipfile
 
 from .models import (
@@ -88,10 +88,30 @@ from .views import (
 )
 
 
+def xlsx_fixture():
+    buffer = BytesIO()
+    Workbook().save(buffer)
+    return buffer.getvalue()
+
+
 User = get_user_model()
 
 
 class BaseUserTestCase(TestCase):
+    def seed_legacy_origin_payments(self):
+        """Somente fixtures: os antigos valores esperados agora têm NF e abertura explícita."""
+        from .payment_context import ledger_context
+        for model,field in ((Evento,'evento'),(OS,'os')):
+            for origin in model.objects.filter(valor_pago__gt=0):
+                if NF.objects.filter(**{field:origin}).exists():continue
+                contract=origin.contrato_terceiro if field=='evento' else origin.contrato
+                if not contract:continue
+                bm=BM.objects.create(contrato=contract,**{field:origin},numero_bm=999,parcela_paga=1,
+                    valor_pago=origin.valor_pago,status_gerente='aprovado',aprovacao_pagamento='aprovado')
+                with ledger_context(legacy=True):
+                    NF.objects.create(contrato=contract,**{field:origin},bm=bm,parcela_paga=1,
+                        valor_pago=origin.valor_pago,data_pagamento=origin.data_pagamento or timezone.localdate(),financeiro_autorizou=True)
+
     def create_user(self, username, grupo, password="senha123", email=None):
         return User.objects.create_user(
             username=username,
@@ -449,7 +469,7 @@ class MoneyFieldNormalizationTests(BaseUserTestCase):
                 "parcela_paga": 1,
                 "data_pagamento": "2026-04-25",
                 "observacao": "NF fornecedor",
-                "financeiro_autorizou": "on",
+                "financeiro_autorizou": "",
                 "nf_dentro_prazo": "on",
             },
         )
@@ -469,6 +489,7 @@ class MoneyFieldNormalizationTests(BaseUserTestCase):
         self.assertEqual(nf_cliente_form.cleaned_data["valor_pago"], Decimal("5678.90"))
 
         ordem_servico_form = OrdemServicoForm(
+            instance=self.os,
             data={
                 "contrato": self.contrato_fornecedor.id,
                 "solicitacao": self.solicitacao_os.id,
@@ -1133,6 +1154,9 @@ class IndicadoresSuprimentoTests(BaseUserTestCase):
             aprovacao_pagamento="pendente",
         )
 
+        Evento.objects.filter(pk__in=[eventos[0].pk,eventos[1].pk]).update(data_pagamento=date(ano_atual,5,1))
+        OS.objects.filter(pk=os_planejada.pk).update(data_pagamento=date(ano_atual,5,1))
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
         response = self.client.get(reverse("indicadores_suprimento"))
 
@@ -1569,6 +1593,7 @@ class RankingFornecedoresTests(BaseUserTestCase):
         self.evento_outro_escopo.save(update_fields=["valor_previsto", "valor_pago"])
 
     def test_ranking_fornecedores_exclui_fornecedor_com_apenas_contrato_encerrado(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(reverse("ranking_fornecedores"))
@@ -1578,6 +1603,7 @@ class RankingFornecedoresTests(BaseUserTestCase):
         self.assertNotContains(response, "FORNECEDOR ENCERRADO")
 
     def test_ranking_fornecedores_ignora_eventos_de_contratos_encerrados(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(reverse("ranking_fornecedores"))
@@ -1590,6 +1616,7 @@ class RankingFornecedoresTests(BaseUserTestCase):
         self.assertEqual(dados_por_fornecedor["FORNECEDOR ATIVO"]["valor_pago"], Decimal("400.00"))
 
     def test_ranking_fornecedores_restringe_gerente_contrato_ao_proprio_vinculo(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_contrato)
 
         response = self.client.get(reverse("ranking_fornecedores"))
@@ -1601,6 +1628,7 @@ class RankingFornecedoresTests(BaseUserTestCase):
         self.assertNotContains(response, "FORNECEDOR OUTRO ESCOPO")
 
     def test_ranking_fornecedores_restringe_gerente_lider_ao_mesmo_centro(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(reverse("ranking_fornecedores"))
@@ -1612,6 +1640,7 @@ class RankingFornecedoresTests(BaseUserTestCase):
         self.assertNotContains(response, "FORNECEDOR OUTRO ESCOPO")
 
     def test_ranking_fornecedores_informa_projetos_ativos(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(reverse("ranking_fornecedores"))
@@ -1626,6 +1655,7 @@ class RankingFornecedoresTests(BaseUserTestCase):
         coordenador_extra_mesmo_centro.centros.add(self.centro)
         self.contrato_ativo.coordenadores.add(self.coordenador, coordenador_extra_mesmo_centro)
 
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(reverse("ranking_fornecedores"))
@@ -1693,6 +1723,9 @@ class ClienteAjaxTests(BaseUserTestCase):
         self.assertContains(response, reverse("add_cliente"))
         self.assertContains(response, 'name="valor_vendido"', html=False)
         self.assertContains(response, 'class="form-control money"', html=False)
+        self.assertContains(response, "Objeto de contrato")
+        self.assertNotContains(response, "Escopo de Contratação")
+        self.assertEqual(response.context["form"].fields["descricao"].label, "Objeto de contrato")
 
     def test_cliente_criado_via_ajax_aparece_em_nova_solicitacao_prospeccao(self):
         user = self.create_user("liderprospajax", "lider_contrato")
@@ -1765,6 +1798,61 @@ class AuxiliaryAjaxEndpointsTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"data": "2026-06-15"})
+
+    def test_buscar_proxima_data_pagamento_considera_entrega_e_igualdade(self):
+        for dia in (date(2025, 6, 30), date(2026, 8, 29), date(2026, 9, 30),
+                    date(2026, 10, 30), date(2026, 11, 28), date(2026, 12, 30)):
+            CalendarioPagamento.objects.create(data_pagamento=dia)
+        self.client.force_login(self.suprimento)
+        url = reverse("buscar_proxima_data_pagamento")
+
+        for entrega, esperado in (
+            ("2026-11-05", "2026-11-28"),
+            ("2026-11-28", "2026-11-28"),
+            ("2026-12-31", None),
+            ("data-invalida", None),
+        ):
+            with self.subTest(entrega=entrega):
+                response = self.client.get(url, {"data_prevista": entrega})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), {"data": esperado})
+
+    def test_formularios_de_cadastro_sugerem_data_sem_impedir_escolha_manual(self):
+        prospeccao = SolicitacaoProspeccao.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Prospecção para evento",
+        )
+        solicitacao_contrato = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            descricao="Contratação para evento",
+        )
+        self.client.force_login(self.suprimento)
+        for nome, pk in (
+            ("cadastrar_evento", prospeccao.pk),
+            ("cadastrar_evento_solicitacao", solicitacao_contrato.pk),
+            ("cadastrar_evento_contrato", self.contrato_terceiro.pk),
+        ):
+            with self.subTest(formulario=nome):
+                response = self.client.get(reverse(nome, args=[pk]))
+                self.assertContains(response, 'pagamento.on("input change"')
+                self.assertContains(response, 'entrega.on("change"')
+
+        response = self.client.post(
+            reverse("cadastrar_evento_contrato", args=[self.contrato_terceiro.pk]),
+            {
+                "descricao": "Pagamento escolhido manualmente",
+                "data_prevista": "2026-11-05",
+                "valor_previsto": "100,00",
+                "data_prevista_pagamento": "2026-12-15",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        evento = Evento.objects.get(descricao="Pagamento escolhido manualmente")
+        self.assertEqual(evento.data_prevista_pagamento, date(2026, 12, 15))
 
     def test_cadastrar_bm_retorna_erros_json_quando_formulario_e_invalido(self):
         self.client.force_login(self.suprimento)
@@ -2712,6 +2800,28 @@ class ApproveFornecedorDiretoriaTests(BaseUserTestCase):
         self.assertEqual(self.solicitacao.aprovacao_fornecedor_diretor, "aprovado")
         self.assertEqual(self.solicitacao.status, "Fornecedor aprovado")
 
+    def test_aprovacao_fornecedor_retorna_a_origem_da_lista_ou_do_detalhe(self):
+        self.client.force_login(self.diretoria)
+        lista_url = reverse("lista_solicitacoes") + "?page=2"
+        action_url = reverse("aprovar_fornecedor_diretor", args=[self.solicitacao.pk])
+
+        intermediary = self.client.get(action_url, {"next": lista_url})
+        response = self.client.get(intermediary.url)
+        self.assertEqual(response.context["approval_next"], lista_url)
+        response = self.client.post(
+            action_url,
+            {"acao": "aprovar", "next": response.context["approval_next"]},
+        )
+        self.assertRedirects(response, lista_url, fetch_redirect_response=False)
+
+    def test_aprovacao_fornecedor_ignora_destino_externo(self):
+        self.client.force_login(self.diretoria)
+        response = self.client.post(
+            reverse("aprovar_fornecedor_diretor", args=[self.solicitacao.pk]),
+            {"acao": "aprovar", "next": "https://example.com/fora"},
+        )
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
+
     def test_reprovar_fornecedor_diretoria_limpa_escolha_e_exige_nova_triagem(self):
         self.client.force_login(self.diretoria)
 
@@ -3318,28 +3428,27 @@ class DocumentoBMApprovalTests(BaseUserTestCase):
             descricao="Solicitação BM",
             status="Planejamento do contrato",
         )
-        self.documento_bm = DocumentoBM.objects.create(solicitacao=self.solicitacao)
+        self.documento_bm = DocumentoBM.objects.create(
+            solicitacao=self.solicitacao,
+            minuta_boletim=SimpleUploadedFile("minuta-bm.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
 
-    def test_aprovar_bm_como_coordenador(self):
+    def test_aprovar_bm_como_coordenador_nao_altera_a_minuta(self):
         self.client.force_login(self.coordenador)
 
         response = self.client.get(reverse("aprovar_bm", args=[self.documento_bm.pk, "coordenador"]))
 
-        self.assertRedirects(
-            response,
-            reverse("detalhe_bm", kwargs={"pk": self.documento_bm.pk}),
-            fetch_redirect_response=False,
-        )
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
         self.documento_bm.refresh_from_db()
-        self.assertEqual(self.documento_bm.status_coordenador, "aprovado")
-        self.assertIsNotNone(self.documento_bm.data_aprovacao_coordenador)
+        self.assertEqual(self.documento_bm.status_coordenador, "pendente")
+        self.assertEqual(self.documento_bm.status_gerente, "pendente")
 
     def test_aprovar_bm_como_gerente(self):
         self.client.force_login(self.gerente_contrato)
 
-        response = self.client.get(reverse("aprovar_bm", args=[self.documento_bm.pk, "gerente"]))
+        response = self.client.post(reverse("detalhe_bm", args=[self.documento_bm.pk]), {"acao": "aprovar"})
 
-        self.assertRedirects(response, reverse("detalhe_bm", kwargs={"pk": self.documento_bm.pk}))
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
         self.documento_bm.refresh_from_db()
         self.assertEqual(self.documento_bm.status_gerente, "aprovado")
         self.assertIsNotNone(self.documento_bm.data_aprovacao_gerente)
@@ -3350,9 +3459,9 @@ class DocumentoBMApprovalTests(BaseUserTestCase):
         self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
         self.client.force_login(diretoria)
 
-        response = self.client.get(reverse("aprovar_bm", args=[self.documento_bm.pk, "gerente"]))
+        response = self.client.post(reverse("detalhe_bm", args=[self.documento_bm.pk]), {"acao": "aprovar"})
 
-        self.assertRedirects(response, reverse("detalhe_bm", kwargs={"pk": self.documento_bm.pk}))
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
         self.documento_bm.refresh_from_db()
         self.assertEqual(self.documento_bm.status_gerente, "aprovado")
 
@@ -3376,7 +3485,7 @@ class DocumentoBMApprovalTests(BaseUserTestCase):
             {"justificativa": "Documento com inconsistencias."},
         )
 
-        self.assertRedirects(response, reverse("detalhe_bm", kwargs={"pk": self.documento_bm.pk}))
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
         self.documento_bm.refresh_from_db()
         self.assertEqual(self.documento_bm.status_gerente, "reprovado")
         self.assertEqual(len(mail.outbox), 1)
@@ -3391,7 +3500,7 @@ class DocumentoBMApprovalTests(BaseUserTestCase):
             follow=True,
         )
 
-        self.assertRedirects(response, reverse("detalhe_bm", kwargs={"pk": self.documento_bm.pk}))
+        self.assertRedirects(response, reverse("detalhe_bm", kwargs={"pk": self.documento_bm.pk}), fetch_redirect_response=False)
         self.documento_bm.refresh_from_db()
         self.assertEqual(self.documento_bm.status_gerente, "pendente")
 
@@ -3406,6 +3515,222 @@ class DocumentoBMApprovalTests(BaseUserTestCase):
         self.assertRedirects(response, reverse("lista_solicitacoes"))
         self.documento_bm.refresh_from_db()
         self.assertEqual(self.documento_bm.status_coordenador, "pendente")
+
+    def test_lider_pode_aprovar_minuta_sem_aprovacao_da_gerencia(self):
+        lider = self.create_user("lider_minuta_bm", "lider_contrato")
+        self.solicitacao.lider_contrato = lider
+        self.solicitacao.save(update_fields=["lider_contrato"])
+        self.client.force_login(lider)
+
+        response = self.client.post(
+            reverse("detalhe_bm", args=[self.documento_bm.pk]), {"acao": "aprovar"}
+        )
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
+        self.documento_bm.refresh_from_db()
+        self.assertEqual(self.documento_bm.status_coordenador, "aprovado")
+        self.assertEqual(self.documento_bm.status_gerente, "pendente")
+        self.assertTrue(self.documento_bm.aprovado)
+
+        self.client.force_login(self.gerente_contrato)
+        self.client.post(reverse("detalhe_bm", args=[self.documento_bm.pk]), {"acao": "aprovar"})
+        self.documento_bm.refresh_from_db()
+        self.assertEqual(self.documento_bm.status_gerente, "pendente")
+
+    def test_lider_ve_botao_da_minuta_na_lista_e_nos_detalhes(self):
+        lider = self.create_user("lider_botao_bm", "lider_contrato")
+        self.solicitacao.lider_contrato = lider
+        self.solicitacao.save(update_fields=["lider_contrato"])
+        self.client.force_login(lider)
+        bm_url = reverse("detalhe_bm", args=[self.documento_bm.pk])
+
+        for url in (reverse("lista_solicitacoes"), reverse("detalhes_solicitacao", args=[self.solicitacao.pk])):
+            response = self.client.get(url)
+            self.assertContains(response, bm_url)
+            self.assertContains(response, "Avaliar Minuta BM")
+
+    def test_aprovacao_repetida_nao_reabre_fluxo_nem_envia_email(self):
+        self.client.force_login(self.gerente_contrato)
+        url = reverse("detalhe_bm", args=[self.documento_bm.pk])
+
+        self.client.post(url, {"acao": "aprovar"})
+        self.client.post(url, {"acao": "reprovar", "justificativa": "Nova tentativa"})
+
+        self.documento_bm.refresh_from_db()
+        self.assertEqual(self.documento_bm.status_gerente, "aprovado")
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_aprovacao_do_lider_libera_arquivos_assinados_e_reenvia_aviso(self):
+        lider = self.create_user("lider_bm_assinados", "lider_contrato")
+        self.solicitacao.lider_contrato = lider
+        self.solicitacao.aprovacao_gerencia = True
+        self.solicitacao.save(update_fields=["lider_contrato", "aprovacao_gerencia"])
+        DocumentoContratoTerceiro.objects.create(
+            solicitacao=self.solicitacao,
+            numero_contrato="BM-LIDER-001",
+            objeto="Objeto da contratação",
+            prazo_inicio=date(2026, 5, 1),
+            prazo_fim=date(2026, 6, 1),
+            valor_total=Decimal("1000.00"),
+        )
+        self.client.force_login(lider)
+        url = reverse("detalhe_bm", args=[self.documento_bm.pk])
+
+        self.client.post(url, {"acao": "aprovar"})
+        self.solicitacao.refresh_from_db()
+        self.assertEqual(self.solicitacao.status, get_signed_files_pending_status())
+        self.assertEqual(len(mail.outbox), 1)
+
+        self.client.post(url, {"acao": "aprovar"})
+        self.documento_bm.refresh_from_db()
+        self.assertEqual(self.documento_bm.status_coordenador, "aprovado")
+        self.assertEqual(self.documento_bm.status_gerente, "pendente")
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[0].subject, mail.outbox[1].subject)
+
+    def test_get_no_link_antigo_nao_aprova(self):
+        self.client.force_login(self.gerente_contrato)
+        response = self.client.get(reverse("aprovar_bm", args=[self.documento_bm.pk, "gerente"]))
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
+        self.documento_bm.refresh_from_db()
+        self.assertEqual(self.documento_bm.status_gerente, "pendente")
+
+    def test_nova_minuta_reabre_avaliacao_e_notifica_gerencia(self):
+        lider = self.create_user("lider_aviso_bm", "lider_contrato")
+        self.solicitacao.lider_contrato = lider
+        self.solicitacao.save(update_fields=["lider_contrato"])
+        self.documento_bm.status_gerente = "reprovado"
+        self.documento_bm.save(update_fields=["status_gerente"])
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("inserir_minuta_bm", args=[self.solicitacao.pk]),
+            {"minuta_boletim": SimpleUploadedFile("minuta-revisada.pdf", b"%PDF-1.4", content_type="application/pdf")},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.documento_bm.refresh_from_db()
+        self.assertEqual(self.documento_bm.status_gerente, "pendente")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
+        self.assertIn(lider.email, mail.outbox[0].to)
+        self.assertNotIn(self.suprimento.email, mail.outbox[0].to)
+
+    def test_nova_minuta_reabre_avaliacao_apos_aprovacao_do_lider(self):
+        lider = self.create_user("lider_reenvio_bm", "lider_contrato")
+        self.solicitacao.lider_contrato = lider
+        self.solicitacao.save(update_fields=["lider_contrato"])
+        self.documento_bm.status_coordenador = "aprovado"
+        self.documento_bm.save(update_fields=["status_coordenador"])
+        self.client.force_login(self.suprimento)
+
+        self.client.post(
+            reverse("inserir_minuta_bm", args=[self.solicitacao.pk]),
+            {"minuta_boletim": SimpleUploadedFile("nova-minuta.pdf", b"%PDF-1.4", content_type="application/pdf")},
+        )
+
+        self.documento_bm.refresh_from_db()
+        self.assertEqual(self.documento_bm.status_avaliacao, "pendente")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(lider.email, mail.outbox[0].to)
+
+    def test_segundo_envio_da_minuta_reenvia_email_aos_aprovadores(self):
+        lider = self.create_user("lider_segundo_envio_bm", "lider_contrato")
+        self.solicitacao.lider_contrato = lider
+        self.solicitacao.save(update_fields=["lider_contrato"])
+        self.client.force_login(self.suprimento)
+        url = reverse("inserir_minuta_bm", args=[self.solicitacao.pk])
+
+        for filename in ("primeira-minuta.pdf", "segunda-minuta.pdf"):
+            self.client.post(
+                url,
+                {"minuta_boletim": SimpleUploadedFile(filename, b"%PDF-1.4", content_type="application/pdf")},
+            )
+
+        self.assertEqual(len(mail.outbox), 2)
+        for email in mail.outbox:
+            self.assertIn(lider.email, email.to)
+            self.assertIn(self.gerente_contrato.email, email.to)
+
+    def test_lider_aprova_minuta_de_solicitacao_de_contratacao(self):
+        lider = self.create_user("lider_bm_contratacao", "lider_contrato")
+        solicitacao_contrato = SolicitacaoContrato.objects.create(
+            contrato=self.contrato,
+            coordenador=self.coordenador,
+            lider_contrato=lider,
+            descricao="Contratação BM",
+            status="Aprovação Final",
+        )
+        bm = DocumentoBM.objects.create(
+            solicitacao_contrato=solicitacao_contrato,
+            minuta_boletim=SimpleUploadedFile("bm-contratacao.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
+        self.client.force_login(lider)
+
+        response = self.client.post(reverse("detalhe_bm_contrato", args=[bm.pk]), {"acao": "aprovar"})
+
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
+        bm.refresh_from_db()
+        self.assertEqual(bm.status_coordenador, "aprovado")
+        self.assertEqual(bm.status_gerente, "pendente")
+        self.assertTrue(bm.aprovado)
+
+    def test_envio_apenas_do_bm_assinado_nao_reenvia_aviso_de_avaliacao(self):
+        self.documento_bm.status_gerente = "aprovado"
+        self.documento_bm.save(update_fields=["status_gerente"])
+        self.client.force_login(self.suprimento)
+
+        self.client.post(
+            reverse("inserir_minuta_bm", args=[self.solicitacao.pk]),
+            {"minuta_boletim_assinado": SimpleUploadedFile("bm-assinado.pdf", b"%PDF-1.4", content_type="application/pdf")},
+        )
+
+        self.documento_bm.refresh_from_db()
+        self.assertEqual(self.documento_bm.status_gerente, "aprovado")
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_nova_minuta_respeita_bloqueio_global_de_email_para_diretoria(self):
+        diretoria = self.create_user("dir_minuta_bm", "diretoria")
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        self.client.force_login(self.suprimento)
+
+        self.client.post(
+            reverse("inserir_minuta_bm", args=[self.solicitacao.pk]),
+            {"minuta_boletim": SimpleUploadedFile("minuta-nova.pdf", b"%PDF-1.4", content_type="application/pdf")},
+        )
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.gerente_contrato.email, mail.outbox[0].to)
+        self.assertNotIn(diretoria.email, mail.outbox[0].to)
+
+    def test_reprovacao_de_minuta_de_contratacao_reenvia_email_na_segunda_submissao(self):
+        solicitacao_contrato = SolicitacaoContrato.objects.create(
+            contrato=self.contrato,
+            coordenador=self.coordenador,
+            lider_contrato=self.gerente_contrato,
+            descricao="Contratação BM",
+            status="Aprovação Final",
+        )
+        bm = DocumentoBM.objects.create(
+            solicitacao_contrato=solicitacao_contrato,
+            minuta_boletim=SimpleUploadedFile("bm-contratacao.pdf", b"%PDF-1.4", content_type="application/pdf"),
+        )
+        self.client.force_login(self.gerente_contrato)
+        url = reverse("detalhe_bm_contrato", args=[bm.pk])
+
+        self.client.post(url, {"acao": "reprovar", "justificativa": "Revisar valores."})
+        self.client.post(url, {"acao": "reprovar", "justificativa": "Revisar valores."})
+
+        bm.refresh_from_db()
+        solicitacao_contrato.refresh_from_db()
+        self.assertEqual(bm.status_gerente, "reprovado")
+        self.assertEqual(solicitacao_contrato.status, "Planejamento do Contrato")
+        self.assertEqual(len(mail.outbox), 2)
+        for email in mail.outbox:
+            self.assertIn(self.suprimento.email, email.to)
+            self.assertIn("Revisar valores.", email.body)
 
 
 class DiretoriaPagamentoBMTests(BaseUserTestCase):
@@ -3460,10 +3785,11 @@ class DiretoriaPagamentoBMTests(BaseUserTestCase):
     def test_diretoria_aprova_pagamento_e_notifica_todos_os_membros_de_financeiro(self):
         self.client.force_login(self.diretoria)
 
-        response = self.client.post(
-            reverse("avaliar_bm", args=[self.bm.pk]),
-            {"acao": "aprovar_pagamento"},
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("avaliar_bm", args=[self.bm.pk]),
+                {"acao": "aprovar_pagamento"},
+            )
 
         self.assertEqual(response.status_code, 200)
         self.bm.refresh_from_db()
@@ -3584,10 +3910,11 @@ class EventBMApprovalFlowTests(BaseUserTestCase):
         self.avaliar_evento_com(self.lider)
         self.client.force_login(self.lider)
 
-        response = self.client.post(
-            reverse("avaliar_bm", args=[bm.pk]),
-            {"acao": "aprovar"},
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("avaliar_bm", args=[bm.pk]),
+                {"acao": "aprovar"},
+            )
 
         self.assertEqual(response.status_code, 200)
         bm.refresh_from_db()
@@ -3910,7 +4237,8 @@ class DiretoriaHomeDashboardTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(list(response.context["aditivos_pendentes"]), [aditivo_visivel])
-        self.assertContains(response, f"Aditivo #{aditivo_visivel.id}")
+        self.assertContains(response, f"Contrato #{self.contrato_base.id} - {self.contrato_base.cod_projeto}")
+        self.assertContains(response, reverse("detalhes_aditivo_contrato", args=[aditivo_visivel.id]))
 
     def test_home_diretoria_lista_pendencias_de_gerencia_quando_ausencia_esta_marcada(self):
         gerente_contrato = self.create_user("gc_home_ausente", "gerente_contrato")
@@ -3966,6 +4294,44 @@ class DiretoriaHomeDashboardTests(BaseUserTestCase):
         self.assertIn(solicitacao_contrato, response.context["solicitacoes_contrato"])
         self.assertIn(os_request, response.context["solicitacoes_os"])
         self.assertIn(aditivo, response.context["aditivos_pendentes"])
+        self.assertContains(
+            response,
+            f"Contrato #{self.contrato_base.id} - {self.contrato_base.cod_projeto}",
+            count=4,
+        )
+
+    def test_home_diretoria_cobrindo_gerente_ausente_renderiza_cards_unicos(self):
+        gerente_contrato = self.create_user("gc_home_cards_ausente", "gerente_contrato")
+        gerente_contrato.gerente_contrato_ausente = True
+        gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        fornecedor = self.create_supplier("Fornecedor Cards Unicos", "12.345.678/0001-91")
+        solicitacao_contrato = SolicitacaoContrato.objects.create(
+            contrato=self.contrato_base,
+            coordenador=self.coordenador,
+            lider_contrato=self.lider,
+            fornecedor_escolhido=fornecedor,
+            descricao="Contratação pendente para cards únicos",
+            status="Solicitação de contratação",
+            aprovacao_fornecedor_gerente="pendente",
+            aprovacao_fornecedor_diretor="pendente",
+            data_inicio=date(2026, 5, 1),
+            data_fim=date(2026, 6, 1),
+            valor_provisionado=Decimal("1300.00"),
+        )
+
+        self.client.force_login(self.diretoria)
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["is_diretoria"])
+        self.assertFalse(response.context["is_gerente_contrato"])
+        self.assertEqual(
+            [item.pk for item in response.context["solicitacoes_contrato"]].count(solicitacao_contrato.pk),
+            1,
+        )
+        html = response.content.decode()
+        self.assertEqual(html.count("Solicitações Pendentes"), 1)
+        self.assertEqual(html.count("Boletins Pendentes Aprovação de Pagamento"), 1)
 
 
 class SuprimentoHomeDashboardTests(BaseUserTestCase):
@@ -4004,7 +4370,7 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
             motivo="Minuta reprovada",
             novo_valor_total=Decimal("1700.00"),
             nova_data_fim=date(2026, 7, 30),
-            arquivo_aditivo=SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf"),
+            arquivo_aditivo=SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
             status_gerente="aprovado",
             status_diretoria="aprovado",
             status_lider="reprovado",
@@ -4015,7 +4381,7 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
             motivo="Aguardando documento assinado",
             novo_valor_total=Decimal("1800.00"),
             nova_data_fim=date(2026, 8, 30),
-            arquivo_aditivo=SimpleUploadedFile("aditivo_ok.pdf", b"conteudo", content_type="application/pdf"),
+            arquivo_aditivo=SimpleUploadedFile("aditivo_ok.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
             status_lider="aprovado",
             status_diretoria="aprovado",
             status_gerente="aprovado",
@@ -4026,8 +4392,8 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
             motivo="Ja concluido",
             novo_valor_total=Decimal("1900.00"),
             nova_data_fim=date(2026, 9, 30),
-            arquivo_aditivo=SimpleUploadedFile("minuta.pdf", b"conteudo", content_type="application/pdf"),
-            arquivo_aditivo_assinado=SimpleUploadedFile("aditivo_assinado.pdf", b"conteudo", content_type="application/pdf"),
+            arquivo_aditivo=SimpleUploadedFile("minuta.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
+            arquivo_aditivo_assinado=SimpleUploadedFile("aditivo_assinado.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
             status_lider="aprovado",
             status_diretoria="aprovado",
             status_gerente="aprovado",
@@ -4041,9 +4407,13 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
             [a.id for a in response.context["aditivos_pendentes"]],
             [aditivo_sem_documento.id, aditivo_reprovado.id, aditivo_assinatura_pendente.id],
         )
-        self.assertContains(response, f"Aditivo #{aditivo_sem_documento.id}")
-        self.assertContains(response, f"Aditivo #{aditivo_reprovado.id}")
-        self.assertContains(response, f"Aditivo #{aditivo_assinatura_pendente.id}")
+        self.assertContains(
+            response,
+            f"Contrato #{self.contrato_base.id} - {self.contrato_base.cod_projeto}",
+            count=3,
+        )
+        for aditivo in (aditivo_sem_documento, aditivo_reprovado, aditivo_assinatura_pendente):
+            self.assertContains(response, reverse("detalhes_aditivo_contrato", args=[aditivo.id]))
 
     def test_home_suprimento_lista_solicitacoes_aguardando_arquivos_assinados(self):
         solicitacao_prospeccao = SolicitacaoProspeccao.objects.create(
@@ -4070,7 +4440,7 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         self.assertContains(response, reverse("detalhes_solicitacao", args=[solicitacao_prospeccao.id]))
         self.assertContains(response, reverse("detalhes_solicitacao_contrato", args=[solicitacao_contrato.id]))
 
-    def test_home_suprimento_exibe_badge_de_sla_nas_solicitacoes_pendentes(self):
+    def test_home_suprimento_exibe_apenas_identificacao_do_contrato_nas_solicitacoes_pendentes(self):
         SolicitacaoProspeccao.objects.create(
             contrato=self.contrato_base,
             coordenador=self.coordenador,
@@ -4084,8 +4454,9 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         response = self.client.get(reverse("home"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Dentro do SLA")
-        self.assertContains(response, "Etapa:")
+        self.assertContains(response, f"Contrato #{self.contrato_base.id} - {self.contrato_base.cod_projeto}")
+        self.assertNotContains(response, "Dentro do SLA")
+        self.assertNotContains(response, "Etapa:")
 
     def test_home_suprimento_exibe_contrato_vencido_com_dias_de_atraso(self):
         contrato_vencido = ContratoTerceiros.objects.create(
@@ -4144,14 +4515,14 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
             solicitado_por=self.lider,
             motivo="Prorrogacao fora do card",
             nova_data_fim=date.today() + timedelta(days=60),
-            arquivo_aditivo_assinado=SimpleUploadedFile("aditivo_fora.pdf", b"conteudo", content_type="application/pdf"),
+            arquivo_aditivo_assinado=SimpleUploadedFile("aditivo_fora.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
         )
         AditivoContratoTerceiro.objects.create(
             contrato=contrato_com_aditivo_a_vencer,
             solicitado_por=self.lider,
             motivo="Aditivo dentro do card",
             nova_data_fim=date.today() + timedelta(days=5),
-            arquivo_aditivo_assinado=SimpleUploadedFile("aditivo_dentro.pdf", b"conteudo", content_type="application/pdf"),
+            arquivo_aditivo_assinado=SimpleUploadedFile("aditivo_dentro.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
         )
 
         self.client.force_login(self.suprimento)
@@ -4315,7 +4686,7 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
             [evento.id for evento in response.context["eventos_bm_para_entrega"]],
             [evento_para_entrega.id],
         )
-        self.assertContains(response, "BMs para entrega ate a proxima data de pagamento")
+        self.assertContains(response, "BMs previstos para a próxima data de pagamento")
         self.assertContains(response, evento_para_entrega.empresa_terceira.nome)
 
     def test_home_suprimento_lista_eventos_e_os_realizados_sem_pagamento(self):
@@ -4360,7 +4731,7 @@ class SuprimentoHomeDashboardTests(BaseUserTestCase):
         self.assertIn(evento_sem_pagamento, list(response.context["eventos_sem_pagamento"]))
         self.assertIn(os_sem_pagamento, list(response.context["os_sem_pagamento"]))
         self.assertNotIn(evento_pago, list(response.context["eventos_sem_pagamento"]))
-        self.assertContains(response, "Entregas Realizadas sem Pagamento")
+        self.assertContains(response, "Entregas aguardando o pagamento")
         self.assertContains(response, f"Evento #{evento_sem_pagamento.id}")
         self.assertContains(response, "OS sem pagamento no home")
 
@@ -4676,7 +5047,7 @@ class GerenteContratoHomeDashboardTests(BaseUserTestCase):
             status_gerente="aprovado",
             status_diretoria="aprovado",
             status_lider="pendente",
-            arquivo_aditivo=SimpleUploadedFile("minuta_aditivo.pdf", b"conteudo", content_type="application/pdf"),
+            arquivo_aditivo=SimpleUploadedFile("minuta_aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
         )
         AditivoContratoTerceiro.objects.create(
             contrato=self.contrato_terceiro,
@@ -4696,8 +5067,13 @@ class GerenteContratoHomeDashboardTests(BaseUserTestCase):
             [a.id for a in response.context["aditivos_pendentes"]],
             [aditivo_aprovacao_solicitacao.id, aditivo_aprovacao_minuta.id],
         )
-        self.assertContains(response, f"Aditivo #{aditivo_aprovacao_solicitacao.id}")
-        self.assertContains(response, f"Aditivo #{aditivo_aprovacao_minuta.id}")
+        self.assertContains(
+            response,
+            f"Contrato #{self.contrato_base.id} - {self.contrato_base.cod_projeto}",
+            count=2,
+        )
+        for aditivo in (aditivo_aprovacao_solicitacao, aditivo_aprovacao_minuta):
+            self.assertContains(response, reverse("detalhes_aditivo_contrato", args=[aditivo.id]))
         self.assertNotContains(response, "Aditivos Pendentes")
 
     def test_home_gerente_contrato_lista_solicitacao_com_minuta_de_contrato_pendente_de_avaliacao(self):
@@ -4718,7 +5094,7 @@ class GerenteContratoHomeDashboardTests(BaseUserTestCase):
             valor_total=Decimal("2500.00"),
             arquivo_contrato=SimpleUploadedFile(
                 "minuta_contrato.pdf",
-                b"conteudo",
+                b'%PDF-1.4\nconteudo',
                 content_type="application/pdf",
             ),
         )
@@ -4730,7 +5106,7 @@ class GerenteContratoHomeDashboardTests(BaseUserTestCase):
         self.assertIn(solicitacao, response.context["solicitacoes_contrato"])
         self.assertContains(response, reverse("detalhes_solicitacao_contrato", args=[solicitacao.id]))
 
-    def test_home_gerente_contrato_exibe_badge_de_sla_nas_pendencias(self):
+    def test_home_gerente_contrato_exibe_identificacao_sem_contrato_vinculado(self):
         solicitacao = SolicitacaoContrato.objects.create(
             coordenador=self.coordenador,
             lider_contrato=self.lider,
@@ -4745,7 +5121,8 @@ class GerenteContratoHomeDashboardTests(BaseUserTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(solicitacao, response.context["solicitacoes_contrato"])
-        self.assertContains(response, "Dentro do SLA")
+        self.assertContains(response, "Sem contrato vinculado")
+        self.assertNotContains(response, "Dentro do SLA")
 
     def test_home_gerente_contrato_prioriza_pendencia_com_sla_vencido(self):
         solicitacao_vencida = SolicitacaoContrato.objects.create(
@@ -4915,6 +5292,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
             detalhes="Aprovação operacional do BM",
             data_hora=bm.data_aprovacao_coordenador,
         )
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(
@@ -4968,6 +5346,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
             detalhes="Aprovação gerencial do BM",
             data_hora=horario_gerente,
         )
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(
@@ -4989,8 +5368,9 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
 
     def test_download_bms_aprovados_inclui_bm_aprovado_pelo_lider(self):
         bm = self.create_bm_for_previsao(
-            arquivo_bm=SimpleUploadedFile("bm_teste.pdf", b"conteudo pdf", content_type="application/pdf")
+            arquivo_bm=SimpleUploadedFile("bm_teste.pdf", b'%PDF-1.4\nconteudo pdf', content_type="application/pdf")
         )
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(
@@ -5011,7 +5391,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
     def test_download_bms_aprovados_nao_duplica_arquivo_repetido(self):
         bm_original = self.create_bm_for_previsao(
             numero_bm=21,
-            arquivo_bm=SimpleUploadedFile("bm_repetido.pdf", b"mesmo conteudo", content_type="application/pdf"),
+            arquivo_bm=SimpleUploadedFile("bm_repetido.pdf", b'%PDF-1.4\nmesmo conteudo', content_type="application/pdf"),
         )
         bm_duplicado = self.create_bm_for_previsao(
             numero_bm=22,
@@ -5019,6 +5399,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         )
         bm_duplicado.arquivo_bm = bm_original.arquivo_bm.name
         bm_duplicado.save(update_fields=["arquivo_bm"])
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(
@@ -5043,8 +5424,9 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         coordenador_sem_bm.centros.add(self.outro_centro)
         self.create_bm_for_previsao(
             numero_bm=31,
-            arquivo_bm=SimpleUploadedFile("bm_coord_visivel.pdf", b"conteudo visivel", content_type="application/pdf"),
+            arquivo_bm=SimpleUploadedFile("bm_coord_visivel.pdf", b'%PDF-1.4\nconteudo visivel', content_type="application/pdf"),
         )
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(
@@ -5061,6 +5443,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertEqual(response.url, reverse("previsao_pagamentos"))
 
     def test_exportar_previsao_pagamentos_permite_gerente_lider(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5078,6 +5461,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         )
 
     def test_exportar_previsao_pagamentos_permite_gerente_contrato(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_contrato)
 
         response = self.client.get(
@@ -5096,6 +5480,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
 
     def test_previsao_pagamentos_mostra_atalho_para_gerente_contrato(self):
         bm = self.create_bm_for_previsao()
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_contrato)
 
         response = self.client.get(
@@ -5113,6 +5498,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
     def test_previsao_pagamentos_restringe_gerente_lider_ao_mesmo_centro(self):
         bm_visivel = self.create_bm_for_previsao(numero_bm=11)
         self.create_out_of_scope_bm(numero_bm=77)
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5132,6 +5518,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertNotContains(response, "Fornecedor Fora Escopo")
 
     def test_previsao_pagamentos_totais_restringem_gerente_lider_em_eventos_e_os(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5150,9 +5537,10 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertCountEqual([item["tipo"] for item in pagamentos], ["Evento", "OS"])
         self.assertTrue(all(item["projeto"] == "PRJ-PREV" for item in pagamentos))
 
-    def test_previsao_pagamentos_restringe_gerente_contrato_ao_proprio_vinculo(self):
+    def test_previsao_pagamentos_documentos_globais_para_gerente_contrato(self):
         bm_visivel = self.create_bm_for_previsao(numero_bm=12)
-        self.create_out_of_scope_bm(numero_bm=78, status_gerente="aprovado", data_aprovacao_gerente=timezone.now())
+        bm_outro = self.create_out_of_scope_bm(numero_bm=78, status_gerente="aprovado", data_aprovacao_gerente=timezone.now())
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_contrato)
 
         response = self.client.get(
@@ -5166,12 +5554,13 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertCountEqual(
             [bm.id for bm in response.context["bms"]],
-            [bm_visivel.id],
+            [bm_visivel.id, bm_outro.id],
         )
         self.assertContains(response, str(bm_visivel.numero_bm))
-        self.assertNotContains(response, "Fornecedor Fora Escopo")
+        self.assertTrue(bm_outro.contrato.empresa_terceira.nome in response.content.decode())
 
-    def test_previsao_pagamentos_totais_restringem_gerente_contrato_em_eventos_e_os(self):
+    def test_previsao_pagamentos_totais_globais_para_gerente_contrato_em_eventos_e_os(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_contrato)
 
         response = self.client.get(
@@ -5183,12 +5572,12 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["total_previsto"], Decimal("2200.00"))
-        self.assertEqual(response.context["total_pago"], Decimal("650.00"))
+        self.assertEqual(response.context["total_previsto"], Decimal("3500.00"))
+        self.assertEqual(response.context["total_pago"], Decimal("1000.00"))
         pagamentos = list(response.context["pagamentos"])
-        self.assertEqual(len(pagamentos), 2)
-        self.assertCountEqual([item["tipo"] for item in pagamentos], ["Evento", "OS"])
-        self.assertTrue(all(item["projeto"] == "PRJ-PREV" for item in pagamentos))
+        self.assertEqual(len(pagamentos), 4)
+        self.assertCountEqual([item["tipo"] for item in pagamentos], ["Evento", "OS", "Evento", "OS"])
+        self.assertSetEqual({item["projeto"] for item in pagamentos}, {"PRJ-PREV", "PRJ-OUT"})
 
     def test_previsao_pagamentos_total_pago_ignora_bm_aprovado_operacionalmente(self):
         self.create_bm_for_previsao(
@@ -5198,6 +5587,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         )
         self.evento.valor_pago = Decimal("0.00")
         self.evento.save(update_fields=["valor_pago"])
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5217,6 +5607,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertIsNone(evento_pagamento["data_pagamento"])
 
     def test_previsao_pagamentos_tabela_mostra_evento_e_os_no_escopo(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5239,6 +5630,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.gerente_lider.centros.add(centro_extra)
         self.coordenador.centros.add(centro_extra)
 
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5264,6 +5656,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         )
 
     def test_previsao_pagamentos_graficos_por_lider_e_projeto_somam_eventos_e_os(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5283,6 +5676,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.outro_evento.valor_previsto = Decimal("9000.00")
         self.outro_evento.save(update_fields=["valor_previsto"])
         CalendarioPagamento.objects.create(data_pagamento=timezone.localdate())
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5317,6 +5711,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
             ]
         )
         CalendarioPagamento.objects.create(data_pagamento=timezone.localdate())
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5335,6 +5730,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.evento.data_pagamento = timezone.localdate() - timedelta(days=1)
         self.evento.valor_pago = Decimal("333.00")
         self.evento.save(update_fields=["data_pagamento", "valor_pago"])
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5357,6 +5753,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.evento.data_pagamento = timezone.localdate() - timedelta(days=1)
         self.evento.valor_pago = Decimal("333.00")
         self.evento.save(update_fields=["data_pagamento", "valor_pago"])
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5378,12 +5775,13 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
     def test_download_bms_aprovados_respeita_escopo_do_gerente_lider(self):
         bm_visivel = self.create_bm_for_previsao(
             numero_bm=15,
-            arquivo_bm=SimpleUploadedFile("bm_gl_visivel.pdf", b"conteudo visivel", content_type="application/pdf"),
+            arquivo_bm=SimpleUploadedFile("bm_gl_visivel.pdf", b'%PDF-1.4\nconteudo visivel', content_type="application/pdf"),
         )
         self.create_out_of_scope_bm(
             numero_bm=81,
-            arquivo_bm=SimpleUploadedFile("bm_gl_oculto.pdf", b"conteudo oculto", content_type="application/pdf"),
+            arquivo_bm=SimpleUploadedFile("bm_gl_oculto.pdf", b'%PDF-1.4\nconteudo oculto', content_type="application/pdf"),
         )
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5402,15 +5800,16 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
             self.assertIn(f"{self.contrato_base.cod_projeto}_BM{bm_visivel.numero_bm}_", names[0])
             self.assertNotIn("PRJ-OUT", names[0])
 
-    def test_download_bms_aprovados_respeita_escopo_do_gerente_contrato(self):
+    def test_download_bms_aprovados_acesso_global_do_gerente_contrato(self):
         bm_visivel = self.create_bm_for_previsao(
             numero_bm=13,
-            arquivo_bm=SimpleUploadedFile("bm_visivel.pdf", b"conteudo visivel", content_type="application/pdf"),
+            arquivo_bm=SimpleUploadedFile("bm_visivel.pdf", b'%PDF-1.4\nconteudo visivel', content_type="application/pdf"),
         )
         self.create_out_of_scope_bm(
             numero_bm=79,
-            arquivo_bm=SimpleUploadedFile("bm_oculto.pdf", b"conteudo oculto", content_type="application/pdf"),
+            arquivo_bm=SimpleUploadedFile("bm_oculto.pdf", b'%PDF-1.4\nconteudo oculto', content_type="application/pdf"),
         )
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_contrato)
 
         response = self.client.get(
@@ -5425,13 +5824,14 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         zip_buffer = BytesIO(response.content)
         with zipfile.ZipFile(zip_buffer) as zip_file:
             names = zip_file.namelist()
-            self.assertEqual(len(names), 1)
-            self.assertIn(f"{self.contrato_base.cod_projeto}_BM{bm_visivel.numero_bm}_", names[0])
-            self.assertNotIn("PRJ-OUT", names[0])
+            self.assertEqual(len(names), 2)
+            self.assertTrue(any(f"{self.contrato_base.cod_projeto}_BM{bm_visivel.numero_bm}_" in name for name in names))
+            self.assertTrue(any("PRJ-OUT" in name for name in names))
 
     def test_exportar_previsao_pagamentos_restringe_gerente_lider_ao_mesmo_centro(self):
         self.create_bm_for_previsao(numero_bm=14)
         self.create_out_of_scope_bm(numero_bm=80)
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5452,6 +5852,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
 
     def test_exportar_previsao_pagamentos_marca_os_na_coluna_tipo(self):
         self.create_bm_for_previsao(numero_bm=17)
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5486,6 +5887,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
             status_gerente="pendente",
             data_aprovacao_coordenador=timezone.now(),
         )
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_lider)
 
         response = self.client.get(
@@ -5506,9 +5908,10 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.assertEqual(os_row[6], "25/05/2026")
         self.assertEqual(os_row[7], 650)
 
-    def test_exportar_previsao_pagamentos_restringe_gerente_contrato_ao_proprio_vinculo(self):
+    def test_exportar_previsao_pagamentos_preserva_leitura_global_do_gerente_contrato(self):
         self.create_bm_for_previsao(numero_bm=16)
         self.create_out_of_scope_bm(numero_bm=82)
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.gerente_contrato)
 
         response = self.client.get(
@@ -5524,10 +5927,11 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         worksheet = workbook.active
         exported_values = " ".join(str(cell) for row in worksheet.iter_rows(values_only=True) for cell in row if cell)
         self.assertIn("PRJ-PREV", exported_values)
-        self.assertNotIn("PRJ-OUT", exported_values)
-        self.assertEqual(worksheet.max_row, 3)
+        self.assertIn("PRJ-OUT", exported_values)
+        self.assertEqual(worksheet.max_row, 5)
 
     def test_exportar_previsao_pagamentos_com_filtro_de_coordenador_restringe_eventos_e_os(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.suprimento)
 
         response = self.client.get(
@@ -5553,6 +5957,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.create_bm_for_previsao(numero_bm=23)
         self.create_out_of_scope_bm(numero_bm=83)
         diretoria = self.create_user("diretoria_prev_aus", "diretoria")
+        self.seed_legacy_origin_payments()
         self.client.force_login(diretoria)
 
         response = self.client.get(
@@ -5577,6 +5982,7 @@ class PrevisaoPagamentosTests(BaseUserTestCase):
         self.create_bm_for_previsao(numero_bm=24)
         self.create_out_of_scope_bm(numero_bm=84)
         diretoria = self.create_user("diretoria_prev_export", "diretoria")
+        self.seed_legacy_origin_payments()
         self.client.force_login(diretoria)
 
         response = self.client.get(
@@ -5941,7 +6347,7 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         )
         self.client.force_login(self.financeiro)
 
-        response = self.client.get(reverse("excluir_nf_cliente", args=[nf.id]), follow=False)
+        response = self.client.post(reverse("excluir_nf_cliente", args=[nf.id]), follow=False)
 
         self.assertEqual(response.status_code, 302)
         self.assertFalse(NFCliente.objects.filter(id=nf.id).exists())
@@ -5969,7 +6375,7 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         response = self.client.post(
             reverse("cadastrar_nf", args=[self.evento.id]),
             {
-                "bm": "",
+                "bm": self.bm_aprovado.pk,
                 "valor_pago": "1.200,00",
                 "parcela_paga": 1,
                 "data_pagamento": "2026-04-20",
@@ -6006,6 +6412,7 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         nf = NF.objects.create(
             contrato=self.contrato_fornecedor,
             evento=self.evento,
+            bm=self.bm_aprovado,
             valor_pago=Decimal("1100.00"),
             parcela_paga=1,
             data_pagamento=date(2026, 4, 20),
@@ -6015,7 +6422,7 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         response = self.client.post(
             reverse("editar_nf", args=[nf.id]),
             {
-                "bm": "",
+                "bm": self.bm_aprovado.pk,
                 "valor_pago": "1.350,00",
                 "parcela_paga": 2,
                 "data_pagamento": "2026-04-25",
@@ -6040,19 +6447,21 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         nf = NF.objects.create(
             contrato=self.contrato_fornecedor,
             evento=self.evento,
+            bm=self.bm_aprovado,
             valor_pago=Decimal("1100.00"),
             parcela_paga=1,
             data_pagamento=date(2026, 4, 20),
         )
         self.client.force_login(self.financeiro)
 
-        response = self.client.get(reverse("deletar_nf", args=[nf.id]), follow=False)
+        response = self.client.post(reverse("deletar_nf", args=[nf.id]), follow=False)
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse("detalhes_entrega", args=[self.evento.id]))
         self.assertFalse(NF.objects.filter(id=nf.id).exists())
 
     def test_previsao_pagamentos_financeiro_ve_escopo_global(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.financeiro)
 
         response = self.client.get(
@@ -6074,6 +6483,7 @@ class FinanceiroCoverageTests(BaseUserTestCase):
         )
 
     def test_exportar_previsao_pagamentos_financeiro_inclui_todos_os_projetos(self):
+        self.seed_legacy_origin_payments()
         self.client.force_login(self.financeiro)
 
         response = self.client.get(
@@ -6103,14 +6513,17 @@ class FinanceiroCoverageTests(BaseUserTestCase):
             status_gerente="aprovado",
             data_aprovacao_coordenador=timezone.now(),
             data_aprovacao_gerente=timezone.now(),
-            arquivo_bm=SimpleUploadedFile("bm_fin_outro.pdf", b"conteudo outro", content_type="application/pdf"),
+            arquivo_bm=SimpleUploadedFile("bm_fin_outro.pdf", b'%PDF-1.4\nconteudo outro', content_type="application/pdf"),
         )
         self.bm_aprovado.arquivo_bm = SimpleUploadedFile(
             "bm_fin_visivel.pdf",
-            b"conteudo principal",
+            b'%PDF-1.4\nconteudo principal',
             content_type="application/pdf",
         )
         self.bm_aprovado.save(update_fields=["arquivo_bm"])
+        self.bm_aprovado.status_gerente = "aprovado"
+        self.bm_aprovado.data_aprovacao_gerente = timezone.now()
+        self.bm_aprovado.save(update_fields=["status_gerente", "data_aprovacao_gerente"])
         self.client.force_login(self.financeiro)
 
         response = self.client.get(
@@ -6885,6 +7298,21 @@ class ListaSolicitacoesOSTests(BaseUserTestCase):
         self.assertContains(response, reverse("aprovar_os_diretoria", args=[self.os_pendente.pk, "aprovar"]))
         self.assertContains(response, "Aprovar Solicitação")
 
+    def test_aprovacao_os_na_lista_retorna_a_mesma_pagina(self):
+        self.gerente_contrato.gerente_contrato_ausente = True
+        self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
+        self.client.force_login(self.diretoria)
+        lista_url = reverse("lista_solicitacoes") + "?page_os=1"
+
+        page = self.client.get(lista_url)
+        self.assertContains(page, f"next={reverse('lista_solicitacoes')}%3Fpage_os%3D1")
+        response = self.client.post(
+            reverse("aprovar_os_diretoria", args=[self.os_pendente.pk, "aprovar"]),
+            {"next": lista_url},
+        )
+
+        self.assertRedirects(response, lista_url, fetch_redirect_response=False)
+
     def test_lista_solicitacoes_exibe_aprovacao_de_minuta_os_para_diretoria_quando_gerente_ausente(self):
         self.gerente_contrato.gerente_contrato_ausente = True
         self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
@@ -6893,7 +7321,7 @@ class ListaSolicitacoesOSTests(BaseUserTestCase):
         self.os_pendente.aprovacao_diretor = "aprovado"
         self.os_pendente.arquivo_os = SimpleUploadedFile(
             "minuta-os.pdf",
-            b"pdf-content",
+            b'%PDF-1.4\npdf-content',
             content_type="application/pdf",
         )
         self.os_pendente.save(update_fields=["status", "aprovacao_gerente", "aprovacao_diretor", "arquivo_os"])
@@ -7129,7 +7557,7 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         self.assertEqual(bm.parcela_paga, 2)
         self.assertEqual(bm.valor_pago, Decimal("700.00"))
 
-        delete_response = self.client.get(reverse("deletar_bm", args=[bm.id]), follow=False)
+        delete_response = self.client.post(reverse("deletar_bm", args=[bm.id]), follow=False)
 
         self.assertEqual(delete_response.status_code, 302)
         self.assertEqual(delete_response.url, reverse("detalhes_entrega", args=[self.evento.id]))
@@ -7642,7 +8070,7 @@ class DeliveryRegistrationTests(BaseUserTestCase):
         self.assertEqual(bm.parcela_paga, 2)
         self.assertEqual(bm.valor_pago, Decimal("650.00"))
 
-        delete_response = self.client.get(reverse("deletar_bm", args=[bm.id]), follow=False)
+        delete_response = self.client.post(reverse("deletar_bm", args=[bm.id]), follow=False)
 
         self.assertEqual(delete_response.status_code, 302)
         self.assertEqual(delete_response.url, reverse("registrar_entrega_os", args=[self.os.id]))
@@ -7654,6 +8082,8 @@ class DeliveryRegistrationTests(BaseUserTestCase):
             contrato=self.contrato_terceiro,
             os=self.os,
             numero_bm=21,
+            status_gerente="aprovado",
+            aprovacao_pagamento="aprovado",
             parcela_paga=1,
             valor_pago=Decimal("800.00"),
             data_pagamento=date(2026, 4, 22),
@@ -7951,7 +8381,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         )
         self.client.force_login(self.gerente_contrato)
 
-        response = self.client.get(reverse("aprovar_os_gerente_contrato", args=[os_request.pk, "aprovar"]), follow=False)
+        response = self.client.post(reverse("aprovar_os_gerente_contrato", args=[os_request.pk, "aprovar"]), follow=False)
 
         self.assertRedirects(
             response,
@@ -7977,7 +8407,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         os_request.save(update_fields=["aprovacao_gerente", "aprovado_gerente_em"])
         self.client.force_login(self.diretoria)
 
-        response = self.client.get(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
+        response = self.client.post(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
 
         self.assertRedirects(
             response,
@@ -7987,6 +8417,30 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         os_request.refresh_from_db()
         self.assertEqual(os_request.status, "pendente_suprimento")
         self.assertEqual(os_request.aprovacao_diretor, "aprovado")
+
+    def test_aprovar_os_no_detalhe_retorna_a_pagina_anterior(self):
+        os_request = self.create_os_request(
+            contrato=self.contrato_terceiro,
+            solicitante=self.lider,
+            lider_contrato=self.lider,
+            coordenador=self.coordenador,
+            status="pendente_diretoria",
+        )
+        os_request.aprovacao_gerente = "aprovado"
+        os_request.save(update_fields=["aprovacao_gerente"])
+        self.client.force_login(self.diretoria)
+
+        detail = self.client.get(
+            reverse("detalhe_ordem_servico", args=[os_request.pk]),
+            HTTP_REFERER="http://testserver" + reverse("home"),
+        )
+        self.assertEqual(detail.context["approval_next"], "http://testserver" + reverse("home"))
+        response = self.client.post(
+            reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]),
+            {"next": detail.context["approval_next"]},
+        )
+
+        self.assertRedirects(response, "http://testserver" + reverse("home"), fetch_redirect_response=False)
 
     def test_detalhe_os_exibe_aprovacao_para_diretoria_quando_gerente_ausente(self):
         self.gerente_contrato.gerente_contrato_ausente = True
@@ -8018,7 +8472,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         )
         self.client.force_login(self.diretoria)
 
-        response = self.client.get(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
+        response = self.client.post(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
 
         self.assertRedirects(
             response,
@@ -8041,7 +8495,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         )
         self.client.force_login(self.diretoria)
 
-        response = self.client.get(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
+        response = self.client.post(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
 
         self.assertRedirects(
             response,
@@ -8065,7 +8519,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
 
         response = self.client.post(
             reverse("upload_contrato_os", args=[os_request.pk]),
-            {"arquivo_os": SimpleUploadedFile("minuta-os.pdf", b"pdf-content", content_type="application/pdf")},
+            {"arquivo_os": SimpleUploadedFile("minuta-os.pdf", b'%PDF-1.4\npdf-content', content_type="application/pdf")},
             follow=False,
         )
 
@@ -8112,7 +8566,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
 
         response = self.client.post(
             reverse("upload_contrato_os", args=[os_request.pk]),
-            {"arquivo_os": SimpleUploadedFile("minuta-os.pdf", b"pdf-content", content_type="application/pdf")},
+            {"arquivo_os": SimpleUploadedFile("minuta-os.pdf", b'%PDF-1.4\npdf-content', content_type="application/pdf")},
             follow=False,
         )
 
@@ -8135,11 +8589,13 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
             titulo="OS para cadastro final",
             data_prevista_pagamento=date(2026, 5, 12),
         )
-        os_request.arquivo_os = SimpleUploadedFile("minuta-final.pdf", b"pdf-content", content_type="application/pdf")
+        os_request.aprovacao_diretor = "aprovado"
+        os_request.save(update_fields=["aprovacao_diretor"])
+        os_request.arquivo_os = SimpleUploadedFile("minuta-final.pdf", b'%PDF-1.4\npdf-content', content_type="application/pdf")
         os_request.save(update_fields=["arquivo_os"])
         self.client.force_login(self.gerente_contrato)
 
-        response = self.client.get(reverse("aprovar_os_gerente_contrato", args=[os_request.pk, "aprovar"]), follow=False)
+        response = self.client.post(reverse("aprovar_os_gerente_contrato", args=[os_request.pk, "aprovar"]), follow=False)
 
         self.assertRedirects(
             response,
@@ -8225,7 +8681,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
 
         response = self.client.post(
             reverse("upload_contrato_os", args=[os_request.pk]),
-            {"arquivo_os": SimpleUploadedFile("minuta-os.pdf", b"pdf-content", content_type="application/pdf")},
+            {"arquivo_os": SimpleUploadedFile("minuta-os.pdf", b'%PDF-1.4\npdf-content', content_type="application/pdf")},
             follow=False,
         )
 
@@ -8238,6 +8694,124 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         self.assertEqual(os_request.status, "pendente_gerente")
         self.assertFalse(bool(os_request.arquivo_os))
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_suprimento_regride_solicitacao_os_para_etapa_anterior(self):
+        os_request = self.create_os_request(
+            contrato=self.contrato_terceiro,
+            solicitante=self.lider,
+            lider_contrato=self.lider,
+            coordenador=self.coordenador,
+            status="pendente_minuta_gerente",
+        )
+        os_request.aprovacao_gerente = "aprovado"
+        os_request.aprovado_gerente_em = timezone.now()
+        os_request.aprovacao_diretor = "aprovado"
+        os_request.aprovado_diretor_em = timezone.now()
+        os_request.arquivo_os = SimpleUploadedFile("minuta-os.pdf", b'%PDF-1.4\npdf-content', content_type="application/pdf")
+        os_request.save(
+            update_fields=[
+                "aprovacao_gerente",
+                "aprovado_gerente_em",
+                "aprovacao_diretor",
+                "aprovado_diretor_em",
+                "arquivo_os",
+            ]
+        )
+        self.client.force_login(self.suprimento)
+
+        detail_response = self.client.get(reverse("detalhe_ordem_servico", args=[os_request.pk]))
+        list_response = self.client.get(reverse("lista_solicitacoes"))
+
+        self.assertContains(detail_response, reverse("regredir_solicitacao_os", args=[os_request.pk]))
+        self.assertContains(list_response, reverse("regredir_solicitacao_os", args=[os_request.pk]))
+        option_statuses = [option["status"] for option in detail_response.context["regression_options"]]
+        self.assertIn("pendente_suprimento", option_statuses)
+        self.assertNotIn("aprovada", option_statuses)
+
+        response = self.client.post(
+            reverse("regredir_solicitacao_os", args=[os_request.pk]),
+            {"target_status": "pendente_suprimento"},
+            follow=False,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("detalhe_ordem_servico", kwargs={"pk": os_request.pk}),
+            fetch_redirect_response=False,
+        )
+        os_request.refresh_from_db()
+        self.assertEqual(os_request.status, "pendente_suprimento")
+        self.assertEqual(os_request.aprovacao_gerente, "aprovado")
+        self.assertEqual(os_request.aprovacao_diretor, "aprovado")
+        self.assertFalse(OS.objects.filter(solicitacao=os_request).exists())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("voltou para Minuta da OS", mail.outbox[0].subject)
+
+    def test_suprimento_regride_solicitacao_os_para_diretoria_e_limpa_etapas_posteriores(self):
+        os_request = self.create_os_request(
+            contrato=self.contrato_terceiro,
+            solicitante=self.lider,
+            lider_contrato=self.lider,
+            coordenador=self.coordenador,
+            status="pendente_suprimento",
+        )
+        os_request.aprovacao_gerente = "aprovado"
+        os_request.aprovado_gerente_em = timezone.now()
+        os_request.aprovacao_diretor = "aprovado"
+        os_request.aprovado_diretor_em = timezone.now()
+        os_request.arquivo_os = SimpleUploadedFile("minuta-os.pdf", b'%PDF-1.4\npdf-content', content_type="application/pdf")
+        os_request.save(
+            update_fields=[
+                "aprovacao_gerente",
+                "aprovado_gerente_em",
+                "aprovacao_diretor",
+                "aprovado_diretor_em",
+                "arquivo_os",
+            ]
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("regredir_solicitacao_os", args=[os_request.pk]),
+            {"target_status": "pendente_diretoria"},
+            follow=False,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("detalhe_ordem_servico", kwargs={"pk": os_request.pk}),
+            fetch_redirect_response=False,
+        )
+        os_request.refresh_from_db()
+        self.assertEqual(os_request.status, "pendente_diretoria")
+        self.assertEqual(os_request.aprovacao_gerente, "aprovado")
+        self.assertEqual(os_request.aprovacao_diretor, "pendente")
+        self.assertIsNone(os_request.aprovado_diretor_em)
+        self.assertFalse(bool(os_request.arquivo_os))
+
+    def test_suprimento_nao_consegue_avancar_solicitacao_os_pela_regressao(self):
+        os_request = self.create_os_request(
+            contrato=self.contrato_terceiro,
+            solicitante=self.lider,
+            lider_contrato=self.lider,
+            coordenador=self.coordenador,
+            status="pendente_diretoria",
+        )
+        self.client.force_login(self.suprimento)
+
+        response = self.client.post(
+            reverse("regredir_solicitacao_os", args=[os_request.pk]),
+            {"target_status": "pendente_suprimento"},
+            follow=False,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("detalhe_ordem_servico", kwargs={"pk": os_request.pk}),
+            fetch_redirect_response=False,
+        )
+        os_request.refresh_from_db()
+        self.assertEqual(os_request.status, "pendente_diretoria")
 
     def test_aprovar_minuta_da_os_ja_aprovada_nao_cria_duplicidade(self):
         os_request = self.create_os_request(
@@ -8261,7 +8835,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         )
         self.client.force_login(self.gerente_contrato)
 
-        response = self.client.get(reverse("aprovar_os_gerente_contrato", args=[os_request.pk, "aprovar"]), follow=False)
+        response = self.client.post(reverse("aprovar_os_gerente_contrato", args=[os_request.pk, "aprovar"]), follow=False)
 
         self.assertRedirects(
             response,
@@ -8312,7 +8886,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         mail.outbox = []
         self.client.force_login(self.diretoria)
 
-        response = self.client.get(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
+        response = self.client.post(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
 
         self.assertRedirects(
             response,
@@ -8336,7 +8910,7 @@ class OrdemServicoApprovalFlowTests(BaseUserTestCase):
         )
         self.client.force_login(self.diretoria)
 
-        response = self.client.get(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
+        response = self.client.post(reverse("aprovar_os_diretoria", args=[os_request.pk, "aprovar"]), follow=False)
 
         self.assertRedirects(
             response,
@@ -9013,7 +9587,26 @@ class ContratacaoFlowTests(BaseUserTestCase):
             self.solicitacao_contrato.aprocacao_fornecedor_diretor_em,
         )
 
+    def test_diretoria_aprova_contratacao_e_retorna_a_pagina_anterior(self):
+        self.solicitacao_contrato.guarda_chuva = True
+        self.solicitacao_contrato.save(update_fields=["guarda_chuva"])
+        self.client.force_login(self.diretoria)
+        detalhe_url = reverse("detalhes_solicitacao_contrato", args=[self.solicitacao_contrato.pk])
+        origem = reverse("home")
+
+        page = self.client.get(detalhe_url, HTTP_REFERER="http://testserver" + origem)
+        self.assertEqual(page.context["approval_next"], "http://testserver" + origem)
+        response = self.client.post(
+            detalhe_url,
+            {"acao": "aprovar", "papel_avaliacao": "diretoria", "next": page.context["approval_next"]},
+        )
+
+        self.assertRedirects(response, "http://testserver" + origem, fetch_redirect_response=False)
+
     def test_diretoria_pode_avaliar_minuta_de_contratacao_como_gerencia_quando_ausencia_esta_marcada(self):
+        # A etapa de planejamento pressupõe aprovação do fornecedor.
+        self.solicitacao_contrato.status = "Fornecedor aprovado"
+        self.solicitacao_contrato.save(update_fields=["status"])
         self.gerente_contrato.gerente_contrato_ausente = True
         self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
         DocumentoContratoTerceiro.objects.create(
@@ -9067,7 +9660,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.solicitacao_prospeccao.save(update_fields=["status", "aprovado"])
         self.client.force_login(self.suprimento)
 
-        response = self.client.get(
+        response = self.client.post(
             reverse("aprovar_solicitacao", args=[self.solicitacao_prospeccao.pk, "aprovar"]),
             follow=True,
         )
@@ -9084,7 +9677,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.solicitacao_prospeccao.save(update_fields=["status", "aprovado", "guarda_chuva"])
         self.client.force_login(self.suprimento)
 
-        response = self.client.get(
+        response = self.client.post(
             reverse("aprovar_solicitacao", args=[self.solicitacao_prospeccao.pk, "aprovar"]),
             follow=True,
         )
@@ -9319,7 +9912,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
             follow=False,
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertRedirects(response, reverse("lista_solicitacoes"), fetch_redirect_response=False)
         self.solicitacao_contrato.refresh_from_db()
         self.assertFalse(self.solicitacao_contrato.aprovacao_gerencia)
         self.assertEqual(self.solicitacao_contrato.status, "Solicitação de contratação")
@@ -9382,7 +9975,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
                 "justificativa_orcamento": "Sem planejamento",
                 "proposta_tecnica": SimpleUploadedFile(
                     "proposta_tecnica.pdf",
-                    b"conteudo proposta tecnica",
+                    b'%PDF-1.4\nconteudo proposta tecnica',
                     content_type="application/pdf",
                 ),
             },
@@ -9418,7 +10011,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
                 "justificativa_orcamento": "Sem planejamento",
                 "proposta_tecnica": SimpleUploadedFile(
                     "proposta_tecnica_guarda.pdf",
-                    b"conteudo proposta tecnica guarda",
+                    b'%PDF-1.4\nconteudo proposta tecnica guarda',
                     content_type="application/pdf",
                 ),
             },
@@ -9432,6 +10025,9 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertIn("proposta_tecnica_guarda", solicitacao.proposta_tecnica.name)
 
     def test_cadastrar_minuta_contrato_cria_documento_para_solicitacao_contrato(self):
+        # A etapa de planejamento pressupõe aprovação do fornecedor.
+        self.solicitacao_contrato.status = "Fornecedor aprovado"
+        self.solicitacao_contrato.save(update_fields=["status"])
         self.client.force_login(self.suprimento)
 
         response = self.client.post(
@@ -9455,6 +10051,9 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertEqual(self.solicitacao_contrato.status, "Planejamento do Contrato")
 
     def test_cadastrar_minuta_contrato_com_bm_vazio_mantem_botao_para_inserir_bm(self):
+        # A etapa de planejamento pressupõe aprovação do fornecedor.
+        self.solicitacao_contrato.status = "Fornecedor aprovado"
+        self.solicitacao_contrato.save(update_fields=["status"])
         DocumentoBM.objects.create(solicitacao_contrato=self.solicitacao_contrato)
         self.client.force_login(self.suprimento)
 
@@ -9487,6 +10086,9 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertContains(response, reverse("inserir_minuta_bm_contrato", args=[self.solicitacao_contrato.pk]))
 
     def test_cadastrar_minuta_contrato_guarda_chuva_envia_para_aprovacao_final_sem_bm(self):
+        # A etapa de planejamento pressupõe aprovação do fornecedor.
+        self.solicitacao_contrato.status = "Fornecedor aprovado"
+        self.solicitacao_contrato.save(update_fields=["status"])
         self.solicitacao_contrato.guarda_chuva = True
         self.solicitacao_contrato.save(update_fields=["guarda_chuva"])
         self.client.force_login(self.suprimento)
@@ -9512,6 +10114,9 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertEqual(self.solicitacao_contrato.status, "Aprovação Final")
 
     def test_inserir_minuta_bm_contratacao_com_contrato_existente_envia_para_aprovacao_final(self):
+        # A etapa de planejamento pressupõe aprovação do fornecedor.
+        self.solicitacao_contrato.status = "Fornecedor aprovado"
+        self.solicitacao_contrato.save(update_fields=["status"])
         self.gerente_contrato.gerente_contrato_ausente = True
         self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
         DocumentoContratoTerceiro.objects.create(
@@ -9534,7 +10139,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
             {
                 "minuta_boletim": SimpleUploadedFile(
                     "minuta-bm.xlsx",
-                    b"conteudo bm",
+                    xlsx_fixture(),
                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 ),
             },
@@ -9547,6 +10152,9 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertIn("diretoria", get_responsible_groups_for_sla_item(self.solicitacao_contrato))
 
     def test_cadastrar_minuta_contrato_notifica_gerente_sem_email_para_diretoria_quando_ausente(self):
+        # A etapa de planejamento pressupõe aprovação do fornecedor.
+        self.solicitacao_contrato.status = "Fornecedor aprovado"
+        self.solicitacao_contrato.save(update_fields=["status"])
         self.gerente_contrato.gerente_contrato_ausente = True
         self.gerente_contrato.save(update_fields=["gerente_contrato_ausente"])
         mail.outbox = []
@@ -9815,6 +10423,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
         documento_bm = DocumentoBM.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
             status_gerente="pendente",
+            minuta_boletim=SimpleUploadedFile("bm-detalhes.pdf", b"%PDF-1.4", content_type="application/pdf"),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
@@ -9844,6 +10453,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
         documento_bm = DocumentoBM.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
             status_gerente="pendente",
+            minuta_boletim=SimpleUploadedFile("bm-diretoria.pdf", b"%PDF-1.4", content_type="application/pdf"),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
@@ -9875,6 +10485,7 @@ class ContratacaoFlowTests(BaseUserTestCase):
         documento_bm = DocumentoBM.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
             status_gerente="pendente",
+            minuta_boletim=SimpleUploadedFile("bm-lista.pdf", b"%PDF-1.4", content_type="application/pdf"),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
@@ -9900,13 +10511,18 @@ class ContratacaoFlowTests(BaseUserTestCase):
         self.assertContains(response, "Avaliar Contrato")
 
     def test_fluxo_contratacao_notifica_suprimento_para_inserir_contrato_assinado_apos_duas_aprovacoes(self):
+        # A etapa de planejamento pressupõe aprovação do fornecedor.
+        self.solicitacao_contrato.status = "Fornecedor aprovado"
+        self.solicitacao_contrato.save(update_fields=["status"])
         documento_bm = DocumentoBM.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
             status_gerente="pendente",
+            minuta_boletim=SimpleUploadedFile("bm-fluxo.pdf", b"%PDF-1.4", content_type="application/pdf"),
         )
         DocumentoContratoTerceiro.objects.create(
             solicitacao_contrato=self.solicitacao_contrato,
             numero_contrato="MIN-SIGNED-NOTIFY-001",
+            arquivo_contrato=SimpleUploadedFile("minuta.pdf", b"%PDF-1.4 draft", content_type="application/pdf"),
             objeto="Objeto da contratação",
             prazo_inicio=date(2026, 5, 1),
             prazo_fim=date(2026, 6, 1),
@@ -10813,7 +11429,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         aditivo.nova_data_fim = nova_data_fim
         aditivo.arquivo_aditivo_assinado = SimpleUploadedFile(
             "aditivo_assinado.pdf",
-            b"conteudo",
+            b'%PDF-1.4\nconteudo',
             content_type="application/pdf",
         )
         aditivo.documento_assinado_enviado_em = timezone.now()
@@ -10861,7 +11477,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
 
         aditivo.arquivo_aditivo_assinado = SimpleUploadedFile(
             "aditivo_assinado.pdf",
-            b"conteudo",
+            b'%PDF-1.4\nconteudo',
             content_type="application/pdf",
         )
         aditivo.documento_assinado_enviado_em = timezone.now()
@@ -10882,7 +11498,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         primeiro_aditivo.novo_valor_total = Decimal("500.00")
         primeiro_aditivo.arquivo_aditivo_assinado = SimpleUploadedFile(
             "primeiro_aditivo.pdf",
-            b"conteudo",
+            b'%PDF-1.4\nconteudo',
             content_type="application/pdf",
         )
         primeiro_aditivo.documento_assinado_enviado_em = timezone.now() - timedelta(days=2)
@@ -10904,7 +11520,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
             nova_data_fim=date(2026, 7, 31),
             arquivo_aditivo_assinado=SimpleUploadedFile(
                 "segundo_aditivo.pdf",
-                b"conteudo",
+                b'%PDF-1.4\nconteudo',
                 content_type="application/pdf",
             ),
             documento_assinado_enviado_em=timezone.now(),
@@ -11416,7 +12032,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         response = self.client.post(
             reverse("enviar_documento_aditivo_contrato", args=[aditivo.pk]),
             {
-                "arquivo_aditivo": SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf"),
+                "arquivo_aditivo": SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
             },
             follow=False,
         )
@@ -11439,7 +12055,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
 
         response = self.client.post(
             reverse("enviar_documento_aditivo_contrato", args=[aditivo.pk]),
-            {"arquivo_aditivo": SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")},
+            {"arquivo_aditivo": SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")},
             follow=False,
         )
 
@@ -11465,7 +12081,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         response = self.client.post(
             reverse("enviar_documento_aditivo_contrato", args=[aditivo.pk]),
             {
-                "arquivo_aditivo": SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf"),
+                "arquivo_aditivo": SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf"),
             },
             follow=False,
         )
@@ -11479,7 +12095,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         aditivo = self.create_aditivo()
         aditivo.status_gerente = "aprovado"
         aditivo.status_diretoria = "aprovado"
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")
         aditivo.save(update_fields=["status_gerente", "status_diretoria", "arquivo_aditivo"])
         self.client.force_login(self.gerente_contrato)
 
@@ -11519,7 +12135,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         aditivo.status_gerente = "aprovado"
         aditivo.status_diretoria = "aprovado"
         aditivo.status_lider = "aprovado"
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")
         aditivo.data_aprovacao_lider = timezone.now()
         aditivo.save(update_fields=["status_gerente", "status_diretoria", "status_lider", "arquivo_aditivo", "data_aprovacao_lider"])
         mail.outbox = []
@@ -11544,7 +12160,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         aditivo = self.create_aditivo()
         aditivo.status_gerente = "aprovado"
         aditivo.status_diretoria = "aprovado"
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")
         aditivo.save(update_fields=["status_gerente", "status_diretoria", "arquivo_aditivo"])
         self.client.force_login(self.gerente_contrato)
 
@@ -11566,7 +12182,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         aditivo = self.create_aditivo()
         aditivo.status_gerente = "aprovado"
         aditivo.status_diretoria = "aprovado"
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")
         aditivo.save(update_fields=["status_gerente", "status_diretoria", "arquivo_aditivo"])
         self.client.force_login(self.diretoria)
 
@@ -11590,7 +12206,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         aditivo = self.create_aditivo()
         aditivo.status_gerente = "aprovado"
         aditivo.status_diretoria = "aprovado"
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")
         aditivo.save(update_fields=["status_gerente", "status_diretoria", "arquivo_aditivo"])
         self.client.force_login(self.diretoria)
 
@@ -11610,14 +12226,14 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
         )
         aditivo.status_gerente = "aprovado"
         aditivo.status_diretoria = "aprovado"
-        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.arquivo_aditivo = SimpleUploadedFile("aditivo.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")
         aditivo.status_lider = "aprovado"
         aditivo.save(update_fields=["status_gerente", "status_diretoria", "arquivo_aditivo", "status_lider"])
         self.client.force_login(self.suprimento)
 
         response = self.client.post(
             reverse("enviar_aditivo_assinado_contrato", args=[aditivo.pk]),
-            {"arquivo_aditivo_assinado": SimpleUploadedFile("aditivo_assinado.pdf", b"conteudo", content_type="application/pdf")},
+            {"arquivo_aditivo_assinado": SimpleUploadedFile("aditivo_assinado.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")},
             follow=False,
         )
 
@@ -11642,7 +12258,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
 
     def test_detalhe_contrato_exibe_download_do_aditivo_aprovado(self):
         aditivo = self.create_aditivo()
-        aditivo.arquivo_aditivo_assinado = SimpleUploadedFile("aditivo_assinado.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.arquivo_aditivo_assinado = SimpleUploadedFile("aditivo_assinado.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")
         aditivo.documento_assinado_enviado_em = timezone.now()
         aditivo.save(update_fields=["arquivo_aditivo_assinado", "documento_assinado_enviado_em"])
 
@@ -11711,7 +12327,7 @@ class AditivoContratoTerceiroTests(BaseUserTestCase):
 
     def test_detalhe_contrato_considera_valor_do_aditivo_aprovado_no_warning(self):
         aditivo = self.create_aditivo()
-        aditivo.arquivo_aditivo_assinado = SimpleUploadedFile("aditivo_assinado.pdf", b"conteudo", content_type="application/pdf")
+        aditivo.arquivo_aditivo_assinado = SimpleUploadedFile("aditivo_assinado.pdf", b'%PDF-1.4\nconteudo', content_type="application/pdf")
         aditivo.documento_assinado_enviado_em = timezone.now()
         aditivo.save(update_fields=["arquivo_aditivo_assinado", "documento_assinado_enviado_em"])
 
@@ -11800,7 +12416,7 @@ class DocmGenerationTests(BaseUserTestCase):
             solicitacao=self.solicitacao_prospeccao,
             fornecedor=self.fornecedor,
             valor_proposta=Decimal("1500.00"),
-            arquivo_proposta=SimpleUploadedFile("proposta_tecnica.pdf", b"pdf"),
+            arquivo_proposta=SimpleUploadedFile("proposta_tecnica.pdf", b'%PDF-1.4\npdf'),
         )
         self.solicitacao_contrato = SolicitacaoContrato.objects.create(
             contrato=self.contrato_base,
@@ -11817,7 +12433,7 @@ class DocmGenerationTests(BaseUserTestCase):
             solicitacao_contrato=self.solicitacao_contrato,
             fornecedor=self.fornecedor,
             valor_proposta=Decimal("2500.00"),
-            arquivo_proposta=SimpleUploadedFile("proposta_contrato.pdf", b"pdf"),
+            arquivo_proposta=SimpleUploadedFile("proposta_contrato.pdf", b'%PDF-1.4\npdf'),
         )
         self.contrato_fornecedor = self.create_supplier_contract(
             cod_projeto=self.contrato_base,

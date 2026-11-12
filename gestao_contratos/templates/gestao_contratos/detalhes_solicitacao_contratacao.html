@@ -1,10 +1,14 @@
 ﻿{% extends 'base.html' %}
+{% load static %}
 {% block content %}
 {% load l10n %}
 
 <div class="container mt-4">
     <h2>Detalhes da Solicitação</h2>
+{% include 'gestao_contratos/_historico_arquivo_solicitacao.html' %}
 
+
+{% if not solicitacao.cancelada %}
 <div class="timeline">
     <!-- barra de progresso -->
      <div id="timeline-progress" class="timeline-progress"></div>
@@ -38,6 +42,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }, 200); // atraso pequeno para garantir a animação
 });
 </script>
+{% endif %}
 
 <!-- Dados gerais da solicitação -->
 <div class="card mb-3">
@@ -112,6 +117,8 @@ document.addEventListener("DOMContentLoaded", function() {
             A gerência de contrato aprovou as minutas necessárias, e a equipe de suprimento precisa anexar o contrato assinado.
           {% elif solicitacao.status == "Onboarding" %}
             A solicitação foi concluída e a equipe de suprimento está organizando o onboarding com os envolvidos.
+          {% elif solicitacao.cancelada %}
+            Solicitação cancelada. O fluxo operacional está encerrado.
           {% else %}
             Status sem descrição configurada.
           {% endif %}
@@ -363,7 +370,7 @@ document.addEventListener("DOMContentLoaded", function() {
                               <td>{{ evento.descricao }}</td>
                               <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
                               <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
-                              <td>
+                              <td>{% if not solicitacao.cancelada and not solicitacao.arquivada %}
                                 {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_lider gerente_contrato' %}
                                 <form method="post" action="{% url 'duplicar_evento_solicitacao' evento.id %}" class="d-inline" data-prevent-double-submit="true" onsubmit="return confirm('Deseja duplicar este evento?');">
                                   {% csrf_token %}
@@ -375,7 +382,7 @@ document.addEventListener("DOMContentLoaded", function() {
                                       Apagar
                                   </a>
                                 {% endif %}
-                              </td>
+                              {% endif %}</td>
                           </tr>
                           {% endfor %}
                       </tbody>
@@ -383,7 +390,8 @@ document.addEventListener("DOMContentLoaded", function() {
               {% else %}
                   <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
               {% endif %}
-              {% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' %}
+              {% if not solicitacao.cancelada and not solicitacao.arquivada %}
+{% if request.user.grupo == 'suprimento' or request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' %}
                   <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
               {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de contratação" %}
                   <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
@@ -392,6 +400,7 @@ document.addEventListener("DOMContentLoaded", function() {
               {% elif request.user.grupo == 'coordenador' and solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
                   <a href="{% url 'cadastrar_evento_solicitacao' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
               {% endif %}
+{% endif %}
           </div>
       </div>
   {% endif %}
@@ -420,6 +429,7 @@ document.addEventListener("DOMContentLoaded", function() {
       <p>Sem revisões relacionadas.</p>
   {% endif %}
 
+{% if not solicitacao.cancelada and not solicitacao.arquivada %}
 {% if request.user.grupo == 'suprimento' %}
   {% if solicitacao.reprovacao_gerencia  %}
     <div class="card mb-3">
@@ -494,8 +504,8 @@ document.addEventListener("DOMContentLoaded", function() {
 
 <!-- Botões de aprovação para gerência de contrato -->
 {% if can_act_as_gerente_contrato %}
-  {% if not solicitacao.guarda_chuva and solicitacao.minuta_boletins_medicao_contrato %}
-    {% if solicitacao.minuta_boletins_medicao_contrato.status_gerente == 'pendente' %}
+  {% if not solicitacao.guarda_chuva and solicitacao.minuta_boletins_medicao_contrato.minuta_boletim %}
+    {% if solicitacao.minuta_boletins_medicao_contrato.status_avaliacao == 'pendente' %}
       <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-primary mt-3">
         Avaliar Minuta BM
       </a>
@@ -515,10 +525,21 @@ document.addEventListener("DOMContentLoaded", function() {
   {% endif %}
 {% endif %}
 
+{% if solicitacao.lider_contrato == request.user and request.user.grupo == 'lider_contrato' or solicitacao.lider_contrato == request.user and request.user.grupo == 'gerente_lider' %}
+  {% if not solicitacao.guarda_chuva and solicitacao.minuta_boletins_medicao_contrato.minuta_boletim %}
+    {% if solicitacao.minuta_boletins_medicao_contrato.status_avaliacao == 'pendente' %}
+      <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-primary mt-3">Avaliar Minuta BM</a>
+    {% else %}
+      <a href="{% url 'detalhe_bm_contrato' solicitacao.minuta_boletins_medicao_contrato.id %}" class="btn btn-warning mt-3">Revisar Minuta BM</a>
+    {% endif %}
+  {% endif %}
+{% endif %}
+
 {% if request.user.grupo == 'diretoria' and solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
     <form method="post">
         {% csrf_token %}
         <input type="hidden" name="papel_avaliacao" value="diretoria">
+        <input type="hidden" name="next" value="{{ approval_next }}">
         {% if eventos or solicitacao.guarda_chuva %}
         <button type="submit" name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
         {% else %}
@@ -531,6 +552,7 @@ document.addEventListener("DOMContentLoaded", function() {
     </form>
 {% endif %}
 
+{% endif %}
 <a href="{% url 'lista_solicitacoes' %}" class="btn btn-secondary mt-3">Voltar</a>
 
 
@@ -567,6 +589,7 @@ document.addEventListener("DOMContentLoaded", function() {
         {% csrf_token %}
         <input type="hidden" name="papel_avaliacao" value="diretoria">
         <input type="hidden" name="acao" value="reprovar">
+        <input type="hidden" name="next" value="{{ approval_next }}">
         <div class="modal-header">
           <h5 class="modal-title">Reprovar solicitacao</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
@@ -584,4 +607,5 @@ document.addEventListener("DOMContentLoaded", function() {
   </div>
 </div>
 
+<script src="{% static 'js/solicitacoes_arquivo.js' %}" defer></script>
 {% endblock %}

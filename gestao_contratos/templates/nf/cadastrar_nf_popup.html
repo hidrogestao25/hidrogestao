@@ -1,6 +1,7 @@
-<form method="post" enctype="multipart/form-data" id="nfForm">
+<form method="post" enctype="multipart/form-data" id="nfForm" data-nf-payment-form>
   {% csrf_token %}
-  {{ form.as_p }}
+  <input type="hidden" name="submission_token" value="{{ submission_token }}">
+  {% include "nf/_campos_nf.html" %}
 
   <div class="d-flex justify-content-end">
     <button type="submit" class="btn btn-success">Salvar</button>

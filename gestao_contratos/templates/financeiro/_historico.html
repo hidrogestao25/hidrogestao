@@ -1,0 +1,7 @@
+{% for item in history_rows %}<article class="card my-3"><div class="card-body">
+  <h3 class="h6">{{ item.title }} · NF #{{ item.event.object_id }}</h3>
+  <p class="small text-muted">{{ item.event.data_hora|date:'d/m/Y H:i:s' }} · {{ item.actor }}{% if item.event.autor_grupo %} · {{ item.event.autor_grupo }}{% endif %}</p>
+  {% if item.event.justificativa %}<p><strong>Justificativa:</strong> {{ item.event.justificativa }}</p>{% endif %}
+  <details><summary class="small">Campos e estados da operação</summary><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Campo</th><th>Antes</th><th>Depois</th></tr></thead><tbody>{% for change in item.changes %}<tr><td>{{ change.field }}</td><td class="text-break">{{ change.before|default_if_none:'—' }}</td><td class="text-break">{{ change.after|default_if_none:'—' }}</td></tr>{% endfor %}</tbody></table></div></details>
+  <div class="d-flex flex-wrap gap-2 mt-2">{% for document in item.documents %}<a class="btn btn-sm btn-outline-secondary" href="{{ document.url }}">{% if 'acordo' in document.label %}Documento do acordo{% elif 'comprovante' in document.label %}Comprovante{% else %}Documento fiscal{% endif %} · {% if 'anterior' in document.label %}anterior{% else %}posterior{% endif %}</a>{% endfor %}</div>
+</div></article>{% empty %}<p class="text-muted">Responsável não identificado no histórico disponível. Nenhuma operação estruturada disponível para estes filtros.</p>{% endfor %}

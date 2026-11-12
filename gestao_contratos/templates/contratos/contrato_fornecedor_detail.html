@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+{% if request.user.grupo == 'financeiro' or request.user.grupo == 'suprimento' or request.user.grupo == 'diretoria' or request.user.grupo == 'gerente_contrato' %}
+<div class="d-flex flex-wrap gap-2 mt-3"><a class="btn btn-sm btn-outline-success" href="{% url 'contas_a_pagar' %}?historico=on&amp;contrato={{ contrato.pk }}">Contas a Pagar deste contrato</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'orcamento_financeiro' %}?historico=on&amp;contrato={{ contrato.pk }}">Posição contratual</a></div>
+<div class="d-flex flex-wrap gap-2 mt-3"><a class="btn btn-sm btn-outline-success" href="{% url 'pendencias_financeiras' %}?historico=on&amp;contrato={{ contrato.pk }}&amp;fila=pagos">Histórico financeiro · NFs pagas</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'conferencia_financeira' %}?historico=on&amp;contrato={{ contrato.pk }}">Conferência do contrato</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'historico_financeiro' %}?contrato={{ contrato.pk }}">Histórico permanente</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'pendencias_financeiras' %}?historico=on&amp;contrato={{ contrato.pk }}&amp;fila=pagamento">NFs a pagar</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'pendencias_financeiras' %}?historico=on&amp;contrato={{ contrato.pk }}&amp;fila=aprovacao">BMs em acompanhamento</a></div>
+{% endif %}
 <div class="container mt-4">
   <div class="card shadow-sm">
     <div class="card-header card-header-custom text-white">

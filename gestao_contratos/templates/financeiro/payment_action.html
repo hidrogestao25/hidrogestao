@@ -1,0 +1,2 @@
+{% extends 'base.html' %}
+{% block content %}<h1 class="h3">{{ title }}</h1><a class="btn btn-outline-secondary mb-3" href="{% url 'detalhe_nf' nf.pk %}">Voltar à NF</a>{% include 'financeiro/_payment_form.html' %}{% endblock %}

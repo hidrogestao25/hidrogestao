@@ -14,7 +14,7 @@ def registrar_auditoria_post_save(sender, instance, created, raw=False, **kwargs
     if sender._meta.app_label != "gestao_contratos":
         return
 
-    if sender is RegistroAuditoria or sender.__name__ == "User":
+    if sender is RegistroAuditoria or sender.__name__ in {"User", "ChaveIdempotencia", "NF", "PagamentoNF", "ProgramacaoPagamento", "ReprogramacaoPagamento"}:
         return
 
     user = get_current_user()
@@ -26,7 +26,15 @@ def registrar_auditoria_post_save(sender, instance, created, raw=False, **kwargs
     detalhes = None
     if request is not None:
         detalhes = f"{request.method} {request.path}"
+    if getattr(instance, "_audit_operation", None):
+        detalhes = f"{detalhes or ''} | {instance._audit_operation}"
 
+    extra={}
+    decision=getattr(instance,'_audit_bm_decision',None) if sender.__name__=='BM' else None
+    if decision:
+        extra=dict(operacao_financeira='decisao_bm',estado_anterior=decision['before'],estado_posterior=decision['after'],
+            justificativa=decision['reason'],autor_nome=user.get_full_name() or user.username if getattr(user,'is_authenticated',False) else None,
+            autor_grupo=user.grupo if getattr(user,'is_authenticated',False) else None)
     RegistroAuditoria.objects.create(
         content_type=ContentType.objects.get_for_model(sender),
         object_id=instance.pk,
@@ -35,4 +43,5 @@ def registrar_auditoria_post_save(sender, instance, created, raw=False, **kwargs
         modelo=sender._meta.verbose_name.title(),
         representacao_objeto=str(instance)[:255],
         detalhes=detalhes,
+        **extra,
     )

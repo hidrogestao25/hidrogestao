@@ -1,15 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mt-4">
-    <h2>Nova Prospecção</h2>
-    <p>Você está criando uma nova prospecção baseada na solicitação:</p>
-    <p><strong>Contrato:</strong> {{ solicitacao.contrato }}</p>
-    <p><strong>Descrição:</strong> {{ solicitacao.descricao }}</p>
-
-    <form method="post">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-success">Confirmar Nova Prospecção</button>
-        <a href="{% url 'detalhes_contrato' solicitacao.pk %}" class="btn btn-secondary">Cancelar</a>
-    </form>
+<div class="container my-4">
+  <h1 class="h4">Nova revisão de prospecção</h1>
+  <p>Solicitação original: <a href="{% url 'detalhes_solicitacao' solicitacao.pk %}">#{{ solicitacao.pk }}</a> · Projeto {{ solicitacao.contrato }}</p>
+  <p>A revisão reinicia a prospecção. Aprovações, propostas, entregas e documentos da solicitação original permanecem no histórico.</p>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="submission_token" value="{{ submission_token }}">
+    {{ form.as_p }}
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-secondary" href="{% url 'detalhes_solicitacao' solicitacao.pk %}">Cancelar</a>
+      <button class="btn btn-primary" type="submit">Registrar revisão</button>
+    </div>
+  </form>
 </div>
 {% endblock %}

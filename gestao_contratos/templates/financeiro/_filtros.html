@@ -1,0 +1,20 @@
+<details class="card fin-filters mb-4" {% if financial_form.errors %}open{% endif %}>
+  <summary class="card-header bg-white"><i class="bi bi-funnel"></i> Pesquisar e filtrar <span class="text-muted ms-2">{{ financial_period }}</span></summary>
+  <form method="get" class="card-body" {% if financial_form.dynamic_choices %}data-financial-filters-url="{% url 'opcoes_filtros_financeiros' %}"{% endif %}>
+    {% if financial_form.default_period_notice %}<p class="alert alert-info small" role="status">{{ financial_form.default_period_notice }}</p>{% endif %}
+    {% if financial_selection_key %}<input type="hidden" name="selecao" value="{{ financial_selection_key }}"><input type="hidden" name="registro" value="{{ financial_record_kind }}">{% endif %}
+    {% if queue %}<input type="hidden" name="fila" value="{{ queue.key }}"><input type="hidden" name="registro" value="{{ record_kind }}">{% endif %}
+    {% if conference_kind %}<input type="hidden" name="visao" value="{{ conference_kind }}">{% endif %}
+    {{ financial_form.non_field_errors }}
+    <div class="row g-3">
+    {% for field in financial_form %}
+      {% if field.is_hidden %}{{ field }}{% else %}
+      <div class="col-12 col-sm-6 col-lg-3"><label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>
+      {% endif %}
+    {% endfor %}
+    </div>
+    {% if financial_form.dynamic_choices %}<p class="small text-muted mt-3 mb-0">Selecione o líder de contrato, depois fornecedor, projeto e contrato. As opções seguintes acompanham os vínculos selecionados.</p><p class="small mt-2 mb-0" role="status" aria-live="polite" data-financial-filters-status></p>{% endif %}
+    <p class="small text-muted mt-3">Previsto: data prevista da origem. Medido/autorizado: data de referência do BM. Cadastro de NFs: data informada no lançamento legado. Caixa e relatório de pagamentos: data efetiva de cada movimento. Planejamento mensal: datas confiáveis de parcelas/acordos; vencimento desconhecido permanece sem mês.</p>
+    <div class="d-flex gap-2"><button class="btn btn-custom" type="submit">Aplicar filtros</button><a href="{{ request.path }}" class="btn btn-outline-secondary">Limpar</a></div>
+  </form>
+</details>

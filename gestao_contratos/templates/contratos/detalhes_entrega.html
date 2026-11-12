@@ -72,7 +72,7 @@
               {% for bm in bms %}
                 <tr id="bm-row-{{ bm.id }}"
                     class="{% if bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado' %}table-danger{% elif bm.status_coordenador == 'aprovado' or bm.status_gerente == 'aprovado' %}table-success{% else %}table-warning{% endif %}">
-                  <td>{{ bm.numero_bm }}</td>
+                  <td><a href="{% url 'detalhe_bm_financeiro' bm.id %}?next={{ request.get_full_path|urlencode }}">{{ bm.numero_bm }}</a></td>
                   <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
                   <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
                   {% if bm.status_coordenador == "aprovado" %}
@@ -127,6 +127,7 @@
                   {% if bm.aprovacao_pagamento == "aprovado" %}
                     <td>
                       <span class="badge bg-success">Aprovado</span>
+                      {% include 'financeiro/_justificativa_aprovacao_bm.html' with bm=bm %}
                       {% if bm.aprovacao_diretor_audit %}
                         <small class="d-block text-muted mt-1">
                           por {{ bm.aprovacao_diretor_audit.usuario.get_full_name|default:bm.aprovacao_diretor_audit.usuario.username }}
@@ -186,24 +187,7 @@
                         </div>
 
                     {% elif user.grupo == "diretoria" %}
-                        {% if bm.can_approve_pagamento %}
-                            <div class="d-flex gap-1">
-                                <button type="button" class="btn btn-sm btn-success btn-aprovar-pagamento"
-                                        data-bm-id="{{ bm.id }}"
-                                        {% if bm.aprovacao_pagamento != "pendente" %}disabled{% endif %}>
-                                    Aprovar Pagamento
-                                </button>
-
-                                <button type="button" class="btn btn-sm btn-danger btn-reprovar-pagamento"
-                                        data-bm-id="{{ bm.id }}"
-                                        {% if bm.aprovacao_pagamento != "pendente" %}disabled{% endif %}>
-                                    Reprovar Pagamento
-                                </button>
-                            </div>
-                        {% else %}
-                            <span class="text-muted">Aguardando aprovações</span>
-                        {% endif %}
-
+                        {% include 'financeiro/_decisao_pagamento_bm.html' with bm=bm can_decide=bm.can_approve_pagamento %}
                     {% else %}
                         -
                     {% endif %}
@@ -227,7 +211,7 @@
             <th>ID NF</th>
             <th>BM</th>
             <th>Parcela</th>
-            <th>Valor Pago</th>
+            <th>Valor da NF</th>
             <th>Data Pagamento</th>
             <th>Observação</th>
             <th>Arquivo</th>
@@ -240,7 +224,7 @@
         <tbody>
           {% for nf in notas_fiscais %}
           <tr>
-            <td>{{ nf.id }}</td>
+            <td><a href="{% url 'detalhe_nf' nf.id %}?next={{ request.get_full_path|urlencode }}">{{ nf.id }}</a> <span class="badge {% if nf.financeiro_autorizou %}bg-success{% else %}bg-secondary{% endif %}">{% if nf.cancelada_em %}Cancelada{% else %}{{ nf.situacao_liquidacao }}{% endif %}</span></td>
             <td>{{ nf.bm.numero_bm }}</td>
             <td>{{ nf.parcela_paga }}</td>
             <td>R$ {{ nf.valor_pago|floatformat:2 }}</td>
@@ -263,14 +247,16 @@
                         data-nf-id="{{ nf.id }}"
                         data-bs-toggle="modal"
                         data-bs-target="#editarNFModal">
-                    Editar
+                    {% if request.user.grupo == 'financeiro' and nf.possui_pagamentos %}Consultar{% else %}Editar{% endif %}
                 </button>
 
+                {% if request.user.grupo == 'suprimento' or not nf.possui_historico_financeiro %}
                 <form method="post" action="{% url 'deletar_nf' nf.id %}"
                       onsubmit="return confirm('Tem certeza que deseja apagar esta NF?');">
-                  {% csrf_token %}
+                  {% csrf_token %}{% include 'nf/_justificativa_exclusao.html' %}
                   <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
                 </form>
+                {% endif %}
               </div>
             </td>
             {% endif %}
@@ -349,24 +335,7 @@
     </div>
   </div>
 </div>
-<div class="modal fade" id="modalJustificativaDiretoria" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header bg-danger text-white">
-        <h5 class="modal-title">Justificativa da Reprovação do Pagamento</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <label class="form-label">Explique o motivo da reprovação:</label>
-        <textarea id="justificativaDiretor" class="form-control" rows="4"></textarea>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button class="btn btn-danger" id="btnConfirmarReprovarDiretoria">Confirmar</button>
-      </div>
-    </div>
-  </div>
-</div>
+{% include 'financeiro/_modal_decisao_pagamento_bm.html' %}
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.8/jquery.inputmask.min.js"></script>
@@ -516,24 +485,6 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   });
 
-  // Aprovar pagamento (diretoria)
-  document.querySelectorAll('.btn-aprovar-pagamento').forEach(button => {
-    button.addEventListener('click', function() {
-      const bmId = this.dataset.bmId;
-      enviarAvaliacao(bmId, 'aprovar_pagamento', '');
-    });
-  });
-
-  // Reprovar pagamento (diretoria)
-  document.querySelectorAll('.btn-reprovar-pagamento').forEach(button => {
-    button.addEventListener('click', function() {
-      bmReprovandoDiretoria = this.dataset.bmId;
-      const modal = new bootstrap.Modal(document.getElementById('modalJustificativaDiretoria'));
-      modal.show();
-    });
-  });
-
-
   function enviarAvaliacao(bmId, acao, justificativa) {
 
     mostrarLoading(); // mostra spinner
@@ -577,16 +528,7 @@ document.addEventListener("DOMContentLoaded", function() {
     enviarAvaliacao(bmReprovandoId, 'reprovar', justificativa);
   });
 
-  document.getElementById('btnConfirmarReprovarDiretoria').addEventListener('click', function() {
-    const justificativa = document.getElementById('justificativaDiretor').value.trim();
-    if (!justificativa) {
-      alert('Por favor, insira uma justificativa.');
-      return;
-    }
-    const modal = bootstrap.Modal.getInstance(document.getElementById('modalJustificativaDiretoria'));
-    modal.hide();
-    enviarAvaliacao(bmReprovandoDiretoria, 'reprovar_pagamento', justificativa);
-  });
+
 });
 </script>
 

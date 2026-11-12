@@ -1,0 +1,11 @@
+<div class="d-flex gap-2 flex-wrap fin-actions">
+  {% if not hide_consult %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.detail_url }}">Consultar</a>{% endif %}
+  {% if row.document_url %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.document_url }}" target="_blank" rel="noopener">Documento</a>{% endif %}
+  {% if row.receipt_url %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.receipt_url }}">Comprovante</a>{% endif %}
+  {% if row.kind == 'nf' %}
+    {% if row.can_pay %}<button type="button" class="btn btn-sm btn-success" data-finance-modal-url="{{ row.payment_url }}" data-finance-modal-title="Registrar pagamento">Registrar pagamento</button>{% endif %}
+    {% if row.can_edit %}<button type="button" class="btn btn-sm btn-outline-primary" data-finance-modal-url="{{ row.edit_url }}" data-finance-modal-title="Editar NF">Editar NF</button>{% endif %}
+  {% elif row.kind == 'bm' and row.can_edit and not row.reasons and row.nf_create_url %}
+    <button type="button" class="btn btn-sm btn-outline-primary" data-finance-modal-url="{{ row.nf_create_url }}" data-finance-modal-title="Cadastrar NF">Cadastrar NF</button>
+  {% endif %}
+</div>

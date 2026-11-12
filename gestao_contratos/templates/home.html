@@ -2,7 +2,13 @@
 {% load static %}
 {% block title %}Home - HIDROGestão{% endblock %}
 
+{% block extra_css %}{% endblock %}
+{% block extra_js %}{% endblock %}
+
 {% block content %}
+{% if is_financeiro %}
+  {% include "financeiro/_home_resumo.html" %}
+{% else %}
 <div class="container mt-4">
 
 {% if user.is_authenticated %}
@@ -25,137 +31,7 @@
         {% endif %}
 
         <div class="row">
-            <!-- Financeiro -->
-            {% if is_financeiro %}
-            <div class="col-md-6 mb-4 animated-card">
-                <div class="card shadow-sm dashboard-card">
-                    <div class="card-header bg-dark text-white">
-                        <h5 class="mb-0">Eventos aguardando Nota Fiscal</h5>
-                    </div>
 
-                    <div class="card-body">
-                        {% if eventos_sem_nf %}
-                            <ul class="list-group list-group-flush">
-                                {% for evento in eventos_sem_nf %}
-                                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <strong>Evento #{{ evento.id }}</strong><br>
-                                            <small>{{ evento.fornecedor_display }}</small><br>
-
-                                            <span class="badge bg-secondary">
-                                                Pagamento aprovado: {{ evento.ultima_data_pagamento_bm|date:"d/m/Y" }}
-                                            </span>
-                                        </div>
-
-                                        <a href="{% url 'detalhes_entrega' evento.id %}"
-                                           class="btn btn-sm btn-outline-dark">
-                                            Ver
-                                        </a>
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        {% else %}
-                            <p class="text-muted mb-0">Nenhum evento aguardando NF.</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-6 mb-4 animated-card">
-                <div class="card shadow-sm dashboard-card">
-                    <div class="card-header bg-warning">
-                        <h5 class="mb-0">Próximas Entregas (10 dias)</h5>
-                    </div>
-
-                    <div class="card-body">
-                        {% if eventos_proximos %}
-                            <ul class="list-group list-group-flush">
-                                {% for e in eventos_proximos %}
-                                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <strong>{{ e.fornecedor_display }}</strong><br>
-
-                                            {% if e.descricao %}
-                                                <small>{{ e.descricao|truncatechars:60 }}</small><br>
-                                            {% endif %}
-
-                                            <span class="badge bg-info">
-                                                Entrega: {{ e.data_prevista|date:"d/m/Y" }}
-                                            </span>
-                                            <span class="badge bg-info">
-                                                Em {{ e.dias_para_entrega }} dias
-                                            </span>
-                                        </div>
-
-                                        <a href="{% url 'detalhes_entrega' e.id %}"
-                                           class="btn btn-sm btn-outline-warning">
-                                            Detalhes Entrega
-                                        </a>
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        {% else %}
-                            <p class="text-muted mb-0">Nenhuma entrega nos próximos dias.</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-6 mb-4 animated-card">
-                <div class="card shadow-sm dashboard-card">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0">Boletins Pendentes de Aprovação</h5>
-                    </div>
-
-                    <div class="card-body">
-                        {% if bms_pendentes %}
-                            <ul class="list-group list-group-flush">
-                                {% for bm in bms_pendentes %}
-                                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <strong>{{ bm.contrato.empresa_terceira }}</strong><br>
-                                            <small>Parcela {{ bm.parcela_paga }} - Valor: R$ {{ bm.valor_pago }}</small><br>
-
-                                            <div class="mt-1">
-                                                {% if bm.status_coordenador == "pendente" and bm.status_gerente == "pendente" %}
-                                                    <span class="badge bg-secondary">Liderança</span>
-                                                    <span class="badge bg-info text-dark">Gerência de Contrato</span>
-                                                {% endif %}
-                                                {% if bm.aprovacao_pagamento == "pendente" %}
-                                                    {% if bm.status_coordenador == "aprovado" or bm.status_gerente == "aprovado" %}
-                                                        <span class="badge bg-danger">Diretoria</span>
-                                                    {% endif %}
-                                                {% endif %}
-                                                {% if bm.sla_display %}
-                                                    <span class="badge {{ bm.sla_display.badge_class }}">{{ bm.sla_display.badge_label }}</span>
-                                                {% endif %}
-                                            </div>
-                                            {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
-                                        </div>
-
-                                        {% if bm.evento %}
-                                            <a href="{% url 'detalhes_entrega' bm.evento.id %}"
-                                               class="btn btn-outline-primary btn-sm">
-                                                Ver BM
-                                            </a>
-                                        {% elif bm.os %}
-                                            <a href="{% url 'registrar_entrega_os' bm.os.id %}"
-                                               class="btn btn-outline-primary btn-sm">
-                                                Ver BM
-                                            </a>
-                                        {% endif %}
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        {% else %}
-                            <p class="text-muted mb-0">Nenhum boletim pendente.</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Fim do is_financeiro -->
-            {% endif %}
 
 
             {% if is_suprimento %}
@@ -172,13 +48,7 @@
                             {% for solicitacao in solicitacoes_prospeccao %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
-                                    <strong>Prospecção #{{ solicitacao.id }}</strong><br>
-                                    <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
-                                    <span class="badge bg-secondary">{{ solicitacao.status }}</span>
-                                    {% if solicitacao.sla_display %}
-                                        <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
-                                        {% include 'gestao_contratos/_sla_hint_home.html' with sla=solicitacao.sla_display %}
-                                    {% endif %}
+                                    <strong>Contrato #{{ solicitacao.contrato_id }} - {{ solicitacao.contrato.cod_projeto }}</strong>
                                 </div>
                                 <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">
                                     Ver
@@ -190,12 +60,10 @@
                             {% for contrato in solicitacoes_contrato %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
-                                    <strong>Contrato #{{ contrato.id }}</strong><br>
-                                    <small>{{ contrato.descricao|truncatechars:60 }}</small><br>
-                                    <span class="badge bg-warning">Contrato</span>
-                                    {% if contrato.sla_display %}
-                                        <span class="badge {{ contrato.sla_display.badge_class }}">{{ contrato.sla_display.badge_label }}</span>
-                                        {% include 'gestao_contratos/_sla_hint_home.html' with sla=contrato.sla_display %}
+                                    {% if contrato.contrato_id %}
+                                        <strong>Contrato #{{ contrato.contrato_id }} - {{ contrato.contrato.cod_projeto }}</strong>
+                                    {% else %}
+                                        <strong>Sem contrato vinculado</strong>
                                     {% endif %}
                                 </div>
                                 <a href="{% url 'detalhes_solicitacao_contrato' contrato.id %}" class="btn btn-sm btn-outline-primary">
@@ -208,12 +76,12 @@
                             {% for os in solicitacoes_os %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
-                                    <strong>OS #{{ os.id }}</strong><br>
-                                    <small>{{ os.descricao|truncatechars:60 }}</small><br>
-                                    <span class="badge bg-info">Ordem de Serviço</span>
-                                    {% if os.sla_display %}
-                                        <span class="badge {{ os.sla_display.badge_class }}">{{ os.sla_display.badge_label }}</span>
-                                        {% include 'gestao_contratos/_sla_hint_home.html' with sla=os.sla_display %}
+                                    {% if os.cod_projeto_id %}
+                                        <strong>Contrato #{{ os.cod_projeto_id }} - {{ os.cod_projeto.cod_projeto }}</strong>
+                                    {% elif os.contrato.cod_projeto_id %}
+                                        <strong>Contrato #{{ os.contrato.cod_projeto_id }} - {{ os.contrato.cod_projeto.cod_projeto }}</strong>
+                                    {% else %}
+                                        <strong>Sem contrato vinculado</strong>
                                     {% endif %}
                                 </div>
                                 <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-sm btn-outline-primary">
@@ -225,12 +93,10 @@
                             {% for aditivo in aditivos_pendentes %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
-                                    <strong>Aditivo #{{ aditivo.id }}</strong><br>
-                                    <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
-                                    <span class="badge bg-dark">Aditivo</span>
-                                    {% if aditivo.sla_display %}
-                                        <span class="badge {{ aditivo.sla_display.badge_class }}">{{ aditivo.sla_display.badge_label }}</span>
-                                        {% include 'gestao_contratos/_sla_hint_home.html' with sla=aditivo.sla_display %}
+                                    {% if aditivo.contrato.cod_projeto_id %}
+                                        <strong>Contrato #{{ aditivo.contrato.cod_projeto_id }} - {{ aditivo.contrato.cod_projeto.cod_projeto }}</strong>
+                                    {% else %}
+                                        <strong>Sem contrato vinculado</strong>
                                     {% endif %}
                                 </div>
                                 <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
@@ -305,7 +171,7 @@
             <div class="col-md-6 mb-4 animated-card">
                 <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-info text-white">
-                        <h5 class="mb-0">BMs para entrega ate a proxima data de pagamento</h5>
+                        <h5 class="mb-0">BMs previstos para a próxima data de pagamento</h5>
                     </div>
 
                     <div class="card-body">
@@ -353,7 +219,7 @@
             <div class="col-md-6 mb-4 animated-card">
                 <div class="card shadow-sm dashboard-card">
                     <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0">Entregas Realizadas sem Pagamento</h5>
+                        <h5 class="mb-0">Entregas aguardando o pagamento</h5>
                     </div>
 
                     <div class="card-body">
@@ -938,13 +804,7 @@
                                   {% for solicitacao in solicitacoes_prospeccao %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Prospecção #{{ solicitacao.id }}</strong><br>
-                                          <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-secondary">{{ solicitacao.status }}</span>
-                                          {% if solicitacao.sla_display %}
-                                              <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=solicitacao.sla_display %}
-                                          {% endif %}
+                                          <strong>Contrato #{{ solicitacao.contrato_id }} - {{ solicitacao.contrato.cod_projeto }}</strong>
                                       </div>
                                       <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">
                                           Ver
@@ -956,12 +816,10 @@
                                   {% for contrato in solicitacoes_contrato %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Contrato #{{ contrato.id }}</strong><br>
-                                          <small>{{ contrato.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-warning">Contrato</span>
-                                          {% if contrato.sla_display %}
-                                              <span class="badge {{ contrato.sla_display.badge_class }}">{{ contrato.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=contrato.sla_display %}
+                                          {% if contrato.contrato_id %}
+                                              <strong>Contrato #{{ contrato.contrato_id }} - {{ contrato.contrato.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
                                       <a href="{% url 'detalhes_solicitacao_contrato' contrato.id %}" class="btn btn-sm btn-outline-primary">
@@ -974,12 +832,12 @@
                                   {% for os in solicitacoes_os %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>OS #{{ os.id }}</strong><br>
-                                          <small>{{ os.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-info">Ordem de Serviço</span>
-                                          {% if os.sla_display %}
-                                              <span class="badge {{ os.sla_display.badge_class }}">{{ os.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=os.sla_display %}
+                                          {% if os.cod_projeto_id %}
+                                              <strong>Contrato #{{ os.cod_projeto_id }} - {{ os.cod_projeto.cod_projeto }}</strong>
+                                          {% elif os.contrato.cod_projeto_id %}
+                                              <strong>Contrato #{{ os.contrato.cod_projeto_id }} - {{ os.contrato.cod_projeto.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
                                       <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-sm btn-outline-primary">
@@ -1255,13 +1113,7 @@
                                   {% for solicitacao in solicitacoes_prospeccao %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Prospecção #{{ solicitacao.id }}</strong><br>
-                                          <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-secondary">{{ solicitacao.status }}</span>
-                                          {% if solicitacao.sla_display %}
-                                              <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=solicitacao.sla_display %}
-                                          {% endif %}
+                                          <strong>Contrato #{{ solicitacao.contrato_id }} - {{ solicitacao.contrato.cod_projeto }}</strong>
                                       </div>
                                       <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">
                                           Ver
@@ -1273,12 +1125,10 @@
                                   {% for contrato in solicitacoes_contrato %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Contrato #{{ contrato.id }}</strong><br>
-                                          <small>{{ contrato.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-warning">Contrato</span>
-                                          {% if contrato.sla_display %}
-                                              <span class="badge {{ contrato.sla_display.badge_class }}">{{ contrato.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=contrato.sla_display %}
+                                          {% if contrato.contrato_id %}
+                                              <strong>Contrato #{{ contrato.contrato_id }} - {{ contrato.contrato.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
                                       <a href="{% url 'detalhes_solicitacao_contrato' contrato.id %}" class="btn btn-sm btn-outline-primary">
@@ -1291,12 +1141,12 @@
                                   {% for os in solicitacoes_os %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>OS #{{ os.id }}</strong><br>
-                                          <small>{{ os.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-info">Ordem de Serviço</span>
-                                          {% if os.sla_display %}
-                                              <span class="badge {{ os.sla_display.badge_class }}">{{ os.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=os.sla_display %}
+                                          {% if os.cod_projeto_id %}
+                                              <strong>Contrato #{{ os.cod_projeto_id }} - {{ os.cod_projeto.cod_projeto }}</strong>
+                                          {% elif os.contrato.cod_projeto_id %}
+                                              <strong>Contrato #{{ os.contrato.cod_projeto_id }} - {{ os.contrato.cod_projeto.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
                                       <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-sm btn-outline-primary">
@@ -1519,13 +1369,7 @@
                               {% for solicitacao in solicitacoes_prospeccao %}
                               <li class="list-group-item d-flex justify-content-between align-items-center">
                                   <div>
-                                      <strong>Prospecção #{{ solicitacao.id }}</strong><br>
-                                      <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
-                                      <span class="badge bg-secondary">{{ solicitacao.status }}</span>
-                                      {% if solicitacao.sla_display %}
-                                          <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
-                                          {% include 'gestao_contratos/_sla_hint_home.html' with sla=solicitacao.sla_display %}
-                                      {% endif %}
+                                      <strong>Contrato #{{ solicitacao.contrato_id }} - {{ solicitacao.contrato.cod_projeto }}</strong>
                                   </div>
                                   <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">
                                       Ver
@@ -1537,12 +1381,10 @@
                               {% for contrato in solicitacoes_contrato %}
                               <li class="list-group-item d-flex justify-content-between align-items-center">
                                   <div>
-                                      <strong>Contrato #{{ contrato.id }}</strong><br>
-                                      <small>{{ contrato.descricao|truncatechars:60 }}</small><br>
-                                      <span class="badge bg-warning">Contrato</span>
-                                      {% if contrato.sla_display %}
-                                          <span class="badge {{ contrato.sla_display.badge_class }}">{{ contrato.sla_display.badge_label }}</span>
-                                          {% include 'gestao_contratos/_sla_hint_home.html' with sla=contrato.sla_display %}
+                                      {% if contrato.contrato_id %}
+                                          <strong>Contrato #{{ contrato.contrato_id }} - {{ contrato.contrato.cod_projeto }}</strong>
+                                      {% else %}
+                                          <strong>Sem contrato vinculado</strong>
                                       {% endif %}
                                   </div>
                                   <a href="{% url 'detalhes_solicitacao_contrato' contrato.id %}" class="btn btn-sm btn-outline-primary">
@@ -1555,12 +1397,12 @@
                               {% for os in solicitacoes_os %}
                               <li class="list-group-item d-flex justify-content-between align-items-center">
                                   <div>
-                                      <strong>OS #{{ os.id }}</strong><br>
-                                      <small>{{ os.descricao|truncatechars:60 }}</small><br>
-                                      <span class="badge bg-info">Ordem de Serviço</span>
-                                      {% if os.sla_display %}
-                                          <span class="badge {{ os.sla_display.badge_class }}">{{ os.sla_display.badge_label }}</span>
-                                          {% include 'gestao_contratos/_sla_hint_home.html' with sla=os.sla_display %}
+                                      {% if os.cod_projeto_id %}
+                                          <strong>Contrato #{{ os.cod_projeto_id }} - {{ os.cod_projeto.cod_projeto }}</strong>
+                                      {% elif os.contrato.cod_projeto_id %}
+                                          <strong>Contrato #{{ os.contrato.cod_projeto_id }} - {{ os.contrato.cod_projeto.cod_projeto }}</strong>
+                                      {% else %}
+                                          <strong>Sem contrato vinculado</strong>
                                       {% endif %}
                                   </div>
                                   <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-sm btn-outline-primary">
@@ -1785,13 +1627,7 @@
                                   {% for solicitacao in solicitacoes_prospeccao %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Prospecção #{{ solicitacao.id }}</strong><br>
-                                          <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-secondary">{{ solicitacao.status }}</span>
-                                          {% if solicitacao.sla_display %}
-                                              <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=solicitacao.sla_display %}
-                                          {% endif %}
+                                          <strong>Contrato #{{ solicitacao.contrato_id }} - {{ solicitacao.contrato.cod_projeto }}</strong>
                                       </div>
                                       <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">
                                           Ver
@@ -1803,12 +1639,10 @@
                                   {% for contrato in solicitacoes_contrato %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Contrato #{{ contrato.id }}</strong><br>
-                                          <small>{{ contrato.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-warning">Contrato</span>
-                                          {% if contrato.sla_display %}
-                                              <span class="badge {{ contrato.sla_display.badge_class }}">{{ contrato.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=contrato.sla_display %}
+                                          {% if contrato.contrato_id %}
+                                              <strong>Contrato #{{ contrato.contrato_id }} - {{ contrato.contrato.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
                                       <a href="{% url 'detalhes_solicitacao_contrato' contrato.id %}" class="btn btn-sm btn-outline-primary">
@@ -1821,12 +1655,12 @@
                                   {% for os in solicitacoes_os %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>OS #{{ os.id }}</strong><br>
-                                          <small>{{ os.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-info">Ordem de Serviço</span>
-                                          {% if os.sla_display %}
-                                              <span class="badge {{ os.sla_display.badge_class }}">{{ os.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=os.sla_display %}
+                                          {% if os.cod_projeto_id %}
+                                              <strong>Contrato #{{ os.cod_projeto_id }} - {{ os.cod_projeto.cod_projeto }}</strong>
+                                          {% elif os.contrato.cod_projeto_id %}
+                                              <strong>Contrato #{{ os.contrato.cod_projeto_id }} - {{ os.contrato.cod_projeto.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
                                       <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-sm btn-outline-primary">
@@ -1837,12 +1671,10 @@
                                   {% for aditivo in aditivos_pendentes %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Aditivo #{{ aditivo.id }}</strong><br>
-                                          <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
-                                          <span class="badge bg-dark">Aditivo</span>
-                                          {% if aditivo.sla_display %}
-                                              <span class="badge {{ aditivo.sla_display.badge_class }}">{{ aditivo.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=aditivo.sla_display %}
+                                          {% if aditivo.contrato.cod_projeto_id %}
+                                              <strong>Contrato #{{ aditivo.contrato.cod_projeto_id }} - {{ aditivo.contrato.cod_projeto.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
                                       <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
@@ -2028,15 +1860,9 @@
                                   {% for solicitacao in solicitacoes_prospeccao %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Prospecção #{{ solicitacao.id }}</strong><br>
-                                          <small>{{ solicitacao.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-secondary">{{ solicitacao.status }}</span>
-                                          {% if solicitacao.sla_display %}
-                                              <span class="badge {{ solicitacao.sla_display.badge_class }}">{{ solicitacao.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=solicitacao.sla_display %}
-                                          {% endif %}
+                                          <strong>Contrato #{{ solicitacao.contrato_id }} - {{ solicitacao.contrato.cod_projeto }}</strong>
                                       </div>
-                                      <a href="{% url 'detalhes_solicitacao' solicitacao.id %}" class="btn btn-sm btn-outline-primary">
+                                      <a href="{% url 'detalhes_solicitacao' solicitacao.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary">
                                           Ver
                                       </a>
                                   </li>
@@ -2046,15 +1872,13 @@
                                   {% for contrato in solicitacoes_contrato %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Contrato #{{ contrato.id }}</strong><br>
-                                          <small>{{ contrato.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-warning">Contrato</span>
-                                          {% if contrato.sla_display %}
-                                              <span class="badge {{ contrato.sla_display.badge_class }}">{{ contrato.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=contrato.sla_display %}
+                                          {% if contrato.contrato_id %}
+                                              <strong>Contrato #{{ contrato.contrato_id }} - {{ contrato.contrato.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
-                                      <a href="{% url 'detalhes_solicitacao_contrato' contrato.id %}" class="btn btn-sm btn-outline-primary">
+                                      <a href="{% url 'detalhes_solicitacao_contrato' contrato.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary">
                                           Ver
                                       </a>
                                   </li>
@@ -2064,15 +1888,15 @@
                                   {% for os in solicitacoes_os %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>OS #{{ os.id }}</strong><br>
-                                          <small>{{ os.descricao|truncatechars:60 }}</small><br>
-                                          <span class="badge bg-info">Ordem de Serviço</span>
-                                          {% if os.sla_display %}
-                                              <span class="badge {{ os.sla_display.badge_class }}">{{ os.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=os.sla_display %}
+                                          {% if os.cod_projeto_id %}
+                                              <strong>Contrato #{{ os.cod_projeto_id }} - {{ os.cod_projeto.cod_projeto }}</strong>
+                                          {% elif os.contrato.cod_projeto_id %}
+                                              <strong>Contrato #{{ os.contrato.cod_projeto_id }} - {{ os.contrato.cod_projeto.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
-                                      <a href="{% url 'detalhe_ordem_servico' os.id %}" class="btn btn-sm btn-outline-primary">
+                                      <a href="{% url 'detalhe_ordem_servico' os.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary">
                                           Ver
                                       </a>
                                   </li>
@@ -2080,12 +1904,10 @@
                                   {% for aditivo in aditivos_pendentes %}
                                   <li class="list-group-item d-flex justify-content-between align-items-center">
                                       <div>
-                                          <strong>Aditivo #{{ aditivo.id }}</strong><br>
-                                          <small>{{ aditivo.contrato.empresa_terceira }}</small><br>
-                                          <span class="badge bg-dark">Aditivo</span>
-                                          {% if aditivo.sla_display %}
-                                              <span class="badge {{ aditivo.sla_display.badge_class }}">{{ aditivo.sla_display.badge_label }}</span>
-                                              {% include 'gestao_contratos/_sla_hint_home.html' with sla=aditivo.sla_display %}
+                                          {% if aditivo.contrato.cod_projeto_id %}
+                                              <strong>Contrato #{{ aditivo.contrato.cod_projeto_id }} - {{ aditivo.contrato.cod_projeto.cod_projeto }}</strong>
+                                          {% else %}
+                                              <strong>Sem contrato vinculado</strong>
                                           {% endif %}
                                       </div>
                                       <a href="{% url 'detalhes_aditivo_contrato' aditivo.id %}" class="btn btn-sm btn-outline-primary">
@@ -2106,7 +1928,7 @@
                   <div class="col-md-6 mb-4 animated-card">
                       <div class="card shadow-sm dashboard-card">
                           <div class="card-header bg-success text-white">
-                              <h5 class="mb-0">Boletins Pendentes de Aprovação</h5>
+                              <h5 class="mb-0">Boletins Pendentes Aprovação de Pagamento</h5>
                           </div>
 
                           <div class="card-body">
@@ -2397,4 +2219,5 @@ document.addEventListener("DOMContentLoaded", function() {
     }, 5000);
 });
 </script>
+{% endif %}
 {% endblock %}

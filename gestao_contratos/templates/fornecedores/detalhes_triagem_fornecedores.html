@@ -105,6 +105,7 @@
     {% if request.user.grupo == "diretoria" and solicitacao.fornecedor_escolhido %}
     <form method="post" action="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}">
       {% csrf_token %}
+      <input type="hidden" name="next" value="{{ approval_next }}">
       <button type="submit" name="acao" value="aprovar" class="btn btn-success">
           Aprovar fornecedor
       </button>
@@ -165,6 +166,7 @@
     <div class="modal-content">
       <form method="post" action="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ approval_next }}">
         <div class="modal-header">
           <h5 class="modal-title">Reprovar Fornecedor</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

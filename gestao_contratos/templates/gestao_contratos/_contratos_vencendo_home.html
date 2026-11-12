@@ -36,7 +36,7 @@
                        class="btn btn-sm btn-outline-dark">
                         Ver Contrato
                     </a>
-                    {% if c.dias_para_vencer_home < 0 %}
+                    {% if c.dias_para_vencer_home < 0 and request.user.grupo == 'suprimento' %}
                         <form method="post" action="{% url 'ocultar_contrato_vencido_home' c.id %}">
                             {% csrf_token %}
                             <input type="hidden" name="next" value="{{ request.get_full_path }}">

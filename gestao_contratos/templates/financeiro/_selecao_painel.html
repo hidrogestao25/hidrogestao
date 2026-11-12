@@ -1,0 +1,9 @@
+{% if financial_selection %}
+<section class="card fin-section mb-4" aria-label="Seleção financeira da home">
+  <div class="card-body"><h2 class="h5">{{ financial_selection.title }}</h2><p class="small text-muted mb-0">{{ financial_selection.page_obj.paginator.count }} registros nos filtros selecionados. Lista completa paginada; os resumos das seis filas continuam abaixo.</p>
+    {% if financial_selection.key == 'atencao' %}<p class="small text-muted mt-2">Revisar o contexto e o histórico; nenhuma correção é automática. BMs e NFs têm listas separadas.</p><div class="d-flex gap-2 mt-2"><a class="btn btn-sm {% if financial_selection.kind == 'bm' %}btn-custom{% else %}btn-outline-secondary{% endif %}" href="{{ financial_selection.bm_url }}">BMs ({{ financial_selection.bm_count }})</a><a class="btn btn-sm {% if financial_selection.kind == 'nf' %}btn-custom{% else %}btn-outline-secondary{% endif %}" href="{{ financial_selection.nf_url }}">NFs ({{ financial_selection.nf_count }})</a></div>{% endif %}
+  </div>
+  {% include 'financeiro/_tabela.html' with rows=financial_selection.rows %}
+  {% include 'financeiro/_paginacao.html' with page_obj=financial_selection.page_obj pagination_query=financial_selection.pagination_query %}
+</section>
+{% endif %}

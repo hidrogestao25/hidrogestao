@@ -1,0 +1,30 @@
+{{ form.non_field_errors }}
+{% if nf %}<div class="alert alert-light border small" data-nf-context>NF {{ nf.numero_nf|default:'sem número' }} · #{{ nf.pk }} · {{ nf.contrato.empresa_terceira.nome }} · Contrato {{ nf.contrato.num_contrato }} · BM {{ nf.bm.numero_bm }} · Valor original: R$ {{ nf.valor_pago|floatformat:2 }}. Confira valor, autorização, data e comprovante antes de registrar pagamento.</div>{% endif %}
+{% if form.read_only %}
+  <div class="alert alert-info" role="status">{{ form.payment_notice }}</div>
+{% endif %}
+<fieldset>
+  <legend class="h6">Documento fiscal</legend>
+  {% for field in form %}
+    {% if field.name != 'financeiro_autorizou' and field.name != 'comprovante_pagamento' and field.name != 'justificativa_correcao' %}
+      <p>{{ field.label_tag }} {{ field }} {{ field.errors }}</p>
+    {% endif %}
+  {% endfor %}
+</fieldset>
+<fieldset class="mt-3">
+  <legend class="h6">Pagamento</legend>
+  {% if not form.read_only %}
+    <p role="status" data-nf-payment-notice>{{ form.payment_notice }}</p>
+  {% endif %}
+  <p>
+    {{ form.financeiro_autorizou }} {{ form.financeiro_autorizou.label_tag }}
+    {{ form.financeiro_autorizou.errors }}
+  </p>
+  <p>{{ form.comprovante_pagamento.label_tag }} {{ form.comprovante_pagamento }} {{ form.comprovante_pagamento.errors }}</p>
+  {% if not form.read_only %}<p>{{ form.justificativa_correcao.label_tag }} {{ form.justificativa_correcao }} {{ form.justificativa_correcao.errors }}</p>{% endif %}
+</fieldset>
+{{ form.payment_options|json_script }}
+{% if not form.read_only %}<div class="alert alert-warning mt-3" hidden tabindex="-1" role="group" aria-label="Confirmação do pagamento" data-nf-confirm-panel>
+<p class="fw-semibold">Confirmar que o pagamento foi realizado?</p><p class="small" data-nf-confirm-summary></p>
+<p class="small">Confira o resumo da NF e o comprovante. Após o registro, o Financeiro terá acesso somente de leitura.</p>
+<div class="d-flex flex-wrap gap-2"><button type="button" class="btn btn-success" data-nf-confirm-accept>Confirmar registro de pagamento</button><button type="button" class="btn btn-outline-secondary" data-nf-confirm-cancel>Voltar à revisão</button></div></div>{% endif %}

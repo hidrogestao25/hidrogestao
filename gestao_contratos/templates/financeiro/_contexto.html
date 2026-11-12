@@ -1,0 +1,5 @@
+<div class="small fin-context">
+  {% if row.contract %}<a href="{{ row.contract_url }}">Contrato {{ row.contract.num_contrato }}</a>{% else %}Contrato a conferir{% endif %}
+  · {{ row.project.cod_projeto|default:'Projeto não informado' }}
+  {% if row.origin_url %} · <a href="{{ row.origin_url }}">{{ row.origin_label }}</a>{% endif %}
+</div>

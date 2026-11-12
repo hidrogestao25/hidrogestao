@@ -1,0 +1,13 @@
+<div class="table-responsive fin-table-wrap" tabindex="0" role="region" aria-label="Lançamentos financeiros">
+<table class="table table-hover align-middle fin-table mb-0">
+  <thead><tr><th>Registro / contexto</th><th>Fornecedor</th><th class="text-end">Valor</th><th>Data</th><th>Situação</th><th>Ações</th></tr></thead>
+  <tbody>{% for row in rows %}<tr>
+    <td><a class="fw-semibold" href="{{ row.detail_url }}">{% if row.kind == 'bm' %}BM {{ row.number }} · participação #{{ row.id }}{% else %}{% if row.record.numero_nf %}NF {{ row.record.numero_nf }} · #{{ row.id }}{% else %}NF #{{ row.id }}{% endif %} · BM {{ row.number }}{% endif %}</a>{% include 'financeiro/_contexto.html' %}</td>
+    <td>{% if row.supplier %}<a href="{{ row.supplier_url }}">{{ row.supplier.nome }}</a>{% else %}A conferir{% endif %}</td>
+    <td class="text-end fin-money">R$ {{ row.value|floatformat:2 }}</td>
+    <td class="text-nowrap">{{ row.date|date:'d/m/Y'|default:'Não informada' }}{% if row.kind == 'bm' and row.authorized %}<div class="small text-muted">Autorizado {{ row.record.data_aprovacao_diretor|date:'d/m/Y'|default:'data não registrada' }}</div>{% endif %}</td>
+    <td>{% if row.kind == 'bm' %}<div class="small">Operacional: {{ row.operational }}</div><div class="small">Diretoria: {{ row.director }}</div>{% if not row.record.has_nf %}<div class="small text-muted">Sem NF vinculada</div>{% endif %}{% else %}<span class="badge {% if row.paid %}text-bg-success{% elif row.authorized %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ row.status }}</span>{% if row.paid %}<div class="small text-muted mt-1">{{ row.payment_actor }}</div>{% endif %}{% endif %}
+      {% for reason in row.reasons %}<div class="small text-warning-emphasis mt-1"><i class="bi bi-info-circle"></i> {{ reason }}</div>{% endfor %}
+    </td><td>{% include 'financeiro/_acoes.html' %}</td>
+  </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">Nenhum registro nesta fila para os filtros selecionados.</td></tr>{% endfor %}</tbody>
+</table></div>

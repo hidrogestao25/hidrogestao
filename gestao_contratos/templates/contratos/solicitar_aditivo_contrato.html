@@ -20,8 +20,9 @@
           {{ form.motivo }}
         </div>
         <div class="mb-3">
-          <label class="form-label" for="{{ form.novo_valor_total.id_for_label }}">Novo valor total</label>
+          <label class="form-label" for="{{ form.novo_valor_total.id_for_label }}">Valor do acréscimo</label>
           {{ form.novo_valor_total }}
+          <small class="text-muted">Este valor será somado ao valor atual do contrato. Deixe em branco para alterar somente o prazo.</small>
         </div>
         <div class="mb-3">
           <label class="form-label" for="{{ form.nova_data_fim.id_for_label }}">Nova data fim</label>

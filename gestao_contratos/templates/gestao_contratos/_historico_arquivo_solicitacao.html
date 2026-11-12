@@ -1,0 +1,14 @@
+<div class="card my-3">
+  <div class="card-body">
+    {% include 'gestao_contratos/_estado_arquivo_solicitacao.html' %}
+    {% if solicitacao.cancelada %}<p>Cancelada em {{ solicitacao.cancelada_em|date:"d/m/Y H:i"|default:"data não registrada" }} por {{ solicitacao.cancelada_por|default:"usuário não registrado" }}. Justificativa: {{ solicitacao.motivo_cancelamento|default:"Não informada" }}</p>{% endif %}
+    {% include 'gestao_contratos/_acoes_arquivo_solicitacao.html' %}
+    <details class="mt-3"><summary>Histórico de cancelamento e arquivamento</summary>
+      <ul class="list-group list-group-flush">
+        {% for evento in solicitacao.historico_arquivo %}
+          <li class="list-group-item text-break">{{ evento.data_hora|date:"d/m/Y H:i:s" }} · {{ evento.autor_nome|default:evento.usuario|default:"Usuário indisponível" }}<br>{{ evento.detalhes }}{% if evento.justificativa %}<br>{{ evento.justificativa }}{% endif %}</li>
+        {% empty %}<li class="list-group-item text-muted">Nenhuma operação registrada.</li>{% endfor %}
+      </ul>
+    </details>
+  </div>
+</div>

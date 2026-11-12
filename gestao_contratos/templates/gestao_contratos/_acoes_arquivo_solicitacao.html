@@ -1,0 +1,50 @@
+<div class="d-inline" onclick="event.stopPropagation();">
+  <a class="btn btn-sm btn-outline-primary" href="{{ solicitacao.url_detalhes }}">Visualizar</a>
+  {% if solicitacao.pode_arquivar %}
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#arquivar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}" title="Retira da listagem principal e preserva o status e os documentos.">Arquivar</button>
+    <div class="modal fade" id="arquivar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}" tabindex="-1" aria-labelledby="titulo-arquivar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}" aria-hidden="true">
+      <div class="modal-dialog"><div class="modal-content text-start">
+        <form method="post" action="{% url 'operar_solicitacao' solicitacao.tipo_arquivo solicitacao.id 'arquivar' %}" data-prevent-double-submit="true">
+          {% csrf_token %}
+          <input type="hidden" name="token" value="{{ solicitacao.token_operacao }}">
+          <input type="hidden" name="confirmar" value="on">
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <div class="modal-header"><h5 class="modal-title" id="titulo-arquivar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}">Arquivar solicitação</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+          <div class="modal-body">
+            <p>Confirma o arquivamento da solicitação #{{ solicitacao.id }}? Seu status, documentos e relacionamentos serão preservados.</p>
+            <label class="form-label" for="motivo-arquivar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}">Motivo (opcional)</label>
+            <textarea class="form-control" name="motivo" id="motivo-arquivar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}" rows="3" maxlength="10000"></textarea>
+          </div>
+          <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Voltar</button><button class="btn btn-primary" type="submit">Confirmar arquivamento</button></div>
+        </form>
+      </div></div>
+    </div>
+  {% endif %}
+  {% if solicitacao.pode_desarquivar %}
+    <form class="d-inline" method="post" action="{% url 'operar_solicitacao' solicitacao.tipo_arquivo solicitacao.id 'desarquivar' %}" data-prevent-double-submit="true" onsubmit="return confirm('Desarquivar esta solicitação? O status operacional será preservado.');">
+      {% csrf_token %}<input type="hidden" name="token" value="{{ solicitacao.token_operacao }}"><input type="hidden" name="confirmar" value="on"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button type="submit" class="btn btn-sm btn-outline-secondary" title="Devolve à listagem principal sem reativar solicitações canceladas.">Desarquivar</button>
+    </form>
+  {% endif %}
+  {% if solicitacao.pode_cancelar %}
+    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}">Cancelar</button>
+    <div class="modal fade" id="cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}" tabindex="-1" aria-labelledby="titulo-cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}" aria-hidden="true">
+      <div class="modal-dialog"><div class="modal-content text-start">
+        <form method="post" action="{% url 'operar_solicitacao' solicitacao.tipo_arquivo solicitacao.id 'cancelar' %}" data-prevent-double-submit="true">
+          {% csrf_token %}<input type="hidden" name="token" value="{{ solicitacao.token_operacao }}"><input type="hidden" name="confirmar" value="on"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <div class="modal-header"><h5 class="modal-title" id="titulo-cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}">Cancelar solicitação</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+          <div class="modal-body">
+            <p>Tem certeza de que deseja cancelar esta solicitação? O cancelamento encerrará seu fluxo operacional, conforme as regras do sistema.</p>
+            <label class="form-label" for="motivo-cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}">Justificativa do cancelamento</label>
+            <textarea class="form-control" name="motivo" id="motivo-cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}" rows="3" required maxlength="10000"></textarea>
+            {% if solicitacao.pode_arquivar %}
+              <div class="form-check mt-3"><input class="form-check-input" type="checkbox" name="arquivar" id="apos-cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}" checked aria-describedby="ajuda-cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}"><label class="form-check-label" for="apos-cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}">Arquivar esta solicitação após o cancelamento</label></div>
+              <p class="form-text" id="ajuda-cancelar-{{ solicitacao.tipo_arquivo }}-{{ solicitacao.id }}">{% if solicitacao.tipo_arquivo == 'os' %}A solicitação será cancelada e retirada da listagem principal, permanecendo disponível para consultas históricas.{% else %}A solicitação será retirada da listagem principal, mas permanecerá disponível para consulta no histórico de solicitações arquivadas.{% endif %}</p>
+            {% endif %}
+          </div>
+          <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Voltar</button><button class="btn btn-danger" type="submit" data-cancelar-label>{% if solicitacao.pode_arquivar %}Cancelar e arquivar{% else %}Cancelar{% endif %}</button></div>
+        </form>
+      </div></div>
+    </div>
+  {% endif %}
+</div>

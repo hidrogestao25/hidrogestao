@@ -121,7 +121,7 @@
           <tbody id="lista-bms-os">
             {% for item in boletins_detalhados %}
             <tr id="bm-row-{{ item.bm.id }}" class="{{ item.row_class }}">
-              <td>{{ item.bm.numero_bm }}</td>
+              <td><a href="{% url 'detalhe_bm_financeiro' item.bm.id %}?next={{ request.get_full_path|urlencode }}">{{ item.bm.numero_bm }}</a></td>
               <td>{{ item.bm.parcela_paga }}</td>
               <td>R$ {{ item.bm.valor_pago|floatformat:2 }}</td>
               <td>{{ item.bm.data_pagamento|date:"d/m/Y" }}</td>
@@ -163,11 +163,11 @@
               {% endif %}
 
               {% if item.bm.aprovacao_pagamento == "aprovado" %}
-              <td><span class="badge bg-success">Aprovado</span></td>
+              <td><span class="badge bg-success">Aprovado</span>{% include 'financeiro/_justificativa_aprovacao_bm.html' with bm=item.bm %}</td>
               {% elif item.bm.aprovacao_pagamento == "reprovado" %}
               <td><span class="badge bg-danger">Reprovado</span></td>
               {% else %}
-              <td><span class="badge bg-secondary">Pendente</span></td>
+              <td><span class="badge bg-secondary">Pendente</span>{% include 'financeiro/_decisao_pagamento_bm.html' with bm=item.bm can_decide=item.can_approve_pagamento %}</td>
               {% endif %}
 
               {% if tem_reprovacao_diretor %}
@@ -280,7 +280,7 @@
             <th>ID NF</th>
             <th>BM</th>
             <th>Parcela</th>
-            <th>Valor Pago</th>
+            <th>Valor da NF</th>
             <th>Data Pagamento</th>
             <th>Observacao</th>
             <th>Arquivo</th>
@@ -292,7 +292,7 @@
         <tbody>
           {% for nf in notas_fiscais %}
           <tr>
-            <td>{{ nf.id }}</td>
+            <td><a href="{% url 'detalhe_nf' nf.id %}?next={{ request.get_full_path|urlencode }}">{{ nf.id }}</a> <span class="badge {% if nf.financeiro_autorizou %}bg-success{% else %}bg-secondary{% endif %}">{% if nf.cancelada_em %}Cancelada{% else %}{{ nf.situacao_liquidacao }}{% endif %}</span></td>
             <td>{{ nf.bm.numero_bm|default:"-" }}</td>
             <td>{{ nf.parcela_paga }}</td>
             <td>R$ {{ nf.valor_pago|floatformat:2 }}</td>
@@ -316,15 +316,15 @@
                   data-bs-toggle="modal"
                   data-bs-target="#editarNFModal"
                 >
-                  Editar
+                  {% if request.user.grupo == 'financeiro' and nf.possui_pagamentos %}Consultar{% else %}Editar{% endif %}
                 </button>
-                {% if request.user.grupo == "suprimento" or request.user.grupo == "financeiro" %}
+                {% if request.user.grupo == "suprimento" or not nf.possui_historico_financeiro %}
                 <form
                   method="post"
                   action="{% url 'deletar_nf' nf.id %}"
                   onsubmit="return confirm('Tem certeza que deseja apagar esta NF?');"
                 >
-                  {% csrf_token %}
+                  {% csrf_token %}{% include 'nf/_justificativa_exclusao.html' %}
                   <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
                 </form>
                 {% endif %}
@@ -691,4 +691,5 @@ document.addEventListener("DOMContentLoaded", function() {
     <div class="mt-2">Processando...</div>
   </div>
 </div>
+{% include 'financeiro/_modal_decisao_pagamento_bm.html' %}
 {% endblock %}

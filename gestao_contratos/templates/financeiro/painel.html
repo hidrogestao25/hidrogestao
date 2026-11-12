@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% load static %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/financeiro.css' %}">{% endblock %}
+{% block content %}{% include 'financeiro/_painel_home.html' %}{% endblock %}
+{% block extra_js %}<script src="{% static 'js/financeiro.js' %}" defer></script><script src="{% static 'js/filtros_financeiro.js' %}" defer></script>{% endblock %}

@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% load custom_tags %}
 
 {% block content %}
 <div class="container mt-4">
@@ -26,12 +25,12 @@
         </p>
     {% endif %}
 
-    <h4>Status das aprovações</h4>
+    <h4>Avaliação da minuta</h4>
     <ul>
-        <li>Gerência de Contrato:
-            {% if bm.status_gerente == 'aprovado' %}
+        <li>Decisão da Gerência ou do Líder de Contrato:
+            {% if bm.status_avaliacao == 'aprovado' %}
                 <span class="badge bg-success">Aprovado</span>
-            {% elif bm.status_gerente == 'reprovado' %}
+            {% elif bm.status_avaliacao == 'reprovado' %}
                 <span class="badge bg-danger">Reprovado</span>
             {% else %}
                 <span class="badge bg-secondary">Pendente</span>
@@ -39,50 +38,25 @@
         </li>
     </ul>
 
-    {% if request.user.grupo == "lider_contrato" or request.user.grupo == "gerente_lider" and request.user|shares_center_with:solicitacao.coordenador %}
-        {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}
-            <form method="post">
-                {% csrf_token %}
-                <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
-                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarBMLider">Reprovar</button>
-            </form>
-        {% endif %}
-    {% endif %}
-
-    {% if can_act_as_gerente_contrato %}
-        {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}
+    {% if can_evaluate_bm %}
+        {% if bm.minuta_boletim and bm.status_avaliacao == 'pendente' %}
             <form method="post">
                 {% csrf_token %}
                 <button name="acao" value="aprovar" class="btn btn-success">Aprovar</button>
                 <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarBMGerente">Reprovar</button>
             </form>
+        {% elif bm.status_avaliacao == 'reprovado' %}
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarBMGerente">Reenviar reprovação</button>
+        {% elif can_resend_signed_files_notice %}
+            <form method="post">
+                {% csrf_token %}
+                <button name="acao" value="aprovar" class="btn btn-outline-primary">Reenviar aviso</button>
+            </form>
         {% endif %}
     {% endif %}
 </div>
 
-<div class="modal fade" id="modalReprovarBMLider" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <form method="post">
-        {% csrf_token %}
-        <input type="hidden" name="acao" value="reprovar">
-        <div class="modal-header">
-          <h5 class="modal-title">Reprovar minuta de BM</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-        </div>
-        <div class="modal-body">
-          <label for="justificativaBMLider" class="form-label">Justificativa da reprovacao</label>
-          <textarea class="form-control" id="justificativaBMLider" name="justificativa" rows="4" required></textarea>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button type="submit" class="btn btn-danger">Confirmar reprovacao</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-
+{% if can_evaluate_bm %}
 <div class="modal fade" id="modalReprovarBMGerente" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -105,4 +79,5 @@
     </div>
   </div>
 </div>
+{% endif %}
 {% endblock %}

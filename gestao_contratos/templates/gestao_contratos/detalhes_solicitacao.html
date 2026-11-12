@@ -1,11 +1,15 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block content %}
 {% load custom_tags %}
 {% load l10n %}
 
 <div class="container mt-4">
     <h2>Detalhes da Solicitação</h2>
+{% include 'gestao_contratos/_historico_arquivo_solicitacao.html' %}
 
+
+{% if not solicitacao.cancelada %}
 <div class="timeline">
     <!-- barra de progresso -->
      <div id="timeline-progress" class="timeline-progress"></div>
@@ -39,6 +43,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }, 200); // atraso pequeno para garantir a animação
 });
 </script>
+{% endif %}
 
 <!-- Dados gerais da solicitação -->
 <div class="card mb-3">
@@ -135,6 +140,8 @@ document.addEventListener("DOMContentLoaded", function() {
             As minutas foram aprovadas pela gerência de contrato, e a equipe de suprimento precisa anexar o contrato assinado.
           {% elif solicitacao.status == "Onboarding" %}
             As minutas foram ambas aprovadas e a equipe de suprimento está marcando uma reunião onboarding com todos os envolvidos.
+          {% elif solicitacao.cancelada %}
+            Solicitação cancelada. O fluxo operacional está encerrado.
           {% else %}
             ERRO DE STATUS
           {% endif %}
@@ -428,7 +435,7 @@ document.addEventListener("DOMContentLoaded", function() {
                           <td>{{ evento.descricao }}</td>
                           <td>{{ evento.data_prevista|date:"d/m/Y" }}</td>
                           <td>R$ {{ evento.valor_previsto|default:"-" }}</td>
-                          <td>
+                          <td>{% if not solicitacao.cancelada and not solicitacao.arquivada %}
                             {% if request.user.grupo in 'suprimento coordenador lider_contrato gerente gerente_contrato gerente_lider' %}
                                 <form method="post" action="{% url 'duplicar_evento' evento.id %}" class="d-inline" data-prevent-double-submit="true" onsubmit="return confirm('Deseja duplicar este evento?');">
                                    {% csrf_token %}
@@ -440,7 +447,7 @@ document.addEventListener("DOMContentLoaded", function() {
                                    Apagar
                                 </a>
                             {% endif %}
-                          </td>
+                          {% endif %}</td>
                       </tr>
                       {% endfor %}
                   </tbody>
@@ -448,7 +455,8 @@ document.addEventListener("DOMContentLoaded", function() {
           {% else %}
               <p><em>Nenhum evento cadastrado para esta solicitação.</em></p>
           {% endif %}
-          {% if request.user.grupo in 'suprimento gerente gerente_lider gerente_contrato' %}
+          {% if not solicitacao.cancelada and not solicitacao.arquivada %}
+{% if request.user.grupo in 'suprimento gerente gerente_lider gerente_contrato' %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
           {% elif request.user.grupo == 'coordenador' and solicitacao.status == "Solicitação de prospecção" %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
@@ -457,6 +465,7 @@ document.addEventListener("DOMContentLoaded", function() {
           {% elif request.user.grupo == 'coordenador' and solicitacao.aprovacao_fornecedor_gerente == "aprovado" %}
               <a href="{% url 'cadastrar_evento' solicitacao.id %}" class="btn btn-primary mt-2">Cadastrar Evento</a>
           {% endif %}
+{% endif %}
       </div>
   </div>
 
@@ -489,9 +498,10 @@ document.addEventListener("DOMContentLoaded", function() {
 
 <hr>
 
+{% if not solicitacao.cancelada and not solicitacao.arquivada %}
 {% if request.user.grupo == 'diretoria' %}
   {% if solicitacao.fornecedor_escolhido and solicitacao.aprovacao_fornecedor_diretor == 'pendente' %}
-      <a href="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}" class="btn btn-success mt-3">Avaliar Fornecedor</a>
+      <a href="{% url 'aprovar_fornecedor_diretor' solicitacao.id %}?next={{ approval_next|urlencode }}" class="btn btn-success mt-3">Avaliar Fornecedor</a>
   {% endif %}
   {% if solicitacao.aprovacao_fornecedor_diretor == 'reprovado'  %}
     <div class="card mb-3">
@@ -521,7 +531,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     {% if solicitacao.aprovado == None %}
         {% if eventos or solicitacao.guarda_chuva %}
-        <a href="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="btn btn-success mt-3">Aprovar</a>
+        <form method="post" action="{% url 'aprovar_solicitacao' solicitacao.id 'aprovar' %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-success mt-3">Aprovar</button></form>
         {% else %}
         <div class="alert alert-warning mt-3 mb-0">
           Cadastre ao menos um evento antes de aprovar esta solicitacao.
@@ -607,8 +617,8 @@ document.addEventListener("DOMContentLoaded", function() {
           {% endif %}
       {% endif %}
   {% endwith %}
-  {% if solicitacao.minuta_boletins_medicao %}
-      {% if solicitacao.minuta_boletins_medicao.status_gerente == 'pendente' %}
+  {% if solicitacao.minuta_boletins_medicao.minuta_boletim %}
+      {% if solicitacao.minuta_boletins_medicao.status_avaliacao == 'pendente' %}
           <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary mt-3">
               Avaliar Minuta BM
           </a>
@@ -620,6 +630,25 @@ document.addEventListener("DOMContentLoaded", function() {
   {% endif %}
 {% endif %}
 
+{% if request.user.grupo == 'diretoria' and can_act_as_gerente_contrato and solicitacao.minuta_boletins_medicao.minuta_boletim %}
+  {% if solicitacao.minuta_boletins_medicao.status_avaliacao == 'pendente' %}
+    <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary mt-3">Avaliar Minuta BM</a>
+  {% else %}
+    <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning mt-3">Revisar Minuta BM</a>
+  {% endif %}
+{% endif %}
+
+{% if solicitacao.lider_contrato == request.user and request.user.grupo == 'lider_contrato' or solicitacao.lider_contrato == request.user and request.user.grupo == 'gerente_lider' %}
+  {% if solicitacao.minuta_boletins_medicao.minuta_boletim %}
+    {% if solicitacao.minuta_boletins_medicao.status_avaliacao == 'pendente' %}
+      <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-primary mt-3">Avaliar Minuta BM</a>
+    {% else %}
+      <a href="{% url 'detalhe_bm' solicitacao.minuta_boletins_medicao.id %}" class="btn btn-warning mt-3">Revisar Minuta BM</a>
+    {% endif %}
+  {% endif %}
+{% endif %}
+
+{% endif %}
 <a href="javascript:history.back()"class="btn btn-secondary mt-3">Voltar</a>
 
 
@@ -647,4 +676,5 @@ document.addEventListener("DOMContentLoaded", function() {
   </div>
 </div>
 
+<script src="{% static 'js/solicitacoes_arquivo.js' %}" defer></script>
 {% endblock %}

@@ -1,8 +1,30 @@
 from django.urls import path
 from . import views
+from . import financial_views
+from . import payment_views
+from . import solicitacao_views
 from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, ContratoFornecedorCreateView, OSCreateView
 
 urlpatterns = [
+    path('solicitacoes/<str:tipo>/<int:pk>/estado/<str:operacao>/', solicitacao_views.operar_solicitacao, name='operar_solicitacao'),
+    path('notas-fiscais/<int:nf_id>/pagamentos/novo/',payment_views.invoice_action,{'action':'pagamento'},name='pagamento_nf'),
+    path('notas-fiscais/<int:nf_id>/programacao/',payment_views.invoice_action,{'action':'programacao'},name='programacao_nf'),
+    path('notas-fiscais/<int:nf_id>/acordos/',payment_views.invoice_action,{'action':'acordo'},name='acordo_nf'),
+    path('notas-fiscais/<int:nf_id>/pagamentos/<int:movement_id>/estorno/',payment_views.invoice_action,{'action':'estorno'},name='estorno_nf'),
+    path('financeiro/contas-a-pagar/',financial_views.contas_a_pagar,name='contas_a_pagar'),
+    path('financeiro/posicao-contratual/',financial_views.orcamento_financeiro,name='orcamento_financeiro'),
+    path('financeiro/planejamento-mensal/',financial_views.planejamento_mensal,name='planejamento_mensal'),
+    path('financeiro/relatorios/<str:kind>/',financial_views.relatorio_operacional,name='relatorio_operacional'),
+    path('financeiro/pagamentos/',payment_views.payment_list,name='pagamentos_financeiros'),
+    path('financeiro/conferencia/', views.conferencia_financeira, name='conferencia_financeira'),
+    path('financeiro/conferencia/exportar/', views.exportar_conferencia_financeira, name='exportar_conferencia_financeira'),
+    path('financeiro/historico/', views.historico_financeiro, name='historico_financeiro'),
+    path('financeiro/historico/<int:event_id>/<str:side>/<str:field>/', views.documento_historico_nf, name='documento_historico_nf'),
+    path('financeiro/painel/', views.painel_financeiro, name='painel_financeiro'),
+    path('financeiro/painel/opcoes-filtros/', views.opcoes_filtros_financeiros, name='opcoes_filtros_financeiros'),
+    path('financeiro/pendencias/', views.pendencias_financeiras, name='pendencias_financeiras'),
+    path('bms/<int:bm_id>/financeiro/', views.detalhe_bm_financeiro, name='detalhe_bm_financeiro'),
+    path('notas-fiscais/<int:nf_id>/', views.detalhe_nf, name='detalhe_nf'),
     path('guia-permissoes/', views.guia_permissoes, name='guia_permissoes'),
     path('indicadores-suprimento/', views.indicadores_suprimento, name='indicadores_suprimento'),
     path('contratos/', views.lista_contratos, name='lista_contratos'),
@@ -106,6 +128,7 @@ path('aditivos_fornecedor/eventos/<int:pk>/editar/', views.editar_evento_aditivo
 
     path("previsao-pagamentos/", views.previsao_pagamentos, name="previsao_pagamentos"),
     path('previsao-pagamentos/exportar/', views.exportar_previsao_pagamentos_excel, name='exportar_previsao_pagamentos_excel'),
+    path('previsao-pagamentos/bms/excel/', views.exportar_bms_previsao_excel, name='exportar_bms_previsao_excel'),
 
     path('download_bms_aprovados/', views.download_bms_aprovados, name='download_bms_aprovados'),
 
@@ -120,6 +143,7 @@ path('aditivos_fornecedor/eventos/<int:pk>/editar/', views.editar_evento_aditivo
     path('ordem-servico/<int:pk>/editar/', views.editar_ordem_servico, name='editar_ordem_servico'),
     path('ordem-servico/<int:pk>/lider/<str:acao>/', views.aprovar_os_lider, name='aprovar_os_lider'),
     path('ordem-servico/<int:pk>/upload-contrato/', views.upload_contrato_os, name='upload_contrato_os'),
+    path('ordem-servico/<int:pk>/regredir/', views.regredir_solicitacao_os, name='regredir_solicitacao_os'),
     path('ordem-servico/<int:pk>/gerar-docm/', views.gerar_os_docm, name='gerar_os_docm'),
     path('ordem-servico/<int:pk>/gerente-contrato/<str:acao>/', views.aprovar_os_gerente_contrato, name='aprovar_os_gerente_contrato'),
     path('ordem-servico/<int:pk>/diretoria/<str:acao>/', views.aprovar_os_diretoria, name='aprovar_os_diretoria'),

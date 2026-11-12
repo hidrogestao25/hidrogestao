@@ -2,6 +2,17 @@ from django import template
 
 register = template.Library()
 
+
+@register.simple_tag(takes_context=True)
+def solicitacao_query(context, **changes):
+    params = context["request"].GET.copy()
+    if "visualizacao" in changes:
+        for key in ("page", "page_c", "page_os", "page_ad"):
+            params.pop(key, None)
+    for key, value in changes.items():
+        params[key] = value
+    return "?" + params.urlencode()
+
 @register.filter
 def dict_get(d, key):
     return d.get(key)

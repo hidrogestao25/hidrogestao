@@ -10,12 +10,31 @@
       <p><strong>Setor de Atuação:</strong> {{ fornecedor.setor_de_atuacao }}</p>
       <p><strong>CPF/CNPJ:</strong> {{ fornecedor.cpf_cnpj }}</p>
       <p><strong>Endereço:</strong> {{ fornecedor.endereco }}</p>
+      <p><strong>Complemento / número:</strong> {{ fornecedor.complemento|default:"—" }} / {{ fornecedor.numero|default:"—" }}</p>
+      <p><strong>Bairro:</strong> {{ fornecedor.bairro|default:"—" }}</p>
+      <p><strong>Município / estado:</strong> {{ fornecedor.municipio|default:"—" }} / {{ fornecedor.estado|default:"—" }}</p>
+      <p><strong>CEP:</strong> {{ fornecedor.cep|default:"—" }}</p>
+      <p><strong>Guarda-chuva:</strong> {{ fornecedor.guarda_chuva|yesno:"Sim,Não" }}</p>
       <p><strong>Telefone:</strong> {{ fornecedor.telefone }}</p>
       <p><strong>E-mail:</strong> {{ fornecedor.email }}</p>
-      <p><strong>Informações bancárias:</strong> {{ fornecedor.informacoes_bancarias }}</p>
+      {% if bank_form %}
+        <form method="post" class="my-3">
+          {% csrf_token %}
+          {{ bank_form.non_field_errors }}
+          {{ bank_form.informacoes_bancarias.label_tag }}
+          {{ bank_form.informacoes_bancarias }}
+          {{ bank_form.informacoes_bancarias.errors }}
+          <button type="submit" class="btn btn-primary mt-2">Salvar dados bancários</button>
+        </form>
+      {% else %}
+        <p><strong>Informações bancárias:</strong> {{ fornecedor.informacoes_bancarias }}</p>
+      {% endif %}
       <p><strong>Ponto Focal:</strong> {{ fornecedor.ponto_focal }}</p>
       <p><strong>E-mail do Ponto Focal:</strong> {{ fornecedor.email_focal }}</p>
       <p><strong>Telefone do Ponto Focal:</strong> {{ fornecedor.telefone_focal }}</p>
+      <p><strong>Segundo ponto focal:</strong> {{ fornecedor.ponto_focal2|default:"—" }}</p>
+      <p><strong>E-mail do segundo ponto focal:</strong> {{ fornecedor.email_focal2|default:"—" }}</p>
+      <p><strong>Telefone do segundo ponto focal:</strong> {{ fornecedor.telefone_focal2|default:"—" }}</p>
       {% if fornecedor.observacao %}
         <p><strong>Observações do Fornecedor:</strong> {{ fornecedor.observacao }}</p>
       {% endif %}
@@ -205,9 +224,11 @@
               {% endif %}
               <td>{{ ordem.get_status_display }}</td>
               <td>
+                {% if ordem.arquivo_os %}
                 <a href="{{ ordem.arquivo_os.url }}" class="btn btn-sm btn-outline-primary">
                   Arquivo OS
                 </a>
+                {% else %}Sem arquivo{% endif %}
               </td>
             </tr>
           {% endfor %}

@@ -5,9 +5,29 @@ from django.contrib import messages
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
+from django.db import transaction
+from django.db.models.deletion import ProtectedError
+from django.core.exceptions import ValidationError
+from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_safe
+from . import financial_queries as fq
+from . import financial_reconciliation as fr
+from .permissions import (object_access, can_view_object, can_access_document, accessible_document_bms,
+                          INTERNAL_ROLES, can_change_nf, financeiro_read_only,
+                          bm_has_valid_operational_approval, PAID_NF_READ_ONLY_MESSAGE,
+                          can_read_os, can_write_os_scope)
+from .workflows import locked_action, sync_paid_total, lock_payment_origin, claim_once, audit_nf_deletion
+from .forms import parse_decimal_from_form_value, DadosBancariosFornecedorForm, FiltroFinanceiroForm
+from .forms import RenegociacaoValorForm, RenegociacaoPrazoForm, RevisaoProspeccaoForm
+from . import prospeccao_services as prospect_services
+from django.forms.models import model_to_dict
+from . import payment_queries as pq
+from .solicitacao_services import preparar_controles, proteger_fluxo_solicitacao, eventos_operacionais, pode_consultar
+import logging
+from smtplib import SMTPException
 from django.core.mail import EmailMultiAlternatives, send_mail as django_send_mail
 from django.core.paginator import Paginator
-from django.db.models import Sum, Q, DecimalField, Avg, Prefetch, Count, Max, Min, DateField, OuterRef, Subquery
+from django.db.models import Sum, Q, F, DecimalField, Avg, Prefetch, Count, Max, Min, DateField, OuterRef, Subquery
 from decimal import Decimal
 from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import render, redirect, get_object_or_404
@@ -22,16 +42,17 @@ from .forms import ContratoForm, ClienteForm, FornecedorForm, ContratoFornecedor
 import plotly.graph_objs as go
 import plotly.express as px
 import pandas as pd
-from plotly.offline import plot
+from plotly.offline import plot, get_plotlyjs_version
 import plotly.colors as pc
 
 import os
 import secrets
+import json
 from datetime import date
 import hashlib
 import zipfile
 import openpyxl
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, Http404
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, Reference, LineChart
@@ -39,10 +60,25 @@ from openpyxl.styles import Font
 from io import BytesIO
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
 User = get_user_model()
+
+
+def approval_return_url(request, fallback):
+    candidates = [request.POST.get("next"), request.GET.get("next")]
+    if request.method == "GET":
+        candidates.append(request.META.get("HTTP_REFERER"))
+    for candidate in candidates:
+        if candidate and url_has_allowed_host_and_scheme(
+            candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        ):
+            return candidate
+    return fallback
+
+
 FROM_EMAIL = settings.DEFAULT_FROM_EMAIL
 CONTRACT_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Contrato.docm"
 ADDENDUM_TEMPLATE_DOCM_PATH = Path(settings.MEDIA_ROOT) / "modelos_word" / "Modelo Aditivo.docm"
@@ -67,6 +103,20 @@ CONTRATACAO_STATUS_ORDER = [
     SIGNED_FILES_PENDING_STATUS,
     "Onboarding",
 ]
+OS_REQUEST_STATUS_ORDER = [
+    "solicitacao_os",
+    "pendente_gerente",
+    "pendente_diretoria",
+    "pendente_suprimento",
+    "pendente_minuta_gerente",
+]
+OS_REQUEST_STATUS_LABELS = {
+    "solicitacao_os": "Solicitação de OS",
+    "pendente_gerente": "Aprovação da Gerência",
+    "pendente_diretoria": "Aprovação da Diretoria",
+    "pendente_suprimento": "Minuta da OS",
+    "pendente_minuta_gerente": "Avaliação da Minuta",
+}
 DISABLE_DIRETORIA_EMAIL_NOTIFICATIONS = True
 DUPLICATE_SUBMISSION_MESSAGE = "Esta solicitacao ja foi enviada. Evitei criar uma duplicidade."
 
@@ -89,8 +139,16 @@ def _consume_submission_token(request, name):
     token = request.session.get(key)
     submitted_token = request.POST.get("submission_token")
     if not token and not submitted_token:
-        return True
+        # Compatibilidade com POSTs antigos sem token, com janela curta e
+        # chave por sessão/conteúdo para bloquear retries simultâneos.
+        if not request.session.session_key:
+            request.session.create()
+        payload = json.dumps(sorted((key, values) for key, values in request.POST.lists()), ensure_ascii=True)
+        files = json.dumps(sorted((key, upload.name, upload.size) for key, upload in request.FILES.items()), ensure_ascii=True)
+        return claim_once(f"legacy:{request.session.session_key}:{name}:{payload}:{files}", 10)
     if not token or not submitted_token or submitted_token != token:
+        return False
+    if not claim_once(f"token:{name}:{token}", 24 * 60 * 60):
         return False
     request.session.pop(key, None)
     request.session.modified = True
@@ -101,7 +159,7 @@ def _consume_recent_action(request, name, cooldown_seconds=10):
     if not request.session.session_key:
         request.session.create()
     key = f"recent_action:{request.session.session_key}:{name}"
-    return cache.add(key, timezone.now().timestamp(), cooldown_seconds)
+    return claim_once(key, cooldown_seconds)
 
 
 def _filter_directoria_email_recipients(recipient_list):
@@ -148,7 +206,15 @@ def send_mail(subject, message, from_email, recipient_list, *args, **kwargs):
     message = normalize_email_text(message)
     if kwargs.get("html_message"):
         kwargs["html_message"] = normalize_email_text(kwargs["html_message"])
-    return django_send_mail(subject, message, from_email, recipient_list, *args, **kwargs)
+    try:
+        return django_send_mail(subject, message, from_email, recipient_list, *args, **kwargs)
+    except (SMTPException, OSError):
+        logging.getLogger(__name__).warning("Falha no envio de notificação SMTP.")
+        from .middleware import get_current_request
+        current_request = get_current_request()
+        if current_request is not None:
+            messages.warning(current_request, "Registro salvo, mas a notificação por e-mail não foi enviada.")
+        return 0
 
 SLA_STAGE_DEFINITIONS = {
     "prospeccao": [
@@ -337,7 +403,7 @@ def notify_supply_about_signed_files_request(solicitacao):
     etapa_aprovada = (
         "A minuta do contrato já foi aprovada pela gerência de contrato.\n"
         if getattr(solicitacao, "guarda_chuva", False)
-        else "A minuta do contrato e a minuta do BM já foram aprovadas pela gerência de contrato.\n"
+        else "As minutas do contrato e do BM já foram aprovadas.\n"
     )
     mensagem = (
         "Olá, equipe de Suprimento!\n\n"
@@ -474,7 +540,7 @@ def update_signed_files_pending_status(solicitacao, bm=None, documento=None):
     if getattr(solicitacao, "guarda_chuva", False):
         fluxo_aprovado = solicitacao.aprovacao_gerencia is True
     else:
-        fluxo_aprovado = bool(bm and bm.status_gerente == "aprovado" and solicitacao.aprovacao_gerencia is True)
+        fluxo_aprovado = bool(bm and bm.aprovado and solicitacao.aprovacao_gerencia is True)
 
     if fluxo_aprovado:
         if documento.arquivo_contrato_assinado:
@@ -879,7 +945,7 @@ def build_latest_audit_map(model_class, object_ids):
     audits = RegistroAuditoria.objects.filter(
         content_type=content_type,
         object_id__in=object_ids,
-    ).order_by("object_id", "-data_hora")
+    ).exclude(detalhes__startswith="solicitacao:").order_by("object_id", "-data_hora")
 
     latest_audits = {}
     for audit in audits:
@@ -1512,6 +1578,8 @@ def build_request_sla_display(
     config_map=None,
     holiday_dates=None,
 ):
+    if getattr(objeto, "arquivada", False) or getattr(objeto, "cancelada", False):
+        return None
     stage = None
     if isinstance(objeto, SolicitacaoProspeccao):
         stage = get_open_sla_stage_for_prospeccao(objeto, prospeccao_audit_map or {})
@@ -1655,18 +1723,7 @@ def build_home_contracts_vencendo_queryset(queryset, limite_contrato):
     return contratos
 
 
-def get_valor_total_aditivado(aditivo, valor_base=None):
-    if not aditivo or aditivo.novo_valor_total is None:
-        return valor_base
-
-    valor_anterior = aditivo.valor_total_anterior
-    if valor_anterior is None:
-        valor_anterior = valor_base
-
-    if valor_anterior is None:
-        return aditivo.novo_valor_total
-
-    return valor_anterior + aditivo.novo_valor_total
+get_valor_total_aditivado = fr.get_valor_total_aditivado
 
 
 def get_valor_contrato_sem_aditivos(contrato, aditivos_queryset):
@@ -1683,6 +1740,8 @@ def get_valor_contrato_sem_aditivos(contrato, aditivos_queryset):
 
 @login_required
 def ocultar_contrato_vencido_home(request, pk):
+    if request.user.grupo != "suprimento":
+        return JsonResponse({"success": False, "error": "Somente Suprimento pode ocultar este alerta compartilhado."}, status=403)
     if request.method != "POST":
         return redirect("home")
 
@@ -1703,14 +1762,14 @@ def ocultar_contrato_vencido_home(request, pk):
 
 
 def build_supply_retrabalho_queryset():
-    retrabalho_prospeccao = SolicitacaoProspeccao.objects.filter(
+    retrabalho_prospeccao = SolicitacaoProspeccao.objects.operacionais().filter(
         Q(solicitacao_origem__isnull=False)
         | Q(nenhum_fornecedor_ideal=True)
         | Q(aprovacao_fornecedor_gerente="reprovado")
         | Q(aprovacao_fornecedor_diretor="reprovado")
         | Q(reprovacao_gerencia=True)
     )
-    retrabalho_contratacao = SolicitacaoContrato.objects.filter(
+    retrabalho_contratacao = SolicitacaoContrato.objects.operacionais().filter(
         Q(aprovacao_fornecedor_gerente="reprovado")
         | Q(aprovacao_fornecedor_diretor="reprovado")
         | Q(reprovacao_gerencia=True)
@@ -1807,7 +1866,7 @@ def build_supply_user_indicator_rows(
                 row["concluidas"] += 1
                 if lead_time_days is not None:
                     row["lead_times"].append(lead_time_days)
-            else:
+            elif not solicitacao.arquivada and not solicitacao.cancelada:
                 row["em_aberto"] += 1
 
             if retrabalho:
@@ -1969,9 +2028,7 @@ def calculate_contract_payment_totals(contracts):
         )
         valor_total += valor_planejado if valor_planejado > Decimal("0.00") else (contract.valor_total or Decimal("0.00"))
 
-    valor_pago_eventos = eventos.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
-    valor_pago_os = ordens.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
-    valor_pago = (valor_pago_eventos or Decimal("0.00")) + (valor_pago_os or Decimal("0.00"))
+    valor_pago = pq.cash_total(NF.objects.filter(contrato_id__in=contract_ids))
     valor_previsto = valor_total - valor_pago
     if valor_previsto < Decimal("0.00"):
         valor_previsto = Decimal("0.00")
@@ -2004,9 +2061,7 @@ def calculate_annual_contract_execution_totals(contracts, year):
     valor_planejado_eventos = eventos.aggregate(total=Coalesce(Sum("valor_previsto"), Decimal("0.00")))["total"]
     valor_planejado_os = ordens.aggregate(total=Coalesce(Sum("valor"), Decimal("0.00")))["total"]
     valor_planejado = (valor_planejado_eventos or Decimal("0.00")) + (valor_planejado_os or Decimal("0.00"))
-    valor_executado_eventos = eventos.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
-    valor_executado_os = ordens.aggregate(total=Coalesce(Sum("valor_pago"), Decimal("0.00")))["total"]
-    valor_executado = (valor_executado_eventos or Decimal("0.00")) + (valor_executado_os or Decimal("0.00"))
+    valor_executado = pq.cash_total(NF.objects.filter(contrato_id__in=contract_ids),date(year,1,1),date(year,12,31))
     percentual_executado = round((valor_executado / valor_planejado) * Decimal("100"), 1) if valor_planejado else 0.0
 
     return {
@@ -2529,9 +2584,9 @@ def indicadores_suprimento(request):
     media_prazo_geral = average_days_from_pairs(prospeccao_pairs + contratacao_pairs)
 
     backlog_status_excluded = ["Onboarding", "Reprovada pelo suprimento"]
-    backlog_prospeccao = solicitacoes_prospeccao.exclude(status__in=backlog_status_excluded)
-    backlog_contratacao = solicitacoes_contratacao.exclude(status__in=backlog_status_excluded)
-    backlog_os = SolicitacaoOrdemServico.objects.exclude(status__in=["aprovada", "reprovada", "finalizada"])
+    backlog_prospeccao = solicitacoes_prospeccao.operacionais().exclude(status__in=backlog_status_excluded)
+    backlog_contratacao = solicitacoes_contratacao.operacionais().exclude(status__in=backlog_status_excluded)
+    backlog_os = SolicitacaoOrdemServico.objects.operacionais().exclude(status__in=["aprovada", "reprovada", "finalizada"])
     backlog_guarda_chuva = backlog_prospeccao.filter(guarda_chuva=True).count() + backlog_contratacao.filter(guarda_chuva=True).count()
     backlog_total = backlog_prospeccao.count() + backlog_contratacao.count() + backlog_os.count()
 
@@ -2902,7 +2957,8 @@ def build_weekly_supply_report(user):
     ]
 
     pending_requests = [
-        (tipo, s) for tipo, s in previous_week_requests if not is_request_concluded(s)
+        (tipo, s) for tipo, s in previous_week_requests
+        if not is_request_concluded(s) and not s.arquivada and not s.cancelada
     ]
 
     all_pending_requests = []
@@ -2910,19 +2966,19 @@ def build_weekly_supply_report(user):
     for tipo, queryset in [
         (
             "Prospecção",
-            SolicitacaoProspeccao.objects.exclude(
+            SolicitacaoProspeccao.objects.operacionais().exclude(
                 status__in=excluded_supply_rejected_statuses
             ).order_by("data_solicitacao"),
         ),
         (
             "Contratação",
-            SolicitacaoContrato.objects.exclude(
+            SolicitacaoContrato.objects.operacionais().exclude(
                 status__in=excluded_supply_rejected_statuses
             ).order_by("data_solicitacao"),
         ),
         (
             "Ordem de Serviço",
-            SolicitacaoOrdemServico.objects.all().order_by("criado_em"),
+            SolicitacaoOrdemServico.objects.operacionais().order_by("criado_em"),
         ),
     ]:
         for solicitacao in queryset:
@@ -2951,7 +3007,7 @@ def build_weekly_supply_report(user):
         )
     ).order_by("data_entrega")
 
-    eventos_previstos_semana_atual = Evento.objects.filter(
+    eventos_previstos_semana_atual = eventos_operacionais().filter(
         data_prevista__range=(
             weeks["current_week_start"],
             weeks["current_week_end"],
@@ -2965,7 +3021,7 @@ def build_weekly_supply_report(user):
         ),
     ).exclude(status="encerrado").order_by("data_fim")
 
-    eventos_previstos_proxima_semana = Evento.objects.filter(
+    eventos_previstos_proxima_semana = eventos_operacionais().filter(
         data_prevista__range=(
             weeks["next_week_start"],
             weeks["next_week_end"],
@@ -2979,7 +3035,7 @@ def build_weekly_supply_report(user):
         ),
     ).exclude(status="encerrado").order_by("data_fim")
 
-    eventos_previstos_nao_entregues = Evento.objects.filter(
+    eventos_previstos_nao_entregues = eventos_operacionais().filter(
         data_prevista__lt=today,
     ).filter(
         Q(realizado=False) | Q(data_entrega__isnull=True)
@@ -3440,7 +3496,7 @@ def can_user_view_event_delivery_details(user, contrato):
 
 
 def can_user_manage_os_delivery(user, os):
-    if not user or not os:
+    if not can_write_os_scope(user, os):
         return False
     if user.grupo == "lider_contrato":
         return user == os.lider_contrato
@@ -3464,7 +3520,7 @@ def can_user_manage_bm_operational_approval(user, bm):
 
 
 def can_user_request_contract_addendum(user, contrato):
-    if not user or not contrato:
+    if not user or not contrato or contrato.status == "encerrado":
         return False
     if getattr(contrato, "guarda_chuva", False):
         return user.grupo in ["lider_contrato", "gerente_lider"] or user_has_gerente_contrato_role(user)
@@ -3492,6 +3548,8 @@ def can_user_adjust_rejected_contract_request(user, solicitacao):
     return bool(
         user
         and solicitacao
+        and not solicitacao.cancelada
+        and not solicitacao.arquivada
         and contract_request_supplier_rejected(solicitacao)
         and solicitacao.lider_contrato_id == user.pk
     )
@@ -3509,6 +3567,7 @@ def can_requester_edit_active_request(user, solicitacao):
     status_order = get_request_status_order(solicitacao)
     return bool(
         _user_matches_requester(user, solicitacao)
+        and can_view_object(user, solicitacao)
         and solicitacao.status in status_order
         and solicitacao.status != "Onboarding"
     )
@@ -3518,6 +3577,10 @@ def can_user_edit_contract_request(user, solicitacao):
     return bool(
         user
         and solicitacao
+        and not solicitacao.cancelada
+        and not solicitacao.arquivada
+        and solicitacao.status != "Onboarding"
+        and not ContratoTerceiros.objects.filter(solicitacao=solicitacao).exists()
         and (
             user.grupo == "suprimento"
             or can_user_adjust_rejected_contract_request(user, solicitacao)
@@ -3531,6 +3594,8 @@ def can_supply_regress_request(user, solicitacao):
         user
         and solicitacao
         and user.grupo == "suprimento"
+        and not solicitacao.cancelada
+        and not solicitacao.arquivada
     )
 
 
@@ -3548,6 +3613,9 @@ def get_regression_options_for_request(user, solicitacao):
     status_order = get_request_status_order(solicitacao)
     if solicitacao.status not in status_order:
         return []
+    relation = {"prospeccao": solicitacao} if isinstance(solicitacao, SolicitacaoProspeccao) else {"solicitacao": solicitacao}
+    if ContratoTerceiros.objects.filter(**relation).exists():
+        return []
     current_index = status_order.index(solicitacao.status)
     return [
         {"status": status, "label": status}
@@ -3559,6 +3627,7 @@ def can_supply_regress_request_to_status(user, solicitacao, target_status):
     status_order = get_request_status_order(solicitacao)
     if (
         not can_supply_regress_request(user, solicitacao)
+        or ContratoTerceiros.objects.filter(**({"prospeccao": solicitacao} if isinstance(solicitacao, SolicitacaoProspeccao) else {"solicitacao": solicitacao})).exists()
         or solicitacao.status not in status_order
         or target_status not in status_order
     ):
@@ -3575,12 +3644,130 @@ def can_supply_regress_supplier_approval(user, solicitacao):
     return can_supply_regress_request_to_status(user, solicitacao, target_status)
 
 
+def can_supply_regress_os_request(user, os_request):
+    return bool(
+        user
+        and os_request
+        and not os_request.cancelada
+        and not os_request.arquivada
+        and user.grupo == "suprimento"
+        and os_request.status in OS_REQUEST_STATUS_ORDER
+    )
+
+
+def get_os_regression_options_for_request(user, os_request):
+    if not can_supply_regress_os_request(user, os_request):
+        return []
+    current_index = OS_REQUEST_STATUS_ORDER.index(os_request.status)
+    return [
+        {"status": status, "label": OS_REQUEST_STATUS_LABELS.get(status, status)}
+        for status in OS_REQUEST_STATUS_ORDER[:current_index]
+    ]
+
+
+def can_supply_regress_os_request_to_status(user, os_request, target_status):
+    if (
+        not can_supply_regress_os_request(user, os_request)
+        or target_status not in OS_REQUEST_STATUS_ORDER
+    ):
+        return False
+    return OS_REQUEST_STATUS_ORDER.index(target_status) < OS_REQUEST_STATUS_ORDER.index(os_request.status)
+
+
+def _os_stage_owner_label(target_status):
+    if target_status == "solicitacao_os":
+        return "Solicitante"
+    if target_status == "pendente_gerente":
+        return "Gerência de Contrato"
+    if target_status == "pendente_diretoria":
+        return "Diretoria"
+    if target_status == "pendente_suprimento":
+        return "Suprimento"
+    if target_status == "pendente_minuta_gerente":
+        return "Gerência de Contrato"
+    return "responsável"
+
+
+def _os_stage_recipients(os_request, target_status):
+    if target_status == "solicitacao_os":
+        return [_safe_user_email(os_request.solicitante)]
+    if target_status in ["pendente_gerente", "pendente_minuta_gerente"]:
+        return list(_group_emails(*get_gerente_contrato_action_groups()))
+    if target_status == "pendente_diretoria":
+        return list(_group_emails("diretoria"))
+    if target_status == "pendente_suprimento":
+        return list(_group_emails("suprimento"))
+    return []
+
+
+def apply_os_request_regression(os_request, target_status):
+    os_request.status = target_status
+
+    if target_status in ["solicitacao_os", "pendente_gerente"]:
+        os_request.aprovacao_gerente = "pendente"
+        os_request.aprovado_gerente_em = None
+        os_request.justificativa_reprovacao_gerente = None
+        os_request.aprovacao_diretor = "pendente"
+        os_request.aprovado_diretor_em = None
+        os_request.justificativa_reprovacao_diretor = None
+        os_request.arquivo_os = None
+    elif target_status == "pendente_diretoria":
+        os_request.aprovacao_gerente = "aprovado"
+        os_request.justificativa_reprovacao_gerente = None
+        if not os_request.aprovado_gerente_em:
+            os_request.aprovado_gerente_em = timezone.now()
+        os_request.aprovacao_diretor = "pendente"
+        os_request.aprovado_diretor_em = None
+        os_request.justificativa_reprovacao_diretor = None
+        os_request.arquivo_os = None
+    elif target_status == "pendente_suprimento":
+        os_request.aprovacao_gerente = "aprovado"
+        os_request.justificativa_reprovacao_gerente = None
+        if not os_request.aprovado_gerente_em:
+            os_request.aprovado_gerente_em = timezone.now()
+        os_request.aprovacao_diretor = "aprovado"
+        os_request.justificativa_reprovacao_diretor = None
+        if not os_request.aprovado_diretor_em:
+            os_request.aprovado_diretor_em = timezone.now()
+
+    os_request.save(
+        update_fields=[
+            "status",
+            "aprovacao_gerente",
+            "aprovado_gerente_em",
+            "justificativa_reprovacao_gerente",
+            "aprovacao_diretor",
+            "aprovado_diretor_em",
+            "justificativa_reprovacao_diretor",
+            "arquivo_os",
+        ]
+    )
+
+
+def _notify_os_request_regression(os_request, usuario, target_status):
+    nome_usuario = usuario.get_full_name() or usuario.username
+    target_label = OS_REQUEST_STATUS_LABELS.get(target_status, target_status)
+    owner_label = _os_stage_owner_label(target_status)
+    assunto = f"Solicitação de OS #{os_request.id} voltou para {target_label}"
+    mensagem = (
+        f"Olá,\n\n"
+        f"A solicitação de OS #{os_request.id} foi regredida por {nome_usuario} "
+        f"para a etapa {target_label}.\n\n"
+        f"Título: {os_request.titulo or '-'}\n"
+        f"Fornecedor: {os_request.contrato.empresa_terceira if os_request.contrato_id else '-'}\n"
+        f"Descrição: {os_request.descricao or '-'}\n\n"
+        f"A próxima ação está com: {owner_label}.\n"
+        "https://hidrogestao.pythonanywhere.com/"
+    )
+    _send_stage_return_notification(assunto, mensagem, _os_stage_recipients(os_request, target_status))
+
+
 def can_user_view_addendum(user, aditivo):
     if not user or not aditivo:
         return False
     if user == aditivo.solicitado_por:
         return True
-    if user.grupo in ["suprimento", "diretoria"] or user_has_gerente_contrato_role(user):
+    if user.grupo in ["suprimento", "diretoria", "financeiro"] or user_has_gerente_contrato_role(user):
         return True
     if user.grupo == "lider_contrato":
         return user == aditivo.contrato.referencia_lider_contrato or user == aditivo.solicitado_por
@@ -3590,14 +3777,20 @@ def can_user_view_addendum(user, aditivo):
 
 
 def can_user_approve_addendum_request_as_gerente(user, aditivo):
+    if not aditivo or aditivo.cancelada or aditivo.arquivada:
+        return False
     return bool(user and aditivo and user.grupo == "gerente_contrato" and aditivo.status_gerente == "pendente")
 
 
 def can_user_approve_addendum_request_as_diretoria(user, aditivo):
+    if not aditivo or aditivo.cancelada or aditivo.arquivada:
+        return False
     return bool(user and aditivo and user.grupo == "diretoria" and aditivo.status_diretoria == "pendente")
 
 
 def can_user_upload_addendum_draft(user, aditivo):
+    if not aditivo or aditivo.cancelada or aditivo.arquivada:
+        return False
     return bool(
         user
         and aditivo
@@ -3609,6 +3802,8 @@ def can_user_upload_addendum_draft(user, aditivo):
 
 
 def can_user_approve_addendum_draft(user, aditivo):
+    if not aditivo or aditivo.cancelada or aditivo.arquivada:
+        return False
     return bool(
         user
         and aditivo
@@ -3620,6 +3815,8 @@ def can_user_approve_addendum_draft(user, aditivo):
 
 
 def can_user_upload_signed_addendum(user, aditivo):
+    if not aditivo or aditivo.cancelada or aditivo.arquivada:
+        return False
     return bool(
         user
         and aditivo
@@ -3630,6 +3827,8 @@ def can_user_upload_signed_addendum(user, aditivo):
 
 
 def can_user_manage_addendum_events(user, aditivo):
+    if not aditivo or aditivo.cancelada or aditivo.arquivada:
+        return False
     if not user or not aditivo or aditivo.aprovado_totalmente:
         return False
     if user.grupo == "suprimento":
@@ -3684,13 +3883,20 @@ def get_visible_addendums_for_user(user):
     )
     if not user:
         return queryset.none()
-    if user.grupo in ["suprimento", "diretoria"] or user_has_gerente_contrato_role(user):
+    if user.grupo in ["suprimento", "diretoria", "financeiro"] or user_has_gerente_contrato_role(user):
         return queryset
+    proprio = Q(solicitado_por=user)
+    referencia_projeto = Q(contrato__guarda_chuva=True, contrato__cod_projeto__isnull=False)
     if user.grupo == "lider_contrato":
-        return queryset.filter(Q(contrato__lider_contrato=user) | Q(solicitado_por=user)).distinct()
+        return queryset.filter(proprio | (referencia_projeto & Q(contrato__cod_projeto__lider_contrato=user)) |
+                               (~referencia_projeto & Q(contrato__lider_contrato=user))).distinct()
     if user.grupo == "gerente_lider":
-        return queryset.filter(contrato__coordenadores__centros__in=user.centros.all()).distinct()
-    return queryset.none()
+        centros = user.centros.all()
+        return queryset.filter(proprio | Q(contrato__coordenador__centros__in=centros) |
+            (referencia_projeto & (Q(contrato__cod_projeto__coordenador__centros__in=centros) |
+                                  Q(contrato__cod_projeto__coordenadores__centros__in=centros))) |
+            (~referencia_projeto & Q(contrato__coordenadores__centros__in=centros))).distinct()
+    return queryset.filter(proprio)
 
 
 def bm_operational_approval_query():
@@ -3702,14 +3908,108 @@ def bm_operational_approval_query():
 
 
 def bm_has_operational_approval(bm):
-    return (
-        bm.status_coordenador == "aprovado"
-        or bm.status_gerente == "aprovado"
-    ) and bm.status_coordenador != "reprovado" and bm.status_gerente != "reprovado"
+    return bm_has_valid_operational_approval(bm)
 
 
 def document_bm_has_draft(documento_bm):
     return bool(documento_bm and documento_bm.minuta_boletim)
+
+
+def notify_bm_approvers_about_draft(solicitacao):
+    recipients = _group_emails(*get_gerente_contrato_action_groups())
+    lider_email = _safe_user_email(solicitacao.lider_contrato)
+    if lider_email:
+        recipients.append(lider_email)
+    _send_stage_return_notification(
+        f"Solicitação #{solicitacao.pk} - Minuta de BM para avaliação",
+        (
+            f"Olá,\n\nA equipe de Suprimentos enviou a minuta do BM da solicitação "
+            f"#{solicitacao.pk} para avaliação da Gerência ou do Líder de Contrato.\n\n"
+            "Acesse o sistema HIDROGestão para avaliar a minuta.\n"
+            "https://hidrogestao.pythonanywhere.com/"
+        ),
+        recipients,
+    )
+
+
+def can_user_evaluate_documento_bm(user, solicitacao):
+    return user_has_gerente_contrato_role(user) or (
+        user.grupo in ("lider_contrato", "gerente_lider")
+        and solicitacao.lider_contrato_id == user.pk
+    )
+
+
+def evaluate_documento_bm(request, bm, solicitacao, detail_name, acao=None):
+    if not can_user_evaluate_documento_bm(request.user, solicitacao):
+        messages.error(request, "Você não tem permissão para avaliar esta minuta do BM.")
+        return redirect(detail_name, pk=bm.pk)
+    if not bm.minuta_boletim:
+        messages.error(request, "Envie a minuta do BM antes da avaliação.")
+        return redirect(detail_name, pk=bm.pk)
+
+    acao = acao or request.POST.get("acao")
+    if acao not in ("aprovar", "reprovar"):
+        messages.error(request, "Ação inválida.")
+        return redirect(detail_name, pk=bm.pk)
+
+    justificativa = request.POST.get("justificativa", "").strip()
+    if acao == "reprovar" and not justificativa:
+        messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
+        return redirect(detail_name, pk=bm.pk)
+
+    already_evaluated = bm.status_avaliacao != "pendente"
+    if already_evaluated and bm.status_avaliacao != ("aprovado" if acao == "aprovar" else "reprovado"):
+        messages.warning(request, "Esta minuta do BM já foi avaliada com outra decisão.")
+        return redirect(detail_name, pk=bm.pk)
+
+    if not already_evaluated:
+        if user_has_gerente_contrato_role(request.user):
+            bm.status_gerente = "aprovado" if acao == "aprovar" else "reprovado"
+            bm.data_aprovacao_gerente = timezone.now()
+            update_fields = ["status_gerente", "data_aprovacao_gerente", "atualizado_em"]
+        else:
+            bm.status_coordenador = "aprovado" if acao == "aprovar" else "reprovado"
+            bm.data_aprovacao_coordenador = timezone.now()
+            update_fields = ["status_coordenador", "data_aprovacao_coordenador", "atualizado_em"]
+        bm.save(update_fields=update_fields)
+
+    if acao == "reprovar":
+        if not already_evaluated:
+            solicitacao.status = "Planejamento do Contrato"
+            solicitacao.save(update_fields=["status"])
+        try:
+            _send_stage_return_notification(
+                f"Solicitação #{solicitacao.pk} - Minuta de BM reprovada",
+                (
+                    f"Olá, equipe de Suprimentos!\n\n"
+                    f"A minuta do BM da solicitação #{solicitacao.pk} foi reprovada.\n\n"
+                    f"Justificativa: {justificativa}\n\n"
+                    "Revise a minuta e reenvie-a para avaliação.\n"
+                    "https://hidrogestao.pythonanywhere.com/"
+                ),
+                _group_emails("suprimento"),
+            )
+        except Exception as exc:
+            messages.warning(request, f"Erro ao enviar e-mail para Suprimentos: {exc}")
+        messages.warning(request, "Minuta do BM reprovada. Suprimentos foi informado.")
+    else:
+        if already_evaluated:
+            if solicitacao.status == SIGNED_FILES_PENDING_STATUS:
+                notify_supply_about_signed_files_request(solicitacao)
+        else:
+            if bm.solicitacao_id:
+                criar_contrato_se_aprovado(solicitacao)
+            else:
+                criar_contrato_se_aprovado_minuta(solicitacao)
+        messages.success(request, "Minuta do BM aprovada pelo responsável.")
+    return redirect("lista_solicitacoes")
+
+
+def request_can_plan_contract(solicitacao):
+    return solicitacao.status in {
+        "Fornecedor aprovado", "Planejamento do Contrato", "Planejamento do contrato",
+        "Aprovação Final", SIGNED_FILES_PENDING_STATUS,
+    } and not contract_request_supplier_rejected(solicitacao)
 
 
 def document_contract_has_draft(documento_contrato):
@@ -3721,9 +4021,10 @@ def user_can_approve_bm_payment(user, bm):
         user
         and bm
         and user.grupo == "diretoria"
+        and bm.aprovacao_pagamento == "pendente"
         and (
             bm_has_operational_approval(bm)
-            or (user_can_cover_gerente_contrato(user) and bm.status_gerente == "pendente")
+            or (user_can_cover_gerente_contrato(user) and bm.status_gerente == "pendente" and bm.status_coordenador != "reprovado")
         )
     )
 
@@ -3732,17 +4033,22 @@ def bm_is_operationally_pending(bm):
     return bm.status_coordenador == "pendente" and bm.status_gerente == "pendente"
 
 
-def user_has_evaluated_bm_event(user, bm):
-    if not user or not bm or not bm.evento_id:
+def bm_event_has_evaluation(bm):
+    """A avaliação é única por Evento, compartilhada pelos BMs dessa entrega.
+
+    A autorização do aprovador é verificada separadamente em avaliar_bm.
+    Exigir a autoria do usuário atual bloquearia outro responsável autorizado,
+    pois avaliar_evento_fornecedor impede avaliar novamente o mesmo Evento.
+    """
+    if not bm or not bm.evento_id:
         return False
     return AvaliacaoFornecedor.objects.filter(
-        evento=bm.evento,
-        avaliador=user,
+        evento_id=bm.evento_id,
     ).exists()
 
 
 def filter_payment_events_for_user(user, filtros_base):
-    if user.grupo in ["suprimento", "diretoria", "financeiro"]:
+    if user.grupo in ["suprimento", "diretoria", "financeiro", "gerente_contrato"]:
         return Evento.objects.filter(filtros_base, contrato_terceiro__isnull=False)
     if user.grupo in ["gerente", "gerente_lider"]:
         return Evento.objects.filter(
@@ -3760,17 +4066,6 @@ def filter_payment_events_for_user(user, filtros_base):
                 contrato_terceiro__cod_projeto__coordenadores__centros__in=user.centros.all(),
             )
         ).distinct()
-    if user and user.grupo == "gerente_contrato":
-        return Evento.objects.filter(
-            filtros_base,
-            contrato_terceiro__isnull=False,
-        ).filter(
-            Q(contrato_terceiro__lider_contrato=user)
-            | Q(
-                contrato_terceiro__guarda_chuva=True,
-                contrato_terceiro__cod_projeto__lider_contrato=user,
-            )
-        ).distinct()
     if user_can_cover_gerente_contrato(user):
         return Evento.objects.filter(
             filtros_base,
@@ -3786,22 +4081,12 @@ def filter_payment_events_for_user(user, filtros_base):
 
 
 def filter_payment_os_for_user(user, filtros_os):
-    if user.grupo in ["suprimento", "diretoria", "financeiro"]:
+    if user.grupo in ["suprimento", "diretoria", "financeiro", "gerente_contrato"]:
         return OS.objects.filter(filtros_os)
     if user.grupo in ["gerente", "gerente_lider"]:
         return OS.objects.filter(
             filtros_os,
             coordenador__centros__in=user.centros.all(),
-        ).distinct()
-    if user and user.grupo == "gerente_contrato":
-        return OS.objects.filter(
-            filtros_os,
-        ).filter(
-            Q(lider_contrato=user)
-            | Q(
-                contrato__guarda_chuva=True,
-                contrato__cod_projeto__lider_contrato=user,
-            )
         ).distinct()
     if user_can_cover_gerente_contrato(user):
         return OS.objects.filter(
@@ -3817,45 +4102,22 @@ def filter_payment_os_for_user(user, filtros_os):
 
 
 def filter_payment_bms_for_user(user, queryset):
-    if user.grupo in ["suprimento", "diretoria", "financeiro"]:
-        return queryset
-    if user.grupo in ["gerente", "gerente_lider"]:
-        return queryset.filter(
-            Q(contrato__coordenador__centros__in=user.centros.all())
-            | Q(contrato__coordenadores__centros__in=user.centros.all())
-            | Q(os__coordenador__centros__in=user.centros.all())
-            | Q(os__cod_projeto__coordenador__centros__in=user.centros.all())
-            | Q(os__cod_projeto__coordenadores__centros__in=user.centros.all())
-            | Q(
-                contrato__guarda_chuva=True,
-                contrato__cod_projeto__coordenador__centros__in=user.centros.all(),
-            )
-            | Q(
-                contrato__guarda_chuva=True,
-                contrato__cod_projeto__coordenadores__centros__in=user.centros.all(),
-            )
-        ).distinct()
-    if user and user.grupo == "gerente_contrato":
-        return queryset.filter(
-            Q(contrato__lider_contrato=user)
-            | Q(os__lider_contrato=user)
-            | Q(os__cod_projeto__lider_contrato=user)
-            | Q(
-                contrato__guarda_chuva=True,
-                contrato__cod_projeto__lider_contrato=user,
-            )
-        ).distinct()
-    if user_can_cover_gerente_contrato(user):
-        return queryset.filter(
-            Q(contrato__lider_contrato__grupo__in=["lider_contrato", "gerente_lider", "gerente_contrato"])
-            | Q(os__lider_contrato__grupo__in=["lider_contrato", "gerente_lider", "gerente_contrato"])
-            | Q(os__cod_projeto__lider_contrato__grupo__in=["lider_contrato", "gerente_lider", "gerente_contrato"])
-            | Q(
-                contrato__guarda_chuva=True,
-                contrato__cod_projeto__lider_contrato__grupo__in=["lider_contrato", "gerente_lider", "gerente_contrato"],
-            )
-        ).distinct()
-    return queryset.none()
+    return accessible_document_bms(user, queryset)
+
+
+def bm_financial_coordinator_query(coordinator):
+    """O filtro financeiro segue Evento/OS, inclusive no BM compartilhado."""
+    return (
+        Q(evento__contrato_terceiro__coordenador=coordinator)
+        | Q(evento__contrato_terceiro__coordenadores=coordinator)
+        | Q(evento__contrato_terceiro__cod_projeto__coordenador=coordinator)
+        | Q(evento__contrato_terceiro__cod_projeto__coordenadores=coordinator)
+        | Q(os__coordenador=coordinator)
+        | Q(os__cod_projeto__coordenador=coordinator)
+        | Q(os__cod_projeto__coordenadores=coordinator)
+        | (Q(evento__isnull=True, os__isnull=True) & (
+            Q(contrato__coordenador=coordinator) | Q(contrato__coordenadores=coordinator)))
+    )
 
 
 class ContratoCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
@@ -3918,15 +4180,9 @@ class ContratoFornecedorCreateView(LoginRequiredMixin, UserPassesTestMixin, Crea
         return redirect('home')
 
     def form_valid(self, form):
-        print("==== DEBUG FORM_VALID ====")
-        print("Arquivos recebidos:", self.request.FILES)
-        print("Campos POST:", self.request.POST)
 
         response = super().form_valid(form)
 
-        print("Objeto salvo:", self.object)
-        print("Arquivo salvo:", self.object.num_contrato_arquivo)
-        print("==========================")
 
         return response
 
@@ -3936,6 +4192,16 @@ class OSCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
     form_class = OrdemServicoForm
     template_name = 'forms/os_form.html'
     success_url = reverse_lazy('lista_ordens_servico')
+
+    def get_form_kwargs(self):
+        return {**super().get_form_kwargs(), "user": self.request.user}
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs),
+                "cancel_url": approval_return_url(self.request, str(self.success_url))}
+
+    def get_success_url(self):
+        return approval_return_url(self.request, str(self.success_url))
 
     def test_func(self):
         # só permite se for grupo suprimento
@@ -3947,6 +4213,7 @@ class OSCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
 
 
 @login_required
+@locked_action(OS, sqlite_immediate=True)
 def editar_os_cadastrada(request, pk):
     if request.user.grupo != "suprimento":
         messages.error(request, "Você não tem permissão para isso.")
@@ -3959,7 +4226,7 @@ def editar_os_cadastrada(request, pk):
         if form.is_valid():
             form.save()
             messages.success(request, "OS atualizada com sucesso.")
-            return redirect("detalhes_os", pk=os.pk)
+            return redirect(approval_return_url(request, reverse("detalhes_os", kwargs={"pk": os.pk})))
     else:
         form = OrdemServicoForm(instance=os, user=request.user)
 
@@ -3969,7 +4236,7 @@ def editar_os_cadastrada(request, pk):
         {
             "form": form,
             "is_editing_os": True,
-            "cancel_url": reverse("detalhes_os", kwargs={"pk": os.pk}),
+            "cancel_url": approval_return_url(request, reverse("detalhes_os", kwargs={"pk": os.pk})),
         },
     )
 
@@ -4020,7 +4287,8 @@ def home(request):
     is_diretoria = grupo == "diretoria"
     is_financeiro = grupo == "financeiro"
     is_lider = grupo == "lider_contrato"
-    is_gerente_contrato = grupo == "gerente_contrato" or user_can_cover_gerente_contrato(user)
+    can_cover_gerente_contrato = user_can_cover_gerente_contrato(user)
+    is_gerente_contrato = grupo == "gerente_contrato"
 
     context = {
         "is_suprimento": is_suprimento,
@@ -4030,12 +4298,13 @@ def home(request):
         "is_gerente_lider": is_gerente_lider,
         "is_gerente_contrato":is_gerente_contrato,
         "is_diretoria": is_diretoria,
-        "is_financeiro": is_financeiro
+        "is_financeiro": is_financeiro,
+        "can_cover_gerente_contrato": can_cover_gerente_contrato,
     }
 
     # ==================== SUPRIMENTO ====================
     if is_suprimento:
-        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.operacionais().exclude(status="Onboarding").filter(
             Q(aprovado__isnull=True)
             | (Q(aprovado=True) & Q(triagem_realizada=False))
             | (Q(aprovado=True) & Q(triagem_realizada=True) & Q(fornecedor_escolhido__isnull=True))
@@ -4043,17 +4312,17 @@ def home(request):
             | Q(status__in=["Fornecedor aprovado", "Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS])
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
-        solicitacoes_contratos = SolicitacaoContrato.objects.filter(
+        solicitacoes_contratos = SolicitacaoContrato.objects.operacionais().exclude(status="Onboarding").filter(
             Q(aprovacao_fornecedor_gerente="aprovado")
             | Q(aprovacao_fornecedor_diretor="aprovado")
             | Q(status__in=["Planejamento do Contrato", SIGNED_FILES_PENDING_STATUS])
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
-        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+        solicitacoes_os = SolicitacaoOrdemServico.objects.operacionais().filter(
             status="pendente_suprimento"
         ).distinct()
 
-        aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
+        aditivos_pendentes = AditivoContratoTerceiro.objects.operacionais().filter(
             Q(status_gerente="aprovado", status_diretoria="aprovado", arquivo_aditivo__isnull=True)
             | Q(status_gerente="aprovado", status_diretoria="aprovado", arquivo_aditivo="")
             | Q(status_lider="reprovado")
@@ -4128,7 +4397,7 @@ def home(request):
             "prazo_execucao",
         )
 
-        eventos_proximos = Evento.objects.filter(
+        eventos_proximos = eventos_operacionais().filter(
             data_prevista__gte=hoje,
             data_prevista__lte=limite,
             data_entrega__isnull=True,
@@ -4139,7 +4408,7 @@ def home(request):
         ).order_by("data_prevista")
 
         # Entregas atrasadas (todas)
-        entregas_atrasadas = Evento.objects.filter(
+        entregas_atrasadas = eventos_operacionais().filter(
             data_prevista__lt=hoje,
             data_entrega__isnull=True,
             contrato_terceiro__isnull=False
@@ -4148,7 +4417,7 @@ def home(request):
             "empresa_terceira"
         ).order_by("data_prevista")
 
-        eventos_para_avaliar = Evento.objects.filter(
+        eventos_para_avaliar = eventos_operacionais().filter(
             data_entrega__isnull=False,
             contrato_terceiro__isnull=False
         ).annotate(
@@ -4201,19 +4470,19 @@ def home(request):
 
     # ==================== COORDENADOR ====================
     elif is_coordenador:
-        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.operacionais().exclude(status="Onboarding").filter(
             coordenador=user
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
-        solicitacoes_contrato = SolicitacaoContrato.objects.filter(
+        solicitacoes_contrato = SolicitacaoContrato.objects.operacionais().exclude(status="Onboarding").filter(
             coordenador=user
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
-        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+        solicitacoes_os = SolicitacaoOrdemServico.objects.operacionais().filter(
             coordenador=user
         ).exclude(status__in=["finalizada","reprovada"]).distinct()
 
-        eventos_atrasados = Evento.objects.filter(
+        eventos_atrasados = eventos_operacionais().filter(
             contrato_terceiro__coordenador=user,
             data_prevista__lt=hoje,
             realizado=False,
@@ -4225,13 +4494,13 @@ def home(request):
 
         bms_pendentes = BM.objects.none()
 
-        eventos_proximos = Evento.objects.filter(
+        eventos_proximos = eventos_operacionais().filter(
             data_prevista__range=[hoje, limite],
             realizado=False,
             contrato_terceiro__coordenador=user
         ).order_by("data_prevista")
 
-        eventos_para_avaliar = Evento.objects.filter(
+        eventos_para_avaliar = eventos_operacionais().filter(
             contrato_terceiro__coordenador=user,
             realizado=True,
             avaliacoes__isnull=True
@@ -4277,17 +4546,17 @@ def home(request):
     # ==================== LIDER DE CONTRATO ==========
 
     elif is_lider:
-        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.operacionais().exclude(status="Onboarding").filter(
             lider_contrato=user
         ).filter(
             Q(status="Solicitação de prospecção") |
             Q(triagem_realizada=True, status="Triagem realizada")
         ).distinct()
-        solicitacoes_contrato = SolicitacaoContrato.objects.filter(
+        solicitacoes_contrato = SolicitacaoContrato.objects.operacionais().exclude(status="Onboarding").filter(
             lider_contrato=user,
             status="Solicitação de contratação"
         ).distinct()
-        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+        solicitacoes_os = SolicitacaoOrdemServico.objects.operacionais().filter(
             solicitante=user
         ).exclude(status__in=["aprovada", "reprovada", "finalizada"]).distinct()
 
@@ -4306,7 +4575,7 @@ def home(request):
             "os",
         ).order_by("-data_pagamento").distinct()
 
-        eventos_proximos = Evento.objects.filter(
+        eventos_proximos = eventos_operacionais().filter(
             data_prevista__gte=hoje,
             data_prevista__lte=limite,
             data_entrega__isnull=True,
@@ -4318,7 +4587,7 @@ def home(request):
         ).order_by("data_prevista")
 
         # Entregas atrasadas
-        entregas_atrasadas = Evento.objects.filter(
+        entregas_atrasadas = eventos_operacionais().filter(
             data_prevista__lt=hoje,
             data_entrega__isnull=True,
             contrato_terceiro__isnull=False,
@@ -4328,7 +4597,7 @@ def home(request):
             "empresa_terceira"
         ).order_by("data_prevista")
 
-        eventos_para_avaliar = Evento.objects.filter(
+        eventos_para_avaliar = eventos_operacionais().filter(
             realizado=True,
             avaliacoes__isnull=True,
             contrato_terceiro__isnull=False,
@@ -4377,15 +4646,15 @@ def home(request):
         centros_gerente = getattr(user, "centros", None)
         centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []
 
-        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.operacionais().exclude(status="Onboarding").filter(
             coordenador__centros__in=centros_ids
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
-        solicitacoes_contratos = SolicitacaoContrato.objects.filter(
+        solicitacoes_contratos = SolicitacaoContrato.objects.operacionais().exclude(status="Onboarding").filter(
             coordenador__centros__in=centros_ids
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
-        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+        solicitacoes_os = SolicitacaoOrdemServico.objects.operacionais().filter(
             coordenador__centros__in=centros_ids
         ).exclude(status__in=["finalizada","reprovada"]).distinct()
 
@@ -4395,13 +4664,13 @@ def home(request):
             status_gerente="pendente"
         ).select_related("contrato", "contrato__empresa_terceira").order_by("-data_pagamento")
 
-        eventos_proximos = Evento.objects.filter(
+        eventos_proximos = eventos_operacionais().filter(
             data_prevista__range=[hoje, limite],
             realizado=False,
             contrato_terceiro__coordenador__centros__in=centros_ids
         ).order_by("data_prevista").distinct()
 
-        eventos_para_avaliar = Evento.objects.filter(
+        eventos_para_avaliar = eventos_operacionais().filter(
             contrato_terceiro__coordenador__centros__in=centros_ids,
             realizado=True,
             avaliacoes__isnull=True
@@ -4430,7 +4699,7 @@ def home(request):
         )
 
         # Entregas atrasadas dos centros do gerente
-        eventos_atrasados = Evento.objects.filter(
+        eventos_atrasados = eventos_operacionais().filter(
             contrato_terceiro__coordenador__centros__in=centros_ids,
             data_prevista__lt=hoje,
             realizado=False,
@@ -4465,15 +4734,15 @@ def home(request):
             | Q(lider_contrato=user)
         )
 
-        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.operacionais().exclude(status="Onboarding").filter(
             Q(coordenador__centros__in=centros_ids) | Q(lider_contrato=user)
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
-        solicitacoes_contratos = SolicitacaoContrato.objects.filter(
+        solicitacoes_contratos = SolicitacaoContrato.objects.operacionais().exclude(status="Onboarding").filter(
             Q(coordenador__centros__in=centros_ids) | Q(lider_contrato=user)
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
 
-        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+        solicitacoes_os = SolicitacaoOrdemServico.objects.operacionais().filter(
             Q(coordenador__centros__in=centros_ids) | Q(lider_contrato=user)
         ).exclude(status__in=["finalizada","reprovada"]).distinct()
 
@@ -4490,7 +4759,7 @@ def home(request):
             "contrato__empresa_terceira"
         ).order_by("-data_pagamento").distinct()
 
-        eventos_proximos = Evento.objects.filter(
+        eventos_proximos = eventos_operacionais().filter(
             data_prevista__range=[hoje, limite],
             realizado=False,
             contrato_terceiro__isnull=False,
@@ -4500,7 +4769,7 @@ def home(request):
             | Q(contrato_terceiro__lider_contrato=user)
         ).order_by("data_prevista").distinct()
 
-        eventos_para_avaliar = Evento.objects.filter(
+        eventos_para_avaliar = eventos_operacionais().filter(
             realizado=True,
             avaliacoes__isnull=True,
             contrato_terceiro__isnull=False,
@@ -4533,7 +4802,7 @@ def home(request):
         )
 
         # Entregas atrasadas dos centros do gerente
-        entregas_atrasadas = Evento.objects.filter(
+        entregas_atrasadas = eventos_operacionais().filter(
             data_prevista__lt=hoje,
             data_entrega__isnull=True,
             contrato_terceiro__isnull=False,
@@ -4565,14 +4834,14 @@ def home(request):
         """centros_gerente = getattr(user, "centros", None)
         centros_ids = centros_gerente.values_list("id", flat=True) if centros_gerente else []"""
 
-        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.operacionais().exclude(status="Onboarding").filter(
             lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"]
         ).filter(
             Q(status="Solicitação de prospecção") |
             Q(triagem_realizada=True, status="Triagem realizada") |
             Q(status__in=["Aprovação Final", "Fornecedor selecionado"])
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
-        solicitacoes_contrato = SolicitacaoContrato.objects.filter(
+        solicitacoes_contrato = SolicitacaoContrato.objects.operacionais().exclude(status="Onboarding").filter(
             lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"]
         ).filter(
             Q(status="Solicitação de contratação")
@@ -4582,12 +4851,12 @@ def home(request):
                 & Q(minuta_contrato__arquivo_contrato__isnull=False)
             )
         ).exclude(status__in=excluded_pending_request_statuses).distinct()
-        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+        solicitacoes_os = SolicitacaoOrdemServico.objects.operacionais().filter(
             lider_contrato__grupo__in=["lider_contrato", "gerente_contrato", "gerente_lider"],
             status__in=["pendente_gerente", "pendente_diretoria", "pendente_minuta_gerente"]
         ).distinct()
 
-        aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
+        aditivos_pendentes = AditivoContratoTerceiro.objects.operacionais().filter(
             Q(status_gerente="pendente")
             | (
                 Q(status_gerente="aprovado")
@@ -4602,7 +4871,7 @@ def home(request):
             "solicitado_por",
         ).distinct()
 
-        eventos_proximos = Evento.objects.filter(
+        eventos_proximos = eventos_operacionais().filter(
             data_prevista__gte=hoje,
             data_prevista__lte=limite,
             data_entrega__isnull=True,
@@ -4614,7 +4883,7 @@ def home(request):
         ).order_by("data_prevista")
 
         # Entregas atrasadas
-        entregas_atrasadas = Evento.objects.filter(
+        entregas_atrasadas = eventos_operacionais().filter(
             data_prevista__lt=hoje,
             data_entrega__isnull=True,
             contrato_terceiro__isnull=False,
@@ -4680,26 +4949,26 @@ def home(request):
     # ==================== DIRETORIA ====================
     elif is_diretoria:
 
-        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.filter(
+        solicitacoes_prospeccao = SolicitacaoProspeccao.objects.operacionais().exclude(status="Onboarding").filter(
             Q(aprovacao_fornecedor_diretor="pendente")
-        ).exclude(status__in=excluded_pending_request_statuses).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses)
 
-        solicitacoes_contratos = SolicitacaoContrato.objects.filter(
+        solicitacoes_contratos = SolicitacaoContrato.objects.operacionais().exclude(status="Onboarding").filter(
             Q(aprovacao_fornecedor_diretor="pendente")
-        ).exclude(status__in=excluded_pending_request_statuses).distinct()
+        ).exclude(status__in=excluded_pending_request_statuses)
 
-        solicitacoes_os = SolicitacaoOrdemServico.objects.filter(
+        solicitacoes_os = SolicitacaoOrdemServico.objects.operacionais().filter(
             status__in=["pendente_gerente", "pendente_diretoria"],
             aprovacao_diretor="pendente",
-        ).distinct()
+        )
 
-        aditivos_pendentes = AditivoContratoTerceiro.objects.filter(
+        aditivos_pendentes = AditivoContratoTerceiro.objects.operacionais().filter(
             status_diretoria="pendente"
         ).select_related(
             "contrato",
             "contrato__empresa_terceira",
             "solicitado_por",
-        ).distinct()
+        )
 
         # BM aprovados por Coordenador e Gerente mas pendentes na Diretoria
         bm_diretoria_pending_query = bm_operational_approval_query()
@@ -4718,7 +4987,7 @@ def home(request):
         ).order_by("-data_pagamento").distinct()
 
         # Entregas atrasadas (todas)
-        entregas_atrasadas = Evento.objects.filter(
+        entregas_atrasadas = eventos_operacionais().filter(
             data_prevista__lt=hoje,
             data_entrega__isnull=True,
             contrato_terceiro__isnull=False
@@ -4733,7 +5002,7 @@ def home(request):
         )
 
         # PrÃ³ximas entregas (10 dias)
-        eventos_proximos = Evento.objects.filter(
+        eventos_proximos = eventos_operacionais().filter(
             data_prevista__gte=hoje,
             data_prevista__lte=limite,
             data_entrega__isnull=True,
@@ -4753,27 +5022,27 @@ def home(request):
         if user_can_cover_gerente_contrato(user):
             solicitacoes_prospeccao = (
                 solicitacoes_prospeccao
-                | SolicitacaoProspeccao.objects.filter(
+                | SolicitacaoProspeccao.objects.operacionais().exclude(status="Onboarding").filter(
                     Q(aprovacao_fornecedor_gerente="pendente")
                     | Q(status="Aprovação Final")
                 ).exclude(status__in=excluded_pending_request_statuses)
             ).distinct()
             solicitacoes_contratos = (
                 solicitacoes_contratos
-                | SolicitacaoContrato.objects.filter(
+                | SolicitacaoContrato.objects.operacionais().exclude(status="Onboarding").filter(
                     Q(aprovacao_fornecedor_gerente="pendente")
                     | Q(status="Aprovação Final")
                 ).exclude(status__in=excluded_pending_request_statuses)
             ).distinct()
             solicitacoes_os = (
                 solicitacoes_os
-                | SolicitacaoOrdemServico.objects.filter(
+                | SolicitacaoOrdemServico.objects.operacionais().filter(
                     status__in=["pendente_gerente", "pendente_minuta_gerente"]
                 )
             ).distinct()
             aditivos_pendentes = (
                 aditivos_pendentes
-                | AditivoContratoTerceiro.objects.filter(
+                | AditivoContratoTerceiro.objects.operacionais().filter(
                     Q(status_gerente="pendente") | Q(status_lider="pendente")
                 ).select_related(
                     "contrato",
@@ -4781,6 +5050,11 @@ def home(request):
                     "solicitado_por",
                 )
             ).distinct()
+
+        solicitacoes_prospeccao = solicitacoes_prospeccao.distinct()
+        solicitacoes_contratos = solicitacoes_contratos.distinct()
+        solicitacoes_os = solicitacoes_os.distinct()
+        aditivos_pendentes = aditivos_pendentes.distinct()
 
         attach_home_sla_displays(solicitacoes_prospeccao, solicitacoes_contratos, solicitacoes_os, aditivos_pendentes)
         solicitacoes_prospeccao = sort_home_items_by_sla_priority(solicitacoes_prospeccao)
@@ -4806,56 +5080,7 @@ def home(request):
 
     # ==================== FINANCEIRO ====================
     elif is_financeiro:
-        bms_pendentes = BM.objects.filter(
-            Q(status_coordenador="pendente", status_gerente="pendente")
-            | Q(aprovacao_pagamento="pendente", status_coordenador="aprovado")
-            | Q(aprovacao_pagamento="pendente", status_gerente="aprovado")
-        ).exclude(
-            Q(status_coordenador="reprovado") | Q(status_gerente="reprovado")
-        ).select_related(
-            "contrato",
-            "contrato__empresa_terceira"
-        ).order_by("-data_pagamento").distinct()
-
-        eventos_sem_nf = Evento.objects.filter(
-            boletins_medicao__aprovacao_pagamento="aprovado",
-            nota_fiscal__isnull=True,
-        ).filter(
-            Q(boletins_medicao__status_coordenador="aprovado")
-            | Q(boletins_medicao__status_gerente="aprovado")
-        ).select_related(
-            "contrato_terceiro",
-            "contrato_terceiro__empresa_terceira",
-            "empresa_terceira",
-        ).annotate(
-            ultima_data_pagamento_bm=Max("boletins_medicao__data_pagamento")
-        ).order_by("-ultima_data_pagamento_bm").distinct()
-
-        eventos_proximos = Evento.objects.filter(
-            data_prevista__range=[hoje, limite]
-        ).order_by("data_prevista")
-
-        bms_pendentes = attach_bm_home_sla_displays(bms_pendentes)
-        bms_pendentes = sorted(
-            bms_pendentes,
-            key=lambda bm: (
-                -(
-                    bm.sla_display.get("dias_uteis_decorridos", 0)
-                    if isinstance(getattr(bm, "sla_display", None), dict)
-                    else 0
-                ),
-                bm.pk,
-            ),
-        )
-
-        context.update({
-            "painel_titulo": "Painel do Financeiro",
-            "bms_pendentes": bms_pendentes,
-            "eventos_sem_nf": eventos_sem_nf,
-            "eventos_proximos": eventos_proximos,
-            "is_financeiro": is_financeiro,
-
-        })
+        context.update(build_financial_home_context(request))
 
 
     return render(request, "home.html", context)
@@ -5260,6 +5485,7 @@ def cadastrar_nf_cliente(request, pk):
 
 
 @login_required
+@object_access(Contrato)
 def contrato_cliente_detalhe(request, pk):
     contrato = get_object_or_404(Contrato, pk=pk)
 
@@ -5268,21 +5494,19 @@ def contrato_cliente_detalhe(request, pk):
 
     total_contrato = contrato.valor_total or 0
 
-    # --- Criar DataFrame para segmentação por fornecedor ---
-    df = pd.DataFrame(list(eventos.values(
-        'empresa_terceira__nome',
-        'valor_previsto',
-        'valor_pago'
-    )))
-
-    if df.empty:
-        resumo = pd.DataFrame(columns=['empresa_terceira__nome', 'valor_previsto', 'valor_pago'])
-        total_previsto = total_pago = 0
-    else:
-        df = df.fillna(0)
-        resumo = df.groupby('empresa_terceira__nome')[['valor_previsto', 'valor_pago']].sum().reset_index()
-        total_previsto = resumo['valor_previsto'].sum()
-        total_pago = resumo['valor_pago'].sum()
+    # Planejamento por origem; caixa por movimentos e contrato financeiro da NF.
+    suppliers={}
+    for name,amount in eventos.values_list('empresa_terceira__nome','valor_previsto'):
+        suppliers.setdefault(name or 'Sem fornecedor',[Decimal('0'),Decimal('0')])[0]+=amount or Decimal('0')
+    for name,amount in OS.objects.filter(cod_projeto=contrato).values_list('contrato__empresa_terceira__nome','valor'):
+        suppliers.setdefault(name or 'Sem fornecedor',[Decimal('0'),Decimal('0')])[0]+=amount or Decimal('0')
+    from .models import PagamentoNF
+    project_nfs = fq.financial_nfs().filter(finance_project_id=contrato.pk)
+    for row in PagamentoNF.objects.filter(nf_id__in=project_nfs.values('pk')).values('nf__contrato__empresa_terceira__nome').annotate(total=Sum(pq.signed_cents())):
+        suppliers.setdefault(row['nf__contrato__empresa_terceira__nome'] or 'Sem fornecedor',[Decimal('0'),Decimal('0')])[1]+=pq.money(row['total'])
+    resumo=pd.DataFrame([(name,*amounts) for name,amounts in suppliers.items()],columns=['empresa_terceira__nome','valor_previsto','valor_pago'])
+    total_previsto=sum((v[0] for v in suppliers.values()),Decimal('0'))
+    total_pago=sum((v[1] for v in suppliers.values()),Decimal('0'))
 
     # ---- Calcular percentuais ----
     if total_contrato > 0:
@@ -5481,6 +5705,7 @@ def editar_nf_cliente(request, pk):
 
 
 @login_required
+@require_POST
 def excluir_nf_cliente(request, pk):
     nf = get_object_or_404(NFCliente, pk=pk)
 
@@ -5496,6 +5721,7 @@ def excluir_nf_cliente(request, pk):
 
 
 @login_required
+@object_access(ContratoTerceiros)
 def contrato_fornecedor_detalhe(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
     fornecedor = contrato.empresa_terceira
@@ -5504,7 +5730,7 @@ def contrato_fornecedor_detalhe(request, pk):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
-    indicadores_geral, _ = Indicadores.objects.get_or_create(empresa_terceira=fornecedor)
+    indicadores_geral = Indicadores(empresa_terceira=fornecedor)
     indicadores_contrato = contrato
     contratos_fornecedor = ContratoTerceiros.objects.filter(
         empresa_terceira=contrato.empresa_terceira,
@@ -5534,7 +5760,7 @@ def contrato_fornecedor_detalhe(request, pk):
         (
             item
             for item in aditivos
-            if not item.aprovado_totalmente and not item.solicitacao_reprovada_por_alguem
+            if not item.cancelada and not item.aprovado_totalmente and not item.solicitacao_reprovada_por_alguem
         ),
         None,
     )
@@ -5558,63 +5784,31 @@ def contrato_fornecedor_detalhe(request, pk):
     total_eventos_previstos = eventos.aggregate(total=Sum("valor_previsto"))["total"] or Decimal("0.00")
     exibir_warning_valor_eventos = total_eventos_previstos != valor_total_contrato_vigente
 
-    df = pd.DataFrame(list(eventos.values("data_prevista_pagamento", "valor_previsto", "valor_pago", "data_pagamento")))
-
-    plot_div = None
-    if not df.empty:
-        # Converte explicitamente para numérico antes de preencher nulos
-        df["valor_previsto"] = pd.to_numeric(df["valor_previsto"], errors="coerce").fillna(0.0)
-        df["valor_pago"] = pd.to_numeric(df["valor_pago"], errors="coerce").fillna(0.0)
-        df["data_prevista_pagamento"] = pd.to_datetime(
-            df["data_prevista_pagamento"], errors="coerce"
-        ).dt.normalize()
-        df["data_pagamento"] = pd.to_datetime(
-            df["data_pagamento"], errors="coerce"
-        ).dt.normalize()
-
-        # Ordenar pelas datas
-        df = df.sort_values("data_prevista_pagamento")
-
-        # Calcular valores acumulados
-        df["valor_previsto_acum"] = df["valor_previsto"].cumsum()
-        df["valor_pago_acum"] = df["valor_pago"].cumsum()
-
-        # Criar gráfico
-        trace_previsto = go.Scatter(
-            x=df["data_prevista_pagamento"],
-            y=df["valor_previsto_acum"],
-            mode="lines+markers",
-            name="Previsto (Acumulado)",
-            line=dict(color="orange"),
-            hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
-        )
-
-        trace_pago = go.Scatter(
-            x=df["data_pagamento"],
-            y=df["valor_pago_acum"],
-            mode="lines+markers",
-            name="Pago (Acumulado)",
-            line=dict(color="green"),
-            hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
-        )
-
-        layout = go.Layout(
-            title="Evolução Acumulada de Pagamentos",
-            xaxis=dict(title="Data", tickformat="%d/%m/%Y", hoverformat="%d/%m/%Y"),
-            yaxis=dict(title="Valor (R$)"),
-            template="plotly_white"
-        )
-
-        fig = go.Figure(data=[trace_previsto, trace_pago], layout=layout)
-        plot_div = plot(fig, auto_open=False, output_type="div")
+    planned_days=defaultdict(Decimal)
+    paid_days=defaultdict(Decimal)
+    for day,amount in eventos.values_list('data_prevista_pagamento','valor_previsto'):
+        if day:planned_days[day]+=amount or Decimal('0')
+    for day,amount in OS.objects.filter(contrato=contrato).values_list('data_prevista_pagamento','valor'):
+        if day:planned_days[day]+=amount or Decimal('0')
+    from .models import PagamentoNF
+    for row in PagamentoNF.objects.filter(nf__contrato=contrato,data_pagamento__isnull=False).values('data_pagamento').annotate(total=Sum(pq.signed_cents())):
+        paid_days[row['data_pagamento']]+=pq.money(row['total'])
+    plot_div=None
+    if planned_days or paid_days:
+        fig=go.Figure()
+        for values,label,color in ((planned_days,'Previsto (Acumulado)','orange'),(paid_days,'Pago líquido por movimentos (Acumulado)','green')):
+            dates=sorted(values);running=Decimal('0');amounts=[]
+            for day in dates:
+                running+=values[day];amounts.append(running)
+            fig.add_trace(go.Scatter(x=dates,y=amounts,mode='lines+markers',name=label,line=dict(color=color)))
+        fig.update_layout(title='Evolução acumulada de planejamento e caixa',xaxis=dict(title='Data',tickformat='%d/%m/%Y'),yaxis_title='Valor (R$)',template='plotly_white')
+        plot_div=plot(fig,auto_open=False,output_type='div')
 
     # --- GRÁFICO DE COMPARAÃ‡ÃƒO ---
     if contrato.guarda_chuva:
         valor_total_contrato = contrato.valor_total or 0
 
-        total_os = OS.objects.filter(
-            contrato=contrato
-        ).aggregate(Sum("valor_pago"))["valor_pago__sum"] or 0
+        total_os = pq.cash_total(NF.objects.filter(contrato=contrato))
 
         saldo_contrato = valor_total_contrato - total_os
 
@@ -5649,7 +5843,7 @@ def contrato_fornecedor_detalhe(request, pk):
             valor_cliente = 0
 
         total_previsto = eventos.aggregate(Sum("valor_previsto"))["valor_previsto__sum"] or 0
-        total_pago = eventos.aggregate(Sum("valor_pago"))["valor_pago__sum"] or 0
+        total_pago = pq.cash_total(NF.objects.filter(contrato=contrato))
 
         perc_previsto = (total_previsto / valor_cliente * 100) if valor_cliente else 0
         perc_pago = (total_pago / valor_cliente * 100) if valor_cliente else 0
@@ -5707,6 +5901,7 @@ def contrato_fornecedor_detalhe(request, pk):
 
 
 @login_required
+@locked_action(ContratoTerceiros)
 def solicitar_aditivo_contrato(request, pk):
     contrato = get_object_or_404(ContratoTerceiros, pk=pk)
     token_name = f"solicitar_aditivo_contrato:{contrato.pk}"
@@ -5719,7 +5914,7 @@ def solicitar_aditivo_contrato(request, pk):
         (
             item
             for item in contrato.aditivos.all()
-            if not item.aprovado_totalmente and not item.solicitacao_reprovada_por_alguem
+            if not item.cancelada and not item.aprovado_totalmente and not item.solicitacao_reprovada_por_alguem
         ),
         None,
     )
@@ -5773,7 +5968,7 @@ def solicitar_aditivo_contrato(request, pk):
     else:
         form = SolicitacaoAditivoContratoTerceiroForm(
             initial={
-                "novo_valor_total": contrato.valor_total,
+                "novo_valor_total": None,
                 "nova_data_fim": contrato.data_fim,
             }
         )
@@ -5786,12 +5981,16 @@ def solicitar_aditivo_contrato(request, pk):
 
 
 @login_required
+@financeiro_read_only
+@proteger_fluxo_solicitacao(AditivoContratoTerceiro)
 def detalhes_aditivo_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
 
     if not can_user_view_addendum(request.user, aditivo):
         messages.error(request, "Você não tem permissão para visualizar este aditivo.")
         return redirect("home")
+
+    preparar_controles(aditivo, request.user)
 
     return render(
         request,
@@ -5813,6 +6012,9 @@ def detalhes_aditivo_contrato(request, pk):
 
 
 @login_required
+@financeiro_read_only
+@proteger_fluxo_solicitacao(AditivoContratoTerceiro)
+@locked_action(AditivoContratoTerceiro)
 def avaliar_solicitacao_aditivo_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
     contrato = aditivo.contrato
@@ -5921,6 +6123,7 @@ def avaliar_solicitacao_aditivo_contrato(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(AditivoContratoTerceiro)
 def enviar_documento_aditivo_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
 
@@ -5934,6 +6137,10 @@ def enviar_documento_aditivo_contrato(request, pk):
 
     if aditivo.aprovado_totalmente:
         messages.warning(request, "Este aditivo já foi concluído e não pode mais ser alterado.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    if aditivo.minuta_aprovada:
+        messages.error(request, "A minuta aprovada não pode ser substituída após a avaliação.")
         return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
 
     if request.method == "POST":
@@ -5986,6 +6193,7 @@ def enviar_documento_aditivo_contrato(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(AditivoContratoTerceiro)
 def cadastrar_evento_aditivo(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
 
@@ -6019,6 +6227,7 @@ def cadastrar_evento_aditivo(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(Evento, key="pk")
 def editar_evento_aditivo(request, pk):
     evento = get_object_or_404(Evento, pk=pk, aditivo__isnull=False)
     aditivo = evento.aditivo
@@ -6049,12 +6258,15 @@ def editar_evento_aditivo(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(AditivoContratoTerceiro)
 def avaliar_aditivo_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
     return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
 
 
 @login_required
+@proteger_fluxo_solicitacao(AditivoContratoTerceiro)
+@locked_action(AditivoContratoTerceiro)
 def avaliar_minuta_aditivo_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
     contrato = aditivo.contrato
@@ -6133,6 +6345,8 @@ def avaliar_minuta_aditivo_contrato(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(AditivoContratoTerceiro)
+@locked_action(AditivoContratoTerceiro)
 def enviar_aditivo_assinado_contrato(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
 
@@ -6143,6 +6357,20 @@ def enviar_aditivo_assinado_contrato(request, pk):
     if not aditivo.minuta_aprovada:
         messages.error(request, "A minuta do aditivo ainda não foi aprovada pela gerência de contrato.")
         return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+
+    if aditivo.aprovado_totalmente:
+        messages.warning(request, "Este aditivo já foi concluído.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+    if not aditivo.solicitacao_aprovada_totalmente:
+        messages.error(request, "A solicitação do aditivo precisa estar aprovada.")
+        return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+    if request.method == "POST":
+        current_contract = ContratoTerceiros.objects.select_for_update().get(pk=aditivo.contrato_id)
+        if (aditivo.valor_total_anterior != current_contract.valor_total
+                or aditivo.data_fim_anterior != current_contract.data_fim):
+            messages.error(request, "O contrato mudou após a solicitação. Revise o aditivo antes de assinar.")
+            return redirect("detalhes_aditivo_contrato", pk=aditivo.pk)
+        aditivo.contrato = current_contract
 
     if request.method == "POST":
         form = DocumentoAditivoAssinadoContratoTerceiroForm(request.POST, request.FILES, instance=aditivo)
@@ -6212,8 +6440,6 @@ def contrato_fornecedor_editar(request, pk):
     if request.method == "POST":
         # IncluÃ­mos request.FILES para que o arquivo seja capturado
         form = ContratoFornecedorForm(request.POST, request.FILES, instance=contrato)
-        print("POST:", request.POST)
-        print("FILES:", request.FILES)
         if form.is_valid():
             # Salva o formulário e o arquivo enviado
             form.save()
@@ -6234,11 +6460,15 @@ def contrato_fornecedor_editar(request, pk):
 
 
 @login_required
+@object_access(Cliente)
 def cliente_detalhe(request, pk):
     cliente = get_object_or_404(Cliente, pk=pk)
     contratos = cliente.contratos.all()  # pega todos os contratos do cliente
 
-    if request.user.grupo in ["suprimento", "financeiro"]:
+    if request.user.grupo == "financeiro" and request.method == "POST":
+        return JsonResponse({"success": False, "error": "O cadastro de Cliente é somente leitura para o Financeiro."}, status=403)
+
+    if request.user.grupo == "suprimento":
         if request.method == "POST":
             form = ClienteForm(request.POST, instance=cliente)
             if form.is_valid():
@@ -6264,6 +6494,7 @@ def cliente_detalhe(request, pk):
 
 
 @login_required
+@object_access(EmpresaTerceira)
 def fornecedor_detalhe(request, pk):
     fornecedor = get_object_or_404(EmpresaTerceira, pk=pk)
     indicadores_geral = Indicadores(empresa_terceira=fornecedor)
@@ -6294,7 +6525,18 @@ def fornecedor_detalhe(request, pk):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
-    if request.user.grupo in ["suprimento", "financeiro"]:
+    if request.user.grupo == "financeiro":
+        bank_form = DadosBancariosFornecedorForm(request.POST or None, instance=fornecedor)
+        if request.method == "POST" and bank_form.is_valid():
+            bank_form.save(commit=False).save(update_fields=["informacoes_bancarias"])
+            messages.success(request, "Dados bancários do fornecedor atualizados com sucesso.")
+            return redirect("fornecedor_detalhe", pk=fornecedor.pk)
+        return render(request, "fornecedores/fornecedor_detail.html", {
+            "fornecedor": fornecedor, "contratos": contratos, "os": os.distinct(),
+            "indicadores_geral": indicadores_geral, "bank_form": bank_form,
+        })
+
+    if request.user.grupo == "suprimento":
         if request.method == "POST":
             form = FornecedorForm(request.POST, instance=fornecedor)
             if form.is_valid():
@@ -6330,6 +6572,7 @@ def fornecedor_detalhe(request, pk):
 
 
 @login_required
+@transaction.atomic
 def nova_solicitacao_contrato(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
         token_name = "nova_solicitacao_contrato"
@@ -6400,6 +6643,8 @@ def nova_solicitacao_contrato(request):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="pk")
+@locked_action(SolicitacaoContrato)
 def editar_solicitacao_contrato(request, pk):
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
 
@@ -6416,6 +6661,20 @@ def editar_solicitacao_contrato(request, pk):
             user=request.user,
         )
         if form.is_valid():
+            if form.has_changed() and not contract_request_supplier_rejected(solicitacao):
+                solicitacao.aprovacao_fornecedor_gerente = "pendente"
+                solicitacao.aprovacao_fornecedor_diretor = "pendente"
+                solicitacao.aprocacao_fornecedor_gerente_em = None
+                solicitacao.aprocacao_fornecedor_diretor_em = None
+                solicitacao.aprovacao_gerencia = False
+                solicitacao.reprovacao_gerencia = False
+                solicitacao.aprovacao_diretoria = False
+                solicitacao.reprovacao_diretoria = False
+                solicitacao.status = "Solicitação de contratação"
+                DocumentoBM.objects.filter(solicitacao_contrato=solicitacao).update(
+                    status_coordenador="pendente", status_gerente="pendente",
+                    data_aprovacao_coordenador=None, data_aprovacao_gerente=None,
+                )
             form.save()
             messages.success(request, "Solicitação atualizada com sucesso.")
             return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
@@ -6438,6 +6697,7 @@ def editar_solicitacao_contrato(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="pk")
 def reenviar_solicitacao_contrato_aprovacao(request, pk):
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
 
@@ -6624,6 +6884,8 @@ def _notify_request_regression(solicitacao, tipo_label, usuario, target_status):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
+@locked_action(SolicitacaoProspeccao)
 def regredir_solicitacao_aprovacao_fornecedor(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
@@ -6647,6 +6909,8 @@ def regredir_solicitacao_aprovacao_fornecedor(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="pk")
+@locked_action(SolicitacaoContrato)
 def regredir_solicitacao_contrato_aprovacao_fornecedor(request, pk):
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
 
@@ -6670,6 +6934,7 @@ def regredir_solicitacao_contrato_aprovacao_fornecedor(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="pk")
 def aprovar_solicitacao_contrato(request, pk):
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
 
@@ -6870,6 +7135,7 @@ def aprovar_solicitacao_contrato(request, pk):
 
 
 @login_required
+@transaction.atomic
 def nova_solicitacao_prospeccao(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
         token_name = "nova_solicitacao_prospeccao"
@@ -6940,6 +7206,7 @@ def nova_solicitacao_prospeccao(request):
 
 
 @login_required
+@transaction.atomic
 def nova_solicitacao_guarda_chuva(request):
     if request.user.grupo in ['lider_contrato', 'gerente_contrato', 'gerente_lider']:
         token_name = "nova_solicitacao_guarda_chuva"
@@ -7013,6 +7280,8 @@ def nova_solicitacao_guarda_chuva(request):
 
 @login_required
 def add_contrato(request):
+    if request.user.grupo != "suprimento":
+        return JsonResponse({"success": False, "error": "Somente Suprimento pode cadastrar projetos."}, status=403)
     if request.method == "POST":
         form = ContratoModalForm(request.POST)
         if form.is_valid():
@@ -7132,9 +7401,7 @@ def _prepare_direct_os_form(form, contrato):
     for field_name in ["contrato", "solicitacao", "status"]:
         form.fields.pop(field_name, None)
 
-    if contrato.cod_projeto:
-        form.fields.pop("cod_projeto", None)
-    elif "cod_projeto" in form.fields:
+    if "cod_projeto" in form.fields:
         form.fields["cod_projeto"].required = True
 
     return form
@@ -7149,14 +7416,15 @@ def cadastrar_os_contrato_guarda_chuva(request, contrato_id):
     contrato = get_object_or_404(ContratoTerceiros, pk=contrato_id, guarda_chuva=True)
 
     if request.method == "POST":
-        form = OrdemServicoForm(request.POST, request.FILES, user=request.user)
+        data = request.POST.copy()
+        if "cod_projeto" not in data and contrato.cod_projeto_id:
+            data["cod_projeto"] = contrato.cod_projeto_id
+        form = OrdemServicoForm(data, request.FILES, user=request.user)
         form = _prepare_direct_os_form(form, contrato)
         if form.is_valid():
             ordem_servico = form.save(commit=False)
             ordem_servico.contrato = contrato
             ordem_servico.solicitacao = None
-            if contrato.cod_projeto:
-                ordem_servico.cod_projeto = contrato.cod_projeto
             if not ordem_servico.cod_projeto:
                 form.add_error("cod_projeto", "Informe o projeto desta OS.")
                 return render(
@@ -7176,7 +7444,7 @@ def cadastrar_os_contrato_guarda_chuva(request, contrato_id):
             ordem_servico.save()
 
             messages.success(request, "Ordem de Serviço cadastrada com sucesso!")
-            return redirect("detalhes_os", pk=ordem_servico.pk)
+            return redirect(approval_return_url(request, reverse("detalhes_os", kwargs={"pk": ordem_servico.pk})))
     else:
         form = OrdemServicoForm(user=request.user)
         form = _prepare_direct_os_form(form, contrato)
@@ -7188,6 +7456,7 @@ def cadastrar_os_contrato_guarda_chuva(request, contrato_id):
             "form": form,
             "direct_guarda_chuva": True,
             "contrato_referencia": contrato,
+            "cancel_url": approval_return_url(request, reverse("contrato_fornecedor_detalhe", args=[contrato.pk])),
         },
     )
 
@@ -7377,6 +7646,7 @@ def _notify_os_completed(os_request):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoOrdemServico)
 def editar_ordem_servico(request, pk):
     if request.user.grupo not in ['gerente', 'gerente_lider', 'gerente_contrato', 'suprimento']:
         messages.error(request, "Você não tem permissão para isso.")
@@ -7419,6 +7689,7 @@ def editar_ordem_servico(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoOrdemServico)
 def aprovar_os_lider(request, pk, acao):
     os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
     messages.warning(
@@ -7429,6 +7700,8 @@ def aprovar_os_lider(request, pk, acao):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoOrdemServico)
+@locked_action(SolicitacaoOrdemServico)
 def upload_contrato_os(request, pk):
     os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
 
@@ -7472,6 +7745,36 @@ def upload_contrato_os(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoOrdemServico)
+def regredir_solicitacao_os(request, pk):
+    os_request = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
+
+    if request.method != "POST":
+        return redirect("detalhe_ordem_servico", pk=os_request.pk)
+
+    target_status = request.POST.get("target_status") or "pendente_suprimento"
+    if not can_supply_regress_os_request_to_status(request.user, os_request, target_status):
+        messages.error(request, "Você não tem permissão para regredir esta solicitação de OS.")
+        return redirect("detalhe_ordem_servico", pk=os_request.pk)
+
+    apply_os_request_regression(os_request, target_status)
+
+    try:
+        _notify_os_request_regression(os_request, request.user, target_status)
+    except Exception as e:
+        messages.warning(request, f"Erro ao enviar e-mail para os responsáveis da etapa: {e}")
+
+    messages.success(
+        request,
+        f"Solicitação de OS regredida para {OS_REQUEST_STATUS_LABELS.get(target_status, target_status)}.",
+    )
+    return redirect("detalhe_ordem_servico", pk=os_request.pk)
+
+
+@login_required
+@require_POST
+@proteger_fluxo_solicitacao(SolicitacaoOrdemServico)
+@locked_action(SolicitacaoOrdemServico)
 def aprovar_os_gerente_contrato(request, pk, acao):
     os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
     justificativa = request.POST.get("justificativa", "").strip()
@@ -7547,6 +7850,10 @@ def aprovar_os_gerente_contrato(request, pk, acao):
         messages.error(request, "Minuta da OS reprovada pela Gerência de Contrato.")
         return redirect('detalhe_ordem_servico', pk=os.pk)
 
+    if not os.arquivo_os or os.aprovacao_diretor != "aprovado":
+        messages.error(request, "A OS precisa de minuta e aprovação da diretoria.")
+        return redirect("detalhe_ordem_servico", pk=os.pk)
+
     os.status = 'aprovada'
     os.aprovacao_gerente = 'aprovado'
     os.aprovado_gerente_em = timezone.now()
@@ -7576,8 +7883,12 @@ def aprovar_os_gerente_contrato(request, pk, acao):
 
 
 @login_required
+@require_POST
+@proteger_fluxo_solicitacao(SolicitacaoOrdemServico)
+@locked_action(SolicitacaoOrdemServico)
 def aprovar_os_diretoria(request, pk, acao):
     os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
+    return_url = approval_return_url(request, reverse("detalhe_ordem_servico", args=[pk]))
     justificativa = request.POST.get("justificativa", "").strip()
 
     if request.user.grupo != 'diretoria':
@@ -7627,7 +7938,7 @@ def aprovar_os_diretoria(request, pk, acao):
         except Exception as e:
             messages.warning(request, f"Erro ao enviar e-mail de reprovação: {e}")
         messages.error(request, "Solicitacao de OS reprovada pela Diretoria.")
-        return redirect('detalhe_ordem_servico', pk=os.pk)
+        return redirect(return_url)
 
     cobre_gerente = user_can_cover_gerente_contrato(request.user) and os.aprovacao_gerente in [None, '', 'pendente']
     data_avaliacao = timezone.now()
@@ -7652,52 +7963,55 @@ def aprovar_os_diretoria(request, pk, acao):
     else:
         messages.success(request, "Solicitacao de OS aprovada pela Diretoria e aguardando a Gerência de Contrato.")
 
-    return redirect('detalhe_ordem_servico', pk=os.pk)
+    return redirect(return_url)
 
 
 @login_required
+@financeiro_read_only
 def lista_solicitacoes(request):
-    #if request.user.grupo == 'coordenador' or request.user.grupo == 'financeiro':
-    if request.user.grupo == 'coordenador':
-        solicitacoes = SolicitacaoProspeccao.objects.filter(coordenador=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        solicitacoes_c = SolicitacaoContrato.objects.filter(coordenador=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = SolicitacaoOrdemServico.objects.filter(coordenador=request.user).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
-    elif request.user.grupo == 'lider_contrato':
-        solicitacoes = SolicitacaoProspeccao.objects.filter(lider_contrato=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        solicitacoes_c = SolicitacaoContrato.objects.filter(lider_contrato=request.user).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = SolicitacaoOrdemServico.objects.filter(lider_contrato=request.user).exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
-    elif request.user.grupo in ['suprimento', 'diretoria']:
-        solicitacoes = SolicitacaoProspeccao.objects.all().exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        solicitacoes_c = SolicitacaoContrato.objects.all().exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = SolicitacaoOrdemServico.objects.exclude(status__in=["finalizada", "aprovada", "reprovada"]).order_by('-criado_em')
-        if request.user.grupo == "diretoria" and not user_can_cover_gerente_contrato(request.user):
-            solicitacoes = solicitacoes.filter(aprovacao_fornecedor_diretor="pendente")
-            solicitacoes_c = solicitacoes_c.filter(aprovacao_fornecedor_diretor="pendente")
-            os = os.filter(status__in=["pendente_gerente", "pendente_diretoria"], aprovacao_diretor="pendente")
-    elif request.user.grupo in ['gerente', 'gerente_lider']:
-        centros_do_gerente = request.user.centros.all()
-        # filtra solicitações cujo solicitante tenha pelo menos um centro em comum
-        solicitacoes = SolicitacaoProspeccao.objects.filter(
-            Q(coordenador__centros__in=centros_do_gerente) | Q(lider_contrato=request.user)
-        ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
-        solicitacoes_c = SolicitacaoContrato.objects.filter(
-            Q(coordenador__centros__in=centros_do_gerente) | Q(lider_contrato=request.user)
-        ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
-        os = SolicitacaoOrdemServico.objects.filter(
-            Q(coordenador__centros__in=centros_do_gerente) | Q(lider_contrato=request.user)
-        ).exclude(status__in=["finalizada", "aprovada", "reprovada"]).distinct().order_by('-criado_em')
-    elif request.user.grupo == 'gerente_contrato':
-        solicitacoes = SolicitacaoProspeccao.objects.filter(
-            lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']
-        ).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).distinct().order_by('-data_solicitacao')
-        solicitacoes_c = SolicitacaoContrato.objects.filter(lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider']).exclude(status__in=["Onboarding", "Reprovada pelo suprimento"]).order_by('-data_solicitacao')
-        os = SolicitacaoOrdemServico.objects.filter(
-            lider_contrato__grupo__in=['lider_contrato', 'gerente_contrato', 'gerente_lider'],
-            status__in=['pendente_gerente', 'pendente_diretoria', 'pendente_suprimento', 'pendente_minuta_gerente']
-        ).distinct().order_by('-criado_em')
-    else:
+    from .permissions import is_internal
+    from .solicitacao_services import MODELOS
+    from .solicitacao_queries import escopo_solicitacoes, filtrar_solicitacoes
+    from .forms import PeriodoSolicitacoesForm
+    if not is_internal(request.user):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
+    visualizacao = request.GET.get("visualizacao", "ativas")
+    if visualizacao not in {"ativas", "arquivadas", "todas"}:
+        visualizacao = "ativas"
+    busca = request.GET.get("q", "").strip()
+    status_filtro = request.GET.get("status", "").strip()
+    if status_filtro == "cancelada":
+        status_filtro = "Cancelada"
+    responsavel_filtro = request.GET.get("responsavel", "").strip()
+    tipo_filtro = request.GET.get("tipo", "")
+    if tipo_filtro not in MODELOS:
+        tipo_filtro = ""
+    ordem = request.GET.get("ordem", "-data_solicitacao")
+    if ordem not in {"data_solicitacao", "-data_solicitacao", "id", "-id", "status"}:
+        ordem = "-data_solicitacao"
+    periodo = PeriodoSolicitacoesForm(request.GET)
+    inicio = fim = None
+    if periodo.is_valid():
+        inicio, fim = periodo.cleaned_data.get("inicio"), periodo.cleaned_data.get("fim")
+    else:
+        messages.error(request, "Informe um período válido, com a data inicial anterior ou igual à final.")
+    conjuntos = {tipo: escopo_solicitacoes(request.user, model) for tipo, model in MODELOS.items()}
+    status_labels = {}
+    for tipo, queryset in conjuntos.items():
+        if tipo_filtro and tipo_filtro != tipo:
+            conjuntos[tipo] = queryset.none()
+            continue
+        status_field = "etapa_listagem" if tipo == "aditivo" else "status"
+        labels = dict(SolicitacaoOrdemServico.STATUS_CHOICES) if tipo == "os" else {}
+        for value in queryset.em_visualizacao(visualizacao).values_list(status_field, flat=True).distinct():
+            status_labels["Cancelada" if tipo == "os" and value == "cancelada" else value] = labels.get(value, value)
+    status_opcoes = sorted(status_labels.items(), key=lambda item: item[1])
+    conjuntos = {tipo: filtrar_solicitacoes(queryset, visualizacao=visualizacao, busca=busca,
+        status=status_filtro, ordem=ordem, responsavel=responsavel_filtro, inicio=inicio, fim=fim)
+        for tipo, queryset in conjuntos.items()}
+    solicitacoes, solicitacoes_c = conjuntos["prospeccao"], conjuntos["contratacao"]
+    os, aditivos_queryset = conjuntos["os"], conjuntos["aditivo"]
 
     prospeccao_audit_map = build_latest_audit_map(
         SolicitacaoProspeccao,
@@ -7764,16 +8078,12 @@ def lista_solicitacoes(request):
     page_number_os = request.GET.get('page_os')
     page_obj_os = paginator_os.get_page(page_number_os)
 
-    aditivos_queryset = [
-        item
-        for item in get_visible_addendums_for_user(request.user)
-        if not item.aprovado_totalmente and not item.solicitacao_reprovada_por_alguem
-    ]
     paginator_aditivos = Paginator(aditivos_queryset, 10)
     page_number_aditivos = request.GET.get('page_ad')
     page_obj_aditivos = paginator_aditivos.get_page(page_number_aditivos)
 
     for solicitacao in page_obj:
+        preparar_controles(solicitacao, request.user)
         solicitacao.sla_display = build_request_sla_display(
             solicitacao,
             prospeccao_audit_map=prospeccao_audit_map,
@@ -7783,6 +8093,7 @@ def lista_solicitacoes(request):
         solicitacao.can_regress_supplier_approval = can_supply_regress_supplier_approval(request.user, solicitacao)
         solicitacao.regression_options = get_regression_options_for_request(request.user, solicitacao)
     for solicitacao in page_obj_c:
+        preparar_controles(solicitacao, request.user)
         solicitacao.sla_display = build_request_sla_display(
             solicitacao,
             contratacao_audit_map=contratacao_audit_map,
@@ -7794,13 +8105,16 @@ def lista_solicitacoes(request):
         solicitacao.can_regress_supplier_approval = can_supply_regress_supplier_approval(request.user, solicitacao)
         solicitacao.regression_options = get_regression_options_for_request(request.user, solicitacao)
     for solicitacao_os in page_obj_os:
+        preparar_controles(solicitacao_os, request.user)
         solicitacao_os.sla_display = build_request_sla_display(
             solicitacao_os,
             os_audit_map=os_audit_map,
             config_map=sla_config_map,
             holiday_dates=sla_holiday_dates,
         )
+        solicitacao_os.regression_options = get_os_regression_options_for_request(request.user, solicitacao_os)
     for aditivo in page_obj_aditivos:
+        preparar_controles(aditivo, request.user)
         aditivo.sla_display = build_request_sla_display(
             aditivo,
             config_map=sla_config_map,
@@ -7808,6 +8122,10 @@ def lista_solicitacoes(request):
         )
 
     context = {
+            'visualizacao': visualizacao, 'busca': busca, 'status_filtro': status_filtro,
+            'status_opcoes': status_opcoes, 'ordem': ordem,
+            'tipo_filtro': tipo_filtro, 'responsavel_filtro': responsavel_filtro,
+            'inicio_filtro': request.GET.get('inicio', ''), 'fim_filtro': request.GET.get('fim', ''),
             'page_obj': page_obj,
             'page_obj_contrato': page_obj_c,
             "lista_solicitacoes": lista_solicitacoes,
@@ -7820,12 +8138,20 @@ def lista_solicitacoes(request):
 
 
 @login_required
+@require_POST
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
+@locked_action(SolicitacaoProspeccao)
 def aprovar_solicitacao(request, pk, acao):
     if request.user.grupo not in ["suprimento"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+    if solicitacao.status not in {"Solicitação de prospecção", "Em análise"}:
+        messages.error(request, "Esta solicitação já avançou de etapa.")
+        return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+    if acao not in {"aprovar", "reprovar"}:
+        return JsonResponse({"error": "Ação inválida."}, status=400)
     justificativa = request.POST.get("justificativa", "").strip()
     if acao == "aprovar":
         if not solicitacao.guarda_chuva and not solicitacao.evento_set.exists():
@@ -7868,6 +8194,8 @@ def aprovar_solicitacao(request, pk, acao):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
+@locked_action(SolicitacaoProspeccao)
 def triagem_fornecedores(request, pk):
     if request.user.grupo not in ["suprimento"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -7892,7 +8220,33 @@ def triagem_fornecedores(request, pk):
             propostas_dict[f.id] = None
 
     if request.method == "POST":
+        if solicitacao.status not in {"Aprovada pelo suprimento", "Triagem realizada", "Sem fornecedor adequado", "Em análise"}:
+            messages.error(request, "Retorne à etapa de triagem antes de alterar propostas.")
+            return redirect("detalhes_solicitacao", pk=solicitacao.pk)
         fornecedores_ids = request.POST.getlist("fornecedores")
+        parsed_proposals = {}
+        try:
+            selected = list(EmpresaTerceira.objects.filter(pk__in=fornecedores_ids))
+            if len(selected) != len(set(fornecedores_ids)):
+                raise ValidationError("Selecione fornecedores válidos.")
+            for supplier in selected:
+                raw_value = request.POST.get(f"valor_{supplier.pk}")
+                amount = parse_decimal_from_form_value(raw_value)
+                if amount is not None and amount < 0:
+                    raise ValidationError("A proposta não pode ter valor negativo.")
+                if amount is not None:
+                    PropostaFornecedor._meta.get_field("valor_proposta").clean(amount, None)
+                condition = request.POST.get(f"condicao_{supplier.pk}")
+                valid_conditions = set(dict(PropostaFornecedor.CONDICOES_CHOICES)) | {"30", "60", "90"}
+                if condition and condition not in valid_conditions:
+                    raise ValidationError("Selecione uma condição de pagamento válida.")
+                validity = request.POST.get(f"prazo_{supplier.pk}")
+                if validity:
+                    date.fromisoformat(validity)
+                parsed_proposals[str(supplier.pk)] = amount
+        except (ValidationError, ValueError, TypeError):
+            messages.error(request, "Revise os fornecedores, valores e datas das propostas antes de salvar.")
+            return redirect("triagem_fornecedores", pk=solicitacao.pk)
 
         if "nenhum_fornecedor" in request.POST:
             solicitacao.fornecedores_selecionados.clear()
@@ -7924,16 +8278,7 @@ def triagem_fornecedores(request, pk):
                         fornecedor=fornecedor,
                     )
                     if valor:
-                        try:
-                            valor_formatado = (
-                                valor.replace('R$', '')
-                                     .replace('.', '')
-                                     .replace(',', '.')
-                                     .strip()
-                            )
-                            proposta_obj.valor_proposta = Decimal(valor_formatado)
-                        except:
-                            messages.warning(request, f"Valor inválido para {fornecedor.nome}")
+                        proposta_obj.valor_proposta = parsed_proposals[str(f_id)]
                     if prazo_validade:
                         proposta_obj.prazo_validade = prazo_validade
                     if arquivo:
@@ -7946,7 +8291,7 @@ def triagem_fornecedores(request, pk):
             destinatario = solicitacao.lider_contrato
             assunto = "Triagem de fornecedores realizada"
             mensagem = (
-                f"Olá, {destinatario.username}\n\n"
+                f"Olá, {destinatario.username if destinatario else 'responsável'}\n\n"
                 f"A equipe de suprimentos realizou uma triagem de fornecedores para você. \n\n"
                 "Por favor, entre no sistema HIDROGestão para selecionar sua escolha.\n"
                 "https://hidrogestao.pythonanywhere.com/"
@@ -7982,7 +8327,10 @@ def triagem_fornecedores(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def nenhum_fornecedor_ideal(request, pk):
+    if request.user.grupo == "financeiro":
+        return JsonResponse({"success": False, "error": "Financeiro não pode alterar a seleção de fornecedores."}, status=403)
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
     if request.user != solicitacao.lider_contrato:
         messages.error(request, "Você não tem permissão para essa ação.")
@@ -8018,6 +8366,10 @@ def nenhum_fornecedor_ideal(request, pk):
 
 
 @login_required
+@financeiro_read_only
+@object_access(SolicitacaoProspeccao)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
+@locked_action(SolicitacaoProspeccao)
 def detalhes_triagem_fornecedores(request, pk):
     solicitacao = get_object_or_404(
         SolicitacaoProspeccao, pk=pk, aprovado=True, triagem_realizada=True
@@ -8031,6 +8383,9 @@ def detalhes_triagem_fornecedores(request, pk):
         propostas_dict[p.fornecedor.id] = p
 
     if can_user_manage_supplier_choice(request.user, solicitacao) and request.method == "POST":
+        if solicitacao.status not in {"Triagem realizada", "Fornecedor selecionado", "Em análise"}:
+            messages.error(request, "Retorne à etapa de seleção antes de alterar o fornecedor.")
+            return redirect("detalhes_solicitacao", pk=solicitacao.pk)
         escolhido_id = request.POST.get("fornecedor_escolhido")
         justificativa = request.POST.get("justificativa_fornecedor_escolhido", "").strip()
 
@@ -8039,7 +8394,7 @@ def detalhes_triagem_fornecedores(request, pk):
                 messages.warning(request, "Por favor, insira uma justificativa para a escolha do fornecedor.")
                 return redirect('detalhes_triagem_fornecedores', pk=pk)
 
-            fornecedor = get_object_or_404(EmpresaTerceira, pk=escolhido_id)
+            fornecedor = get_object_or_404(fornecedores_selecionados, pk=escolhido_id)
             proposta_escolhida = PropostaFornecedor.objects.filter(
                 solicitacao=solicitacao,
                 fornecedor=fornecedor,
@@ -8055,7 +8410,12 @@ def detalhes_triagem_fornecedores(request, pk):
             solicitacao.justificativa_fornecedor_escolhido = justificativa
             solicitacao.nenhum_fornecedor_ideal = False
             solicitacao.status = 'Fornecedor selecionado'
-            solicitacao.aprovacao_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_gerente = "pendente"
+            solicitacao.aprovacao_fornecedor_diretor = "pendente"
+            solicitacao.aprocacao_fornecedor_gerente_em = None
+            solicitacao.aprocacao_fornecedor_diretor_em = None
+            solicitacao.aprovacao_gerencia = False
+            solicitacao.aprovacao_diretoria = False
             solicitacao.save()
 
             assunto = f"Aprovação necessária - Fornecedor escolhido para {solicitacao.contrato}"
@@ -8088,11 +8448,16 @@ def detalhes_triagem_fornecedores(request, pk):
         "fornecedores_selecionados": fornecedores_selecionados,
         "propostas_dict": propostas_dict,
         "can_act_as_gerente_contrato": user_has_gerente_contrato_role(request.user),
+        "approval_next": approval_return_url(
+            request, reverse("detalhes_triagem_fornecedores", args=[pk])
+        ),
     }
     return render(request, "fornecedores/detalhes_triagem_fornecedores.html", context)
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
+@locked_action(SolicitacaoProspeccao)
 def aprovar_fornecedor_gerente(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
@@ -8105,6 +8470,10 @@ def aprovar_fornecedor_gerente(request, pk):
     if not solicitacao.fornecedor_escolhido:
         messages.warning(request, "Coordenador ainda não escolheu um fornecedor.")
         return redirect('detalhes_triagem_fornecedores', pk=pk)
+
+    if request.method == "POST" and solicitacao.status not in {"Fornecedor selecionado", "Em análise"}:
+        messages.error(request, "Esta solicitação não está na etapa de aprovação do fornecedor.")
+        return redirect("detalhes_solicitacao", pk=solicitacao.pk)
 
     if request.method == "POST":
         acao = request.POST.get("acao")
@@ -8210,8 +8579,16 @@ def aprovar_fornecedor_gerente(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
+@locked_action(SolicitacaoProspeccao)
 def aprovar_fornecedor_diretor(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+    fallback_url = (
+        reverse("lista_solicitacoes")
+        if request.method == "POST"
+        else reverse("detalhes_triagem_fornecedores", args=[pk])
+    )
+    return_url = approval_return_url(request, fallback_url)
 
     # Somente gerente pode aprovar
     if request.user.grupo != "diretoria":
@@ -8222,6 +8599,10 @@ def aprovar_fornecedor_diretor(request, pk):
     if not solicitacao.fornecedor_escolhido:
         messages.warning(request, "Coordenador ainda não escolheu um fornecedor.")
         return redirect('detalhes_triagem_fornecedores', pk=pk)
+
+    if request.method == "POST" and solicitacao.status not in {"Fornecedor selecionado", "Em análise"}:
+        messages.error(request, "Esta solicitação não está na etapa de aprovação do fornecedor.")
+        return redirect("detalhes_solicitacao", pk=solicitacao.pk)
 
     if request.method == "POST":
         acao = request.POST.get("acao")
@@ -8319,23 +8700,36 @@ def aprovar_fornecedor_diretor(request, pk):
             messages.error(request, "Ação inválida.")
             return redirect('detalhes_triagem_fornecedores', pk=pk)
 
-        return redirect('lista_solicitacoes')
+        return redirect(return_url)
 
-    return redirect('detalhes_triagem_fornecedores', pk=pk)
+    triage_url = reverse("detalhes_triagem_fornecedores", args=[pk])
+    return redirect(f"{triage_url}?{urlencode({'next': return_url})}")
 
 
 @login_required
+@financeiro_read_only
+@object_access(SolicitacaoContrato)
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="pk")
+@locked_action(SolicitacaoContrato)
 def detalhes_solicitacao_contrato(request, pk):
     # Busca a solicitação
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
+    return_url = approval_return_url(request, reverse("detalhes_solicitacao_contrato", args=[pk]))
 
     if request.user.grupo == "gerente_lider" and solicitacao.lider_contrato_id != request.user.pk and not user_shares_center_with_coordinator(request.user, solicitacao.coordenador):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
+    preparar_controles(solicitacao, request.user)
+
     status_order = CONTRATACAO_STATUS_ORDER
 
     if request.method == "POST":
+        if solicitacao.status not in {"Solicitação de contratação", "Em análise"}:
+            messages.error(request, "Retorne à etapa de aprovação antes de avaliar o fornecedor.")
+            return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
+        if request.POST.get("acao") not in {"aprovar", "reprovar"} or not solicitacao.fornecedor_escolhido_id:
+            return JsonResponse({"success": False, "error": "Ação ou fornecedor inválido."}, status=400)
         acao = request.POST.get("acao")
         justificativa = request.POST.get("justificativa", "").strip()
         papel_avaliacao = request.POST.get("papel_avaliacao")
@@ -8437,6 +8831,8 @@ def detalhes_solicitacao_contrato(request, pk):
             except Exception as e:
                 messages.warning(request, f"Erro ao enviar e-mail de reprovação: {e}")
         solicitacao.save()
+        if request.user.grupo == "diretoria":
+            return redirect(return_url)
         return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
 
     fornecedor_escolhido = solicitacao.fornecedor_escolhido
@@ -8465,6 +8861,7 @@ def detalhes_solicitacao_contrato(request, pk):
 
     context = {
         "solicitacao": solicitacao,
+        "approval_next": return_url,
         "fornecedor_escolhido": fornecedor_escolhido,
         "proposta_escolhida": proposta_escolhida,
         "indicadores": indicadores,
@@ -8487,6 +8884,9 @@ def detalhes_solicitacao_contrato(request, pk):
 
 
 @login_required
+@financeiro_read_only
+@object_access(SolicitacaoProspeccao)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def detalhes_solicitacao(request, pk):
     # Busca a solicitação
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
@@ -8494,6 +8894,8 @@ def detalhes_solicitacao(request, pk):
     if request.user.grupo == "gerente_lider" and solicitacao.lider_contrato_id != request.user.pk and not user_shares_center_with_coordinator(request.user, solicitacao.coordenador):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
+
+    preparar_controles(solicitacao, request.user)
 
     status_order = PROSPECCAO_STATUS_ORDER
 
@@ -8543,6 +8945,7 @@ def detalhes_solicitacao(request, pk):
 
     context = {
         "solicitacao": solicitacao,
+        "approval_next": approval_return_url(request, reverse("detalhes_solicitacao", args=[pk])),
         "fornecedor_escolhido": fornecedor_escolhido,
         "proposta_escolhida": proposta_escolhida,
         "fornecedores_selecionados": fornecedores_selecionados,
@@ -8557,6 +8960,7 @@ def detalhes_solicitacao(request, pk):
             solicitacao,
             prospeccao_audit_map=build_latest_audit_map(SolicitacaoProspeccao, [solicitacao.pk]),
         ),
+        "can_act_as_gerente_contrato": user_has_gerente_contrato_role(request.user),
         "can_regress_supplier_approval": can_supply_regress_supplier_approval(request.user, solicitacao),
         "regression_options": get_regression_options_for_request(request.user, solicitacao),
     }
@@ -8565,25 +8969,19 @@ def detalhes_solicitacao(request, pk):
 
 
 @login_required
+@financeiro_read_only
+@proteger_fluxo_solicitacao(SolicitacaoOrdemServico)
 def detalhe_os(request, pk):
-    if request.user.grupo not in ['suprimento', 'lider_contrato', 'coordenador', 'gerente', 'gerente_lider', 'gerente_contrato', 'diretoria']:
+    if request.user.grupo not in ['suprimento', 'lider_contrato', 'coordenador', 'gerente', 'gerente_lider', 'gerente_contrato', 'diretoria', 'financeiro']:
         messages.error(request, "Você não tem permissão para isso.")
         return redirect('home')
 
     os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
-
-    if request.user.grupo == 'lider_contrato' and os.lider_contrato != request.user:
+    if not pode_consultar(request.user, os):
         messages.error(request, "Você não tem permissão para visualizar esta OS.")
-        return redirect('lista_solicitacoes')
+        return redirect("home" if request.user.grupo == "gerente" else "lista_solicitacoes")
 
-    if request.user.grupo == 'gerente_lider':
-        if os.lider_contrato_id != request.user.pk and not user_shares_center_with_coordinator(request.user, os.coordenador):
-            messages.error(request, "Você não tem permissão para visualizar esta OS.")
-            return redirect('lista_solicitacoes')
-
-    if request.user.grupo == 'coordenador' and os.solicitante != request.user:
-        messages.error(request, "Você não tem permissão para visualizar esta OS.")
-        return redirect('lista_solicitacoes')
+    preparar_controles(os, request.user)
 
     status_order = [
         'Solicitação de OS',
@@ -8616,11 +9014,13 @@ def detalhe_os(request, pk):
 
     context = {
         'os': os,
+        'approval_next': approval_return_url(request, reverse('detalhe_ordem_servico', args=[pk])),
         'status_order': status_order,
         'current_index': current_index,
         'total_steps': len(status_order),
         'progress_percent': progress_percent,
         'can_act_as_gerente_contrato': user_has_gerente_contrato_role(request.user),
+        'regression_options': get_os_regression_options_for_request(request.user, os),
         'sla_display': build_request_sla_display(
             os,
             os_audit_map=build_latest_audit_map(SolicitacaoOrdemServico, [os.pk]),
@@ -8679,7 +9079,12 @@ def lista_ordens_servico(request):
     return render(request, 'gestao_contratos/lista_ordens_servico.html', context)
 
 @login_required
+@financeiro_read_only
+@object_access(SolicitacaoProspeccao)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def propostas_fornecedores(request, pk):
+    if request.user.grupo == "financeiro":
+        return redirect("detalhes_solicitacao", pk=pk)
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
     fornecedores = solicitacao.fornecedores_selecionados.all()
@@ -8704,6 +9109,7 @@ def propostas_fornecedores(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def cadastrar_propostas(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk, aprovado=True)
 
@@ -8746,8 +9152,9 @@ def cadastrar_propostas(request, pk):
 
 @login_required
 #@user_passes_test(is_financeiro)
+@financeiro_read_only
 def elaboracao_contrato(request):
-    solicitacoes = SolicitacaoProspeccao.objects.filter(
+    solicitacoes = SolicitacaoProspeccao.objects.operacionais().filter(
         fornecedor_escolhido__isnull=False, aprovacao_fornecedor_gerente="aprovado"
     ).select_related("fornecedor_escolhido").exclude(status="Onboarding")
 
@@ -8772,6 +9179,8 @@ def elaboracao_contrato(request):
 
 @login_required
 #@user_passes_test(is_financeiro)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="solicitacao_id")
+@locked_action(SolicitacaoProspeccao, key="solicitacao_id")
 def cadastrar_contrato(request, solicitacao_id):
     if request.user.grupo not in ["suprimento"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -8791,16 +9200,32 @@ def cadastrar_contrato(request, solicitacao_id):
     allow_signed_upload = bool(
         contrato_existente
         and documento_bm
-        and documento_bm.status_gerente == "aprovado"
+        and documento_bm.aprovado
         and solicitacao.aprovacao_gerencia is True
     )
     if request.method == "POST":
+        if not request_can_plan_contract(solicitacao):
+            messages.error(request, "Conclua a aprovação do fornecedor antes de planejar o contrato.")
+            return redirect("lista_solicitacoes")
+        relation = {"prospeccao": solicitacao} if isinstance(solicitacao, SolicitacaoProspeccao) else {"solicitacao": solicitacao}
+        effective_contract = ContratoTerceiros.objects.filter(**relation).first()
+        signature_only = bool(request.FILES.get("arquivo_contrato_assinado")) and not request.FILES.get("arquivo_contrato")
+        if effective_contract and (solicitacao.status == "Onboarding" or not signature_only):
+            messages.error(request, "O contrato já foi criado. Use o fluxo de aditivo para alterações.")
+            return redirect("lista_solicitacoes")
+        if request.FILES.get("arquivo_contrato_assinado") and not allow_signed_upload:
+            messages.error(request, "Aprove as minutas antes de anexar o contrato assinado.")
+            return redirect("lista_solicitacoes")
         form = DocumentoContratoTerceiroForm(request.POST, request.FILES, instance=contrato_existente)
 
         if form.is_valid():
             should_notify_minuta = bool(request.FILES.get("arquivo_contrato"))
             is_signed_file_upload_only = bool(request.FILES.get("arquivo_contrato_assinado")) and not should_notify_minuta
             contrato = form.save(commit=False)
+            if effective_contract:
+                original = DocumentoContratoTerceiro.objects.get(pk=contrato.pk)
+                for field in ("numero_contrato", "objeto", "prazo_inicio", "prazo_fim", "valor_total", "observacao"):
+                    setattr(contrato, field, getattr(original, field))
             contrato.solicitacao = solicitacao
             if not is_signed_file_upload_only:
                 if getattr(solicitacao, "guarda_chuva", False) or document_bm_has_draft(documento_bm):
@@ -8818,6 +9243,9 @@ def cadastrar_contrato(request, solicitacao_id):
                 contrato.arquivo_contrato_assinado = contrato_existente.arquivo_contrato_assinado
 
             contrato.save()
+            if effective_contract:
+                effective_contract.num_contrato_arquivo = contrato.arquivo_contrato_assinado
+                effective_contract.save(update_fields=["num_contrato_arquivo"])
             contrato_criado = criar_contrato_se_aprovado(solicitacao)
             if (
                 is_signed_file_upload_only
@@ -8867,6 +9295,9 @@ def cadastrar_contrato(request, solicitacao_id):
     return render(request, "fornecedores/cadastrar_contrato.html", context)
 
 
+@login_required
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="solicitacao_id")
+@locked_action(SolicitacaoContrato, key="solicitacao_id")
 def cadastrar_minuta_contrato(request, solicitacao_id):
     if request.user.grupo not in ["suprimento"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -8887,17 +9318,33 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
         contrato_existente
         and (
             solicitacao.guarda_chuva
-            or (documento_bm and documento_bm.status_gerente == "aprovado")
+            or (documento_bm and documento_bm.aprovado)
         )
         and solicitacao.aprovacao_gerencia is True
     )
     if request.method == "POST":
+        if not request_can_plan_contract(solicitacao):
+            messages.error(request, "Conclua a aprovação do fornecedor antes de planejar o contrato.")
+            return redirect("lista_solicitacoes")
+        relation = {"prospeccao": solicitacao} if isinstance(solicitacao, SolicitacaoProspeccao) else {"solicitacao": solicitacao}
+        effective_contract = ContratoTerceiros.objects.filter(**relation).first()
+        signature_only = bool(request.FILES.get("arquivo_contrato_assinado")) and not request.FILES.get("arquivo_contrato")
+        if effective_contract and (solicitacao.status == "Onboarding" or not signature_only):
+            messages.error(request, "O contrato já foi criado. Use o fluxo de aditivo para alterações.")
+            return redirect("lista_solicitacoes")
+        if request.FILES.get("arquivo_contrato_assinado") and not allow_signed_upload:
+            messages.error(request, "Aprove as minutas antes de anexar o contrato assinado.")
+            return redirect("lista_solicitacoes")
         form = DocumentoContratoTerceiroForm(request.POST, request.FILES, instance=contrato_existente)
 
         if form.is_valid():
             should_notify_minuta = bool(request.FILES.get("arquivo_contrato"))
             is_signed_file_upload_only = bool(request.FILES.get("arquivo_contrato_assinado")) and not should_notify_minuta
             contrato = form.save(commit=False)
+            if effective_contract:
+                original = DocumentoContratoTerceiro.objects.get(pk=contrato.pk)
+                for field in ("numero_contrato", "objeto", "prazo_inicio", "prazo_fim", "valor_total", "observacao"):
+                    setattr(contrato, field, getattr(original, field))
             contrato.solicitacao_contrato = solicitacao
             contrato.prazo_inicio = solicitacao.data_inicio
             contrato.prazo_fim = solicitacao.data_fim
@@ -8917,6 +9364,9 @@ def cadastrar_minuta_contrato(request, solicitacao_id):
                 contrato.arquivo_contrato_assinado = contrato_existente.arquivo_contrato_assinado
 
             contrato.save()
+            if effective_contract:
+                effective_contract.num_contrato_arquivo = contrato.arquivo_contrato_assinado
+                effective_contract.save(update_fields=["num_contrato_arquivo"])
             contrato_criado = criar_contrato_se_aprovado_minuta(solicitacao)
             if (
                 is_signed_file_upload_only
@@ -9130,6 +9580,7 @@ def build_os_docm_replacements(solicitacao_os):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="solicitacao_id")
 def gerar_minuta_contrato_docm(request, solicitacao_id):
     if request.user.grupo != "suprimento":
         messages.error(request, "Você não tem permissão para isso!")
@@ -9177,6 +9628,7 @@ def gerar_minuta_contrato_docm(request, solicitacao_id):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="solicitacao_id")
 def gerar_minuta_contrato_contratacao_docm(request, solicitacao_id):
     if request.user.grupo != "suprimento":
         messages.error(request, "Você não tem permissão para isso!")
@@ -9226,6 +9678,7 @@ def gerar_minuta_contrato_contratacao_docm(request, solicitacao_id):
 
 
 @login_required
+@proteger_fluxo_solicitacao(AditivoContratoTerceiro)
 def gerar_aditivo_contrato_docm(request, pk):
     aditivo = get_object_or_404(AditivoContratoTerceiro, pk=pk)
 
@@ -9246,6 +9699,7 @@ def gerar_aditivo_contrato_docm(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoOrdemServico)
 def gerar_os_docm(request, pk):
     solicitacao_os = get_object_or_404(SolicitacaoOrdemServico, pk=pk)
 
@@ -9265,13 +9719,17 @@ def gerar_os_docm(request, pk):
     return response
 
 
+@transaction.atomic
 def criar_contrato_se_aprovado(solicitacao):
+    solicitacao = type(solicitacao).objects.select_for_update().get(pk=solicitacao.pk)
+    if solicitacao.cancelada or solicitacao.arquivada:
+        return None
     try:
         bm = solicitacao.minuta_boletins_medicao
     except DocumentoBM.DoesNotExist:
         return None
 
-    bm_aprovado = bm.status_gerente == 'aprovado'
+    bm_aprovado = bm.aprovado
     contrato_aprovado = solicitacao.aprovacao_gerencia is True
 
     contrato_existente = ContratoTerceiros.objects.filter(prospeccao=solicitacao).first()
@@ -9318,7 +9776,11 @@ def criar_contrato_se_aprovado(solicitacao):
     return None
 
 
+@transaction.atomic
 def criar_contrato_se_aprovado_minuta(solicitacao):
+    solicitacao = type(solicitacao).objects.select_for_update().get(pk=solicitacao.pk)
+    if solicitacao.cancelada or solicitacao.arquivada:
+        return None
     bm = None
     if not solicitacao.guarda_chuva:
         try:
@@ -9326,7 +9788,7 @@ def criar_contrato_se_aprovado_minuta(solicitacao):
         except DocumentoBM.DoesNotExist:
             return None
 
-    bm_aprovado = True if solicitacao.guarda_chuva else bm.aprovado_gerente
+    bm_aprovado = True if solicitacao.guarda_chuva else bm.aprovado
     contrato_aprovado = solicitacao.aprovacao_gerencia is True
 
     contrato_existente = ContratoTerceiros.objects.filter(solicitacao=solicitacao).first()
@@ -9378,6 +9840,10 @@ def criar_contrato_se_aprovado_minuta(solicitacao):
 
 
 @login_required
+@financeiro_read_only
+@object_access(SolicitacaoProspeccao)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
+@locked_action(SolicitacaoProspeccao)
 def detalhes_contrato(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
@@ -9392,6 +9858,14 @@ def detalhes_contrato(request, pk):
     fornecedores_selecionados = solicitacao.fornecedores_selecionados.all()
     revisoes = solicitacao.revisoes.all()
     origem = solicitacao.solicitacao_origem
+
+    if request.method == "POST" and solicitacao.status == "Onboarding":
+        messages.error(request, "Esta solicitação já foi concluída.")
+        return redirect("lista_solicitacoes")
+
+    if request.method == "POST" and (not request_can_plan_contract(solicitacao) or not document_contract_has_draft(contrato_doc)):
+        messages.error(request, "A aprovação exige fornecedor aprovado e minuta de contrato anexada.")
+        return redirect("lista_solicitacoes")
 
     if request.method == "POST" and user_has_gerente_contrato_role(request.user) and contrato_doc:
         acao = request.POST.get("acao")
@@ -9455,6 +9929,10 @@ def detalhes_contrato(request, pk):
 
 
 @login_required
+@financeiro_read_only
+@object_access(SolicitacaoContrato)
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="pk")
+@locked_action(SolicitacaoContrato)
 def detalhes_minuta_contrato(request, pk):
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
 
@@ -9467,6 +9945,14 @@ def detalhes_minuta_contrato(request, pk):
             fornecedor=fornecedor_escolhido,
         ).first()
     documento_bm = getattr(solicitacao, "minuta_boletins_medicao_contrato", None)
+
+    if request.method == "POST" and solicitacao.status == "Onboarding":
+        messages.error(request, "Esta solicitação já foi concluída.")
+        return redirect("lista_solicitacoes")
+
+    if request.method == "POST" and (not request_can_plan_contract(solicitacao) or not document_contract_has_draft(contrato_doc)):
+        messages.error(request, "A aprovação exige fornecedor aprovado e minuta de contrato anexada.")
+        return redirect("lista_solicitacoes")
 
     if request.method == "POST" and user_has_gerente_contrato_role(request.user) and contrato_doc:
         acao = request.POST.get("acao")
@@ -9560,63 +10046,104 @@ def detalhes_minuta_contrato(request, pk):
     })
 
 
+def _preliminary_contract_response(request, source):
+    error = prospect_services.preliminary_error(source)
+    if error:
+        messages.error(request, error)
+        return render(request, "gestao_contratos/revisao_contratual_bloqueada.html",
+            {"solicitacao": source, "reason": error,
+             "contratos_efetivos": ContratoTerceiros.objects.filter(prospeccao=source)}, status=409)
+    return None
+
+
 @login_required
+@object_access(SolicitacaoProspeccao)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def renegociar_valor(request, pk):
+    if not prospect_services.can_revise(request.user, get_object_or_404(SolicitacaoProspeccao, pk=pk)):
+        return JsonResponse({"success": False, "error": "Financeiro não pode renegociar propostas."}, status=403)
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
-    proposta = PropostaFornecedor.objects.filter(solicitacao=solicitacao).first()
-
-    if not proposta:
-        return render(request, "erro.html", {"mensagem": "Nenhuma proposta encontrada para esta solicitação."})
-
-    if request.method == "POST":
-        novo_valor = request.POST.get("valor_proposta")
-        if novo_valor:
-            proposta.valor_proposta = novo_valor
-            proposta.save()
-            return redirect("detalhes_contrato", pk=solicitacao.pk)
-
-    return render(request, "gestao_contratos/renegociar_valor.html", {"solicitacao": solicitacao, "proposta": proposta})
+    blocked = _preliminary_contract_response(request, solicitacao)
+    if blocked:
+        return blocked
+    proposta = None
+    proposal_error = None
+    try:
+        proposta = prospect_services.chosen_proposal(solicitacao, request.POST.get("proposta_id"))
+    except ValidationError as exc:
+        proposal_error = "; ".join(exc.messages)
+    form = RenegociacaoValorForm(request.POST if request.method == "POST" else None,
+        initial={"valor_proposta": proposta.valor_proposta if proposta else None})
+    if request.method == "POST" and form.is_valid() and not proposal_error:
+        try:
+            prospect_services.renegotiate_value(source_id=solicitacao.pk, user=request.user,
+                value=form.cleaned_data["valor_proposta"], proposal_id=proposta.pk)
+        except ValidationError as exc:
+            form.add_error(None, "; ".join(exc.messages))
+        else:
+            messages.success(request, "Proposta escolhida atualizada. Mudanças materiais exigem nova aprovação do fornecedor e das minutas.")
+            return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+    return render(request, "gestao_contratos/renegociar_valor.html",
+        {"solicitacao": solicitacao, "proposta": proposta, "form": form, "proposal_error": proposal_error})
 
 
 @login_required
+@object_access(SolicitacaoProspeccao)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def renegociar_prazo(request, pk):
+    if not prospect_services.can_revise(request.user, get_object_or_404(SolicitacaoProspeccao, pk=pk)):
+        return JsonResponse({"success": False, "error": "Financeiro não pode alterar prazos contratuais."}, status=403)
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
+    blocked = _preliminary_contract_response(request, solicitacao)
+    if blocked:
+        return blocked
     contrato = DocumentoContratoTerceiro.objects.filter(solicitacao=solicitacao).first()
-
     if not contrato:
-        return render(request, "erro.html", {"mensagem": "Nenhum contrato encontrado para esta solicitação."})
-
-    if request.method == "POST":
-        prazo_inicio = request.POST.get("prazo_inicio")
-        prazo_fim = request.POST.get("prazo_fim")
-
-        if prazo_inicio and prazo_fim:
-            contrato.prazo_inicio = prazo_inicio
-            contrato.prazo_fim = prazo_fim
-            contrato.save()
-            return redirect("detalhes_contrato", pk=solicitacao.pk)
-
-    return render(request, "gestao_contratos/renegociar_prazo.html", {"solicitacao": solicitacao, "contrato": contrato})
+        messages.error(request, "Nenhuma minuta encontrada. Regularize o planejamento do contrato.")
+        return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+    form = RenegociacaoPrazoForm(request.POST if request.method == "POST" else None, instance=contrato)
+    if request.method == "POST" and form.is_valid():
+        try:
+            prospect_services.renegotiate_term(source_id=solicitacao.pk, user=request.user,
+                start=form.cleaned_data["prazo_inicio"], end=form.cleaned_data["prazo_fim"])
+        except ValidationError as exc:
+            form.add_error(None, "; ".join(exc.messages))
+        else:
+            messages.success(request, "Prazo preliminar atualizado. Reavalie as condições pelo fluxo de aprovação existente.")
+            return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+    return render(request, "gestao_contratos/renegociar_prazo.html", {"solicitacao": solicitacao, "contrato": contrato, "form": form})
 
 
 @login_required
+@object_access(SolicitacaoProspeccao)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def nova_prospeccao(request, pk):
+    if not prospect_services.can_revise(request.user, get_object_or_404(SolicitacaoProspeccao, pk=pk)):
+        return JsonResponse({"success": False, "error": "Financeiro não pode revisar solicitações de prospecção."}, status=403)
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
-
-    if request.method == "POST":
-        nova_solicitacao = SolicitacaoProspeccao.objects.create(
-            contrato=f"{solicitacao.contrato} - Revisão {timezone.now().strftime('%d/%m/%Y %H:%M')}",
-            descricao=solicitacao.descricao,
-            criado_por=request.user,
-            status="Em Prospecção",
-            solicitacao_origem=solicitacao
-        )
-        return redirect("detalhes_contrato", pk=nova_solicitacao.pk)
-
-    return render(request, "nova_prospeccao.html", {"solicitacao": solicitacao})
+    blocked = _preliminary_contract_response(request, solicitacao)
+    if blocked:
+        return blocked
+    token_name = f"revisao_prospeccao:{solicitacao.pk}"
+    form = RevisaoProspeccaoForm(request.POST if request.method == "POST" else None,
+        initial=model_to_dict(solicitacao, fields=prospect_services.REVISION_FIELDS))
+    if request.method == "POST" and form.is_valid():
+        if not _consume_submission_token(request, token_name):
+            messages.info(request, DUPLICATE_SUBMISSION_MESSAGE)
+            return redirect("detalhes_solicitacao", pk=solicitacao.pk)
+        try:
+            revision = prospect_services.create_revision(source_id=solicitacao.pk, user=request.user, values=form.cleaned_data)
+        except ValidationError as exc:
+            form.add_error(None, "; ".join(exc.messages))
+        else:
+            messages.success(request, "Revisão registrada. A solicitação original e seu histórico foram preservados.")
+            return redirect("detalhes_solicitacao", pk=revision.pk)
+    return render(request, "gestao_contratos/nova_prospeccao.html", {"solicitacao": solicitacao, "form": form,
+        "submission_token": _get_submission_token(request, token_name)})
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def inserir_minuta_bm(request, pk):
     solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=pk)
 
@@ -9625,22 +10152,37 @@ def inserir_minuta_bm(request, pk):
         return redirect("home")
 
     # Cria ou recupera a minuta ligada Ã  solicitação
-    documento_bm, created = DocumentoBM.objects.get_or_create(solicitacao=solicitacao)
+    documento_bm = DocumentoBM.objects.filter(solicitacao=solicitacao).first() or DocumentoBM(solicitacao=solicitacao)
     contrato_doc = getattr(solicitacao, "contrato_relacionado", None)
     allow_signed_upload = bool(
         contrato_doc
-        and documento_bm.status_gerente == "aprovado"
+        and documento_bm.aprovado
         and solicitacao.aprovacao_gerencia is True
     )
 
     if request.method == "POST":
+        if not request_can_plan_contract(solicitacao):
+            messages.error(request, "Conclua a aprovação do fornecedor antes de planejar o contrato.")
+            return redirect("lista_solicitacoes")
+        if solicitacao.status == "Onboarding":
+            messages.error(request, "A solicitação já foi concluída.")
+            return redirect("lista_solicitacoes")
+        if request.FILES.get("minuta_boletim_assinado") and not allow_signed_upload:
+            messages.error(request, "Aprove as minutas antes de enviar documentos assinados.")
+            return redirect("lista_solicitacoes")
         form = DocumentoBMForm(request.POST, request.FILES, instance=documento_bm)
         if form.is_valid():
+            new_draft = bool(request.FILES.get("minuta_boletim"))
             documento_salvo = form.save(commit=False)
             if not request.FILES.get("minuta_boletim") and documento_bm.minuta_boletim:
                 documento_salvo.minuta_boletim = documento_bm.minuta_boletim
             if not request.FILES.get("minuta_boletim_assinado") and documento_bm.minuta_boletim_assinado:
                 documento_salvo.minuta_boletim_assinado = documento_bm.minuta_boletim_assinado
+            if new_draft:
+                documento_salvo.status_coordenador = "pendente"
+                documento_salvo.data_aprovacao_coordenador = None
+                documento_salvo.status_gerente = "pendente"
+                documento_salvo.data_aprovacao_gerente = None
             documento_salvo.save()
             if document_contract_has_draft(contrato_doc):
                 solicitacao.status = "Aprovação Final"
@@ -9648,6 +10190,11 @@ def inserir_minuta_bm(request, pk):
                 solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
             criar_contrato_se_aprovado(solicitacao)
+            if new_draft:
+                try:
+                    notify_bm_approvers_about_draft(solicitacao)
+                except Exception as exc:
+                    messages.warning(request, f"Erro ao enviar e-mail aos responsáveis pela minuta: {exc}")
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
             return redirect('lista_solicitacoes')
     else:
@@ -9662,6 +10209,7 @@ def inserir_minuta_bm(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="pk")
 def inserir_minuta_bm_contrato(request, pk):
     solicitacao = get_object_or_404(SolicitacaoContrato, pk=pk)
 
@@ -9673,22 +10221,37 @@ def inserir_minuta_bm_contrato(request, pk):
         return redirect("detalhes_solicitacao_contrato", pk=solicitacao.pk)
 
     # Cria ou recupera a minuta ligada Ã  solicitação
-    documento_bm, created = DocumentoBM.objects.get_or_create(solicitacao_contrato=solicitacao)
+    documento_bm = DocumentoBM.objects.filter(solicitacao_contrato=solicitacao).first() or DocumentoBM(solicitacao_contrato=solicitacao)
     contrato_doc = getattr(solicitacao, "minuta_contrato", None)
     allow_signed_upload = bool(
         contrato_doc
-        and documento_bm.status_gerente == "aprovado"
+        and documento_bm.aprovado
         and solicitacao.aprovacao_gerencia is True
     )
 
     if request.method == "POST":
+        if not request_can_plan_contract(solicitacao):
+            messages.error(request, "Conclua a aprovação do fornecedor antes de planejar o contrato.")
+            return redirect("lista_solicitacoes")
+        if solicitacao.status == "Onboarding":
+            messages.error(request, "A solicitação já foi concluída.")
+            return redirect("lista_solicitacoes")
+        if request.FILES.get("minuta_boletim_assinado") and not allow_signed_upload:
+            messages.error(request, "Aprove as minutas antes de enviar documentos assinados.")
+            return redirect("lista_solicitacoes")
         form = DocumentoBMForm(request.POST, request.FILES, instance=documento_bm)
         if form.is_valid():
+            new_draft = bool(request.FILES.get("minuta_boletim"))
             documento_salvo = form.save(commit=False)
             if not request.FILES.get("minuta_boletim") and documento_bm.minuta_boletim:
                 documento_salvo.minuta_boletim = documento_bm.minuta_boletim
             if not request.FILES.get("minuta_boletim_assinado") and documento_bm.minuta_boletim_assinado:
                 documento_salvo.minuta_boletim_assinado = documento_bm.minuta_boletim_assinado
+            if new_draft:
+                documento_salvo.status_coordenador = "pendente"
+                documento_salvo.data_aprovacao_coordenador = None
+                documento_salvo.status_gerente = "pendente"
+                documento_salvo.data_aprovacao_gerente = None
             documento_salvo.save()
             if document_contract_has_draft(contrato_doc):
                 solicitacao.status = "Aprovação Final"
@@ -9696,6 +10259,11 @@ def inserir_minuta_bm_contrato(request, pk):
                 solicitacao.status = "Planejamento do Contrato"
             solicitacao.save()
             criar_contrato_se_aprovado_minuta(solicitacao)
+            if new_draft:
+                try:
+                    notify_bm_approvers_about_draft(solicitacao)
+                except Exception as exc:
+                    messages.warning(request, f"Erro ao enviar e-mail aos responsáveis pela minuta: {exc}")
             messages.success(request, "Minuta do Boletim de Medição enviada com sucesso!")
             return redirect('lista_solicitacoes')
     else:
@@ -9710,257 +10278,98 @@ def inserir_minuta_bm_contrato(request, pk):
 
 
 @login_required
+@financeiro_read_only
+@object_access(DocumentoBM)
+@proteger_fluxo_solicitacao(DocumentoBM, key="pk")
+@locked_action(DocumentoBM)
 def detalhe_bm(request, pk):
-    if request.user.grupo not in ["gerente_contrato", "lider_contrato", "gerente_lider"] and not user_can_cover_gerente_contrato(request.user):
-        messages.error(request, "Você não tem permissão para isso.")
-        return redirect("home")
     bm = get_object_or_404(DocumentoBM, pk=pk)
-    solicitacao = bm.solicitacao
-    usuario = request.user
-
-    if usuario.grupo == "gerente_lider" and not user_shares_center_with_coordinator(usuario, solicitacao.coordenador):
+    solicitacao = get_object_or_404(SolicitacaoProspeccao, pk=bm.solicitacao_id)
+    can_evaluate = can_user_evaluate_documento_bm(request.user, solicitacao)
+    if not can_evaluate and request.user.grupo != "financeiro":
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
     if request.method == "POST":
-        acao = request.POST.get("acao")
-        justificativa = request.POST.get("justificativa", "").strip()
-
-        # Avaliação do coordenador
-        if usuario.grupo == "lider_contrato" or (
-            usuario.grupo == "gerente_lider" and user_shares_center_with_coordinator(usuario, solicitacao.coordenador)
-        ):
-            if usuario.grupo == "lider_contrato" and usuario != solicitacao.lider_contrato:
-                messages.error(request, "Você não tem permissão para isso.")
-                return redirect("home")
-            if acao == "aprovar":
-                bm.status_coordenador = "aprovado"
-                bm.data_aprovacao_coordenador = timezone.now()
-                bm.justificativa_reprovacao_coordenador = None
-                messages.success(request, "Minuta BM aprovada pelo coordenador.")
-            elif acao == "reprovar":
-                if not justificativa:
-                    messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
-                    return redirect("detalhe_bm", pk=pk)
-                bm.status_coordenador = "reprovado"
-                bm.data_aprovacao_coordenador = timezone.now()
-                bm.justificativa_reprovacao_coordenador = justificativa
-                solicitacao.status = "Planejamento do Contrato"
-                solicitacao.save(update_fields=["status"])
-                messages.warning(request, "Minuta BM reprovada pelo coordenador.")
-
-        # Avaliação do gerente
-        elif user_has_gerente_contrato_role(usuario):
-            if acao == "aprovar":
-                bm.status_gerente = "aprovado"
-                bm.data_aprovacao_gerente = timezone.now()
-                bm.justificativa_reprovacao_gerente = None
-                messages.success(request, "Minuta BM aprovada pelo gerente.")
-            elif acao == "reprovar":
-                if not justificativa:
-                    messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
-                    return redirect("detalhe_bm", pk=pk)
-                bm.status_gerente = "reprovado"
-                bm.data_aprovacao_gerente = timezone.now()
-                bm.justificativa_reprovacao_gerente = justificativa
-                solicitacao.status = "Planejamento do Contrato"
-                solicitacao.save()
-                messages.warning(request, "Minuta BM reprovada pelo gerente.")
-
-        bm.save()
-        if acao == "reprovar":
-            try:
-                _send_stage_return_notification(
-                    f"Solicitação #{solicitacao.id} - Minuta de BM reprovada",
-                    (
-                        f"Olá, equipe de Suprimentos!\n\n"
-                        f"A minuta do BM da solicitação #{solicitacao.id} foi reprovada.\n\n"
-                        f"Justificativa: {justificativa}\n\n"
-                        "A próxima etapa é revisar a minuta e reenviá-la no sistema.\n"
-                        "https://hidrogestao.pythonanywhere.com/"
-                    ),
-                    _group_emails("suprimento"),
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para suprimento: {e}")
-        # Tenta criar o contrato caso BM e documento do contrato estejam aprovados
-        criar_contrato_se_aprovado(solicitacao)
-
-        return redirect("lista_solicitacoes")
+        return evaluate_documento_bm(request, bm, solicitacao, "detalhe_bm")
 
     return render(request, "gestao_contratos/detalhe_bm.html", {
         "bm": bm,
         "solicitacao": solicitacao,
-        "can_act_as_gerente_contrato": user_has_gerente_contrato_role(request.user),
+        "can_evaluate_bm": can_evaluate,
+        "can_resend_signed_files_notice": solicitacao.status == SIGNED_FILES_PENDING_STATUS,
     })
 
 
 @login_required
+@financeiro_read_only
+@object_access(DocumentoBM)
+@proteger_fluxo_solicitacao(DocumentoBM, key="pk")
+@locked_action(DocumentoBM)
 def detalhe_bm_contrato(request, pk):
-    if request.user.grupo not in ["gerente_contrato", "lider_contrato", "gerente_lider"] and not user_can_cover_gerente_contrato(request.user):
-        messages.error(request, "Você não tem permissão para isso.")
-        return redirect("home")
     bm = get_object_or_404(DocumentoBM, pk=pk)
-    solicitacao = bm.solicitacao_contrato
-    usuario = request.user
-
-    if usuario.grupo == "gerente_lider" and not user_shares_center_with_coordinator(usuario, solicitacao.coordenador):
+    solicitacao = get_object_or_404(SolicitacaoContrato, pk=bm.solicitacao_contrato_id)
+    can_evaluate = can_user_evaluate_documento_bm(request.user, solicitacao)
+    if not can_evaluate and request.user.grupo != "financeiro":
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("home")
 
     if request.method == "POST":
-        acao = request.POST.get("acao")
-        justificativa = request.POST.get("justificativa", "").strip()
-
-        if usuario.grupo == "lider_contrato" or (
-            usuario.grupo == "gerente_lider" and user_shares_center_with_coordinator(usuario, solicitacao.coordenador)
-        ):
-            if usuario.grupo == "lider_contrato" and usuario != solicitacao.lider_contrato:
-                messages.error(request, "Você não tem permissão para isso.")
-                return redirect("home")
-            if acao == "aprovar":
-                bm.status_coordenador = "aprovado"
-                bm.data_aprovacao_coordenador = timezone.now()
-                bm.justificativa_reprovacao_coordenador = None
-                messages.success(request, "Minuta BM aprovada pelo líder.")
-            elif acao == "reprovar":
-                if not justificativa:
-                    messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
-                    return redirect("detalhe_bm_contrato", pk=pk)
-                bm.status_coordenador = "reprovado"
-                bm.data_aprovacao_coordenador = timezone.now()
-                bm.justificativa_reprovacao_coordenador = justificativa
-                solicitacao.status = "Planejamento do Contrato"
-                solicitacao.save(update_fields=["status"])
-                messages.warning(request, "Minuta BM reprovada pelo líder.")
-
-        elif user_has_gerente_contrato_role(usuario):
-            if acao == "aprovar":
-                bm.status_gerente = "aprovado"
-                bm.data_aprovacao_gerente = timezone.now()
-                bm.justificativa_reprovacao_gerente = None
-                messages.success(request, "Minuta BM aprovada pelo gerente.")
-            elif acao == "reprovar":
-                if not justificativa:
-                    messages.error(request, "A justificativa é obrigatória para reprovar a minuta do BM.")
-                    return redirect("detalhe_bm_contrato", pk=pk)
-                bm.status_gerente = "reprovado"
-                bm.data_aprovacao_gerente = timezone.now()
-                bm.justificativa_reprovacao_gerente = justificativa
-                solicitacao.status = "Planejamento do Contrato"
-                solicitacao.save(update_fields=["status"])
-                messages.warning(request, "Minuta BM reprovada pelo gerente.")
-
-        bm.save()
-        if acao == "reprovar":
-            try:
-                _send_stage_return_notification(
-                    f"Solicitação #{solicitacao.id} - Minuta de BM reprovada",
-                    (
-                        f"Olá, equipe de Suprimentos!\n\n"
-                        f"A minuta do BM da solicitação #{solicitacao.id} foi reprovada.\n\n"
-                        f"Justificativa: {justificativa}\n\n"
-                        "A próxima etapa é revisar a minuta e reenviá-la no sistema.\n"
-                        "https://hidrogestao.pythonanywhere.com/"
-                    ),
-                    _group_emails("suprimento"),
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para suprimento: {e}")
-        criar_contrato_se_aprovado_minuta(solicitacao)
-
-        return redirect("lista_solicitacoes")
+        return evaluate_documento_bm(request, bm, solicitacao, "detalhe_bm_contrato")
 
     return render(request, "gestao_contratos/detalhe_bm.html", {
         "bm": bm,
         "solicitacao": solicitacao,
-        "can_act_as_gerente_contrato": user_has_gerente_contrato_role(request.user),
+        "can_evaluate_bm": can_evaluate,
+        "can_resend_signed_files_notice": solicitacao.status == SIGNED_FILES_PENDING_STATUS,
     })
 
 
 @login_required
+@proteger_fluxo_solicitacao(DocumentoBM, key="pk")
+@locked_action(DocumentoBM)
 def aprovar_bm(request, pk, papel):
     bm = get_object_or_404(DocumentoBM, pk=pk)
-
-    if papel == "coordenador" and request.user.groups.filter(name="Coordenador de Contrato").exists():
-        bm.status_coordenador = "aprovado"
-        bm.data_aprovacao_coordenador = timezone.now()
-    elif papel == "gerente" and (
-        request.user.groups.filter(name="Gerente de Contrato").exists()
-        or user_has_gerente_contrato_role(request.user)
-    ):
-        bm.status_gerente = "aprovado"
-        bm.data_aprovacao_gerente = timezone.now()
-    else:
+    solicitacao = bm.solicitacao or bm.solicitacao_contrato
+    is_leader = (
+        papel == "coordenador"
+        and request.user.grupo in ("lider_contrato", "gerente_lider")
+        and solicitacao.lider_contrato_id == request.user.pk
+    )
+    if not is_leader and not (papel == "gerente" and user_has_gerente_contrato_role(request.user)):
         messages.error(request, "Você não tem permissão para aprovar este documento.")
         return redirect("lista_solicitacoes")
-
-    bm.save()
-    return redirect("detalhe_bm", pk=bm.pk)
+    if request.method != "POST":
+        messages.error(request, "A aprovação exige confirmação pelo formulário.")
+        return redirect("lista_solicitacoes")
+    detail_name = "detalhe_bm" if bm.solicitacao_id else "detalhe_bm_contrato"
+    return evaluate_documento_bm(request, bm, solicitacao, detail_name, acao="aprovar")
 
 
 @login_required
+@proteger_fluxo_solicitacao(DocumentoBM, key="pk")
+@locked_action(DocumentoBM)
 def reprovar_bm(request, pk, papel):
     bm = get_object_or_404(DocumentoBM, pk=pk)
-
-    if papel == "coordenador" and request.user.groups.filter(name="Coordenador de Contrato").exists():
-        campo = "coordenador"
-    elif papel == "gerente" and (
-        request.user.groups.filter(name="Gerente de Contrato").exists()
-        or user_has_gerente_contrato_role(request.user)
-    ):
-        campo = "gerente"
-    else:
+    solicitacao = bm.solicitacao or bm.solicitacao_contrato
+    is_leader = (
+        papel == "coordenador"
+        and request.user.grupo in ("lider_contrato", "gerente_lider")
+        and solicitacao.lider_contrato_id == request.user.pk
+    )
+    if not is_leader and not (papel == "gerente" and user_has_gerente_contrato_role(request.user)):
         messages.error(request, "Você não tem permissão para reprovar este documento.")
         return redirect("lista_solicitacoes")
-
-    justificativa = request.POST.get("justificativa", "").strip()
-    if request.method != "POST" or not justificativa:
-        messages.error(request, "A justificativa é obrigatória para reprovar o BM.")
-        return redirect("detalhe_bm", pk=bm.pk)
-
-    if campo == "coordenador":
-        bm.status_coordenador = "reprovado"
-        bm.justificativa_reprovacao_coordenador = justificativa
-    else:
-        bm.status_gerente = "reprovado"
-        bm.justificativa_reprovacao_gerente = justificativa
-
-    bm.save()
-
-    # Se alguém reprovou, exigir novo upload de minuta.
-    if bm.reprovado_por_alguem:
-        messages.warning(request, "A minuta foi reprovada. Suprimentos deve reenviar um novo BM.")
-
-        suprimentos = User.objects.filter(grupo="suprimento").values_list("email", flat=True)
-        contrato_referencia = None
-        if bm.solicitacao and bm.solicitacao.contrato:
-            contrato_referencia = bm.solicitacao.contrato
-        elif bm.solicitacao_contrato and bm.solicitacao_contrato.contrato:
-            contrato_referencia = bm.solicitacao_contrato.contrato
-
-        if suprimentos:
-            assunto = "Reprovação do Boletim de Medição"
-            mensagem = (
-                f"O Boletim de Medição {bm.id}, referente ao contrato {contrato_referencia or 'não identificado'} "
-                f"foi reprovado.\n\n"
-                "Acesse o sistema HIDROGestão para mais informações.\n"
-                "https://hidrogestao.pythonanywhere.com/"
-            )
-            try:
-                send_mail(
-                    assunto, mensagem,
-                    FROM_EMAIL,
-                    list(suprimentos),
-                    fail_silently=False,
-                )
-            except Exception as e:
-                messages.warning(request, f"Erro ao enviar e-mail para suprimentos: {e}")
-
-    return redirect("detalhe_bm", pk=bm.pk)
+    if request.method != "POST":
+        messages.error(request, "A reprovação exige confirmação pelo formulário.")
+        return redirect("lista_solicitacoes")
+    detail_name = "detalhe_bm" if bm.solicitacao_id else "detalhe_bm_contrato"
+    return evaluate_documento_bm(request, bm, solicitacao, detail_name, acao="reprovar")
 
 
 @login_required
+@object_access(SolicitacaoProspeccao)
+@proteger_fluxo_solicitacao(SolicitacaoProspeccao, key="pk")
 def cadastrar_evento(request, pk):
     if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -9988,7 +10397,9 @@ def cadastrar_evento(request, pk):
 def buscar_proxima_data_pagamento(request):
     data_prevista = request.GET.get("data_prevista")
 
-    if not data_prevista:
+    try:
+        data_prevista = date.fromisoformat(data_prevista)
+    except (TypeError, ValueError):
         return JsonResponse({"data": None})
 
     proxima_data = CalendarioPagamento.objects.filter(
@@ -10010,6 +10421,8 @@ def duplicar_evento(request, pk):
 
 
 @login_required
+@object_access(SolicitacaoContrato)
+@proteger_fluxo_solicitacao(SolicitacaoContrato, key="pk")
 def cadastrar_evento_solicitacao(request, pk):
     if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -10038,6 +10451,7 @@ def duplicar_evento_solicitacao(request, pk):
 
 
 @login_required
+@object_access(ContratoTerceiros)
 def cadastrar_evento_contrato(request, pk):
     if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -10070,8 +10484,13 @@ def duplicar_evento_contrato(request, pk):
     return duplicate_event_from_request(request, pk, "contrato")
 
 
+@proteger_fluxo_solicitacao(Evento, key="pk")
 def duplicate_event_from_request(request, pk, origin_name):
     evento = get_object_or_404(Evento, pk=pk)
+    if request.user.grupo not in {"suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"} or not can_view_object(request.user, evento):
+        messages.error(request, "Você não tem permissão para duplicar este evento.")
+        return redirect("home")
+
 
     if request.method != "POST":
         messages.warning(request, "Use o botao da tela para duplicar o evento.")
@@ -10082,6 +10501,11 @@ def duplicate_event_from_request(request, pk, origin_name):
         return redirect_to_event_origin(evento)
 
     evento.pk = None
+    evento.data_entrega = None
+    evento.avaliacao = None
+    evento.caminho_evidencia = None
+    evento.arquivo = None
+    evento.com_atraso = False
     evento.realizado = False
     evento.valor_pago = None
     evento.data_pagamento = None
@@ -10122,6 +10546,8 @@ def redirect_to_event_origin(evento):
 
 
 @login_required
+@object_access(Evento)
+@proteger_fluxo_solicitacao(Evento, key="pk")
 def editar_evento(request, pk):
     if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -10139,6 +10565,8 @@ def editar_evento(request, pk):
 
 
 @login_required
+@object_access(Evento)
+@proteger_fluxo_solicitacao(Evento, key="pk")
 def editar_evento_contrato(request, pk):
     if request.user.grupo not in ["suprimento", "coordenador", "gerente", "gerente_lider", "gerente_contrato", "lider_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -10156,6 +10584,7 @@ def editar_evento_contrato(request, pk):
 
 
 @login_required
+@object_access(Evento)
 def excluir_evento(request, pk):
     if request.user.grupo not in ["suprimento", "gerente_lider", "lider_contrato", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -10182,7 +10611,11 @@ def excluir_evento(request, pk):
         pk_origem = None
 
     if request.method == "POST":
-        evento.delete()
+        try:
+            evento.delete()
+        except ProtectedError:
+            messages.error(request, "Este registro possui documentos financeiros e não pode ser excluído.")
+            return redirect("home")
 
         if next_url:
             return redirect(next_url)
@@ -10202,6 +10635,7 @@ def excluir_evento(request, pk):
 
 
 @login_required
+@object_access(Evento)
 def excluir_evento_contrato(request, pk):
     if request.user.grupo not in ["suprimento", "lider_contrato", "gerente_contrato", "gerente_lider"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -10222,7 +10656,11 @@ def excluir_evento_contrato(request, pk):
 
     if request.method == "POST":
         contrato_id = evento.contrato_terceiro_id
-        evento.delete()
+        try:
+            evento.delete()
+        except ProtectedError:
+            messages.error(request, "Este registro possui documentos financeiros e não pode ser excluído.")
+            return redirect("home")
         if next_url:
             return redirect(next_url)
         return redirect("contrato_fornecedor_detalhe", pk=contrato_id)
@@ -10234,6 +10672,7 @@ def excluir_evento_contrato(request, pk):
 
 
 @login_required
+@proteger_fluxo_solicitacao(Evento, key="pk")
 def registrar_entrega(request, pk):
     evento = get_object_or_404(Evento, pk=pk)
     if not evento.contrato_terceiro_id:
@@ -10310,10 +10749,16 @@ def registrar_entrega(request, pk):
 
 
 @login_required
+@require_POST
+@locked_action(BM, key="bm_id",sqlite_immediate=True)
 def avaliar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
+    try:
+        bm.clean()
+    except ValidationError:
+        return JsonResponse({"success": False, "error": "O BM possui vínculos ou valores inconsistentes. Solicite revisão ao responsável."}, status=409)
     usuario = request.user
-    contrato = bm.contrato
+    contrato = bm.contrato_financeiro or bm.contrato
     operational_pending = bm_is_operationally_pending(bm)
     redirect_url = reverse("contrato_fornecedor_detalhe", kwargs={"pk": contrato.pk})
     referencia_bm = (
@@ -10326,8 +10771,16 @@ def avaliar_bm(request, bm_id):
         messages.error(request, "⚠ Você não tem permissão para isso.")
         return redirect("home")
 
+    before={field:getattr(bm,field) for field in ('status_coordenador','status_gerente','aprovacao_pagamento','justificativa_reprovacao_gerente','justificativa_reprovacao_diretor','justificativa_aprovacao_diretor')}
+    notifications=[]
+    def defer_notification(func,*args,**kwargs):
+        notifications.append(lambda:func(*args,**kwargs))
+    def notify(*args,**kwargs):defer_notification(send_mail,*args,**kwargs)
     acao = request.POST.get("acao")
     justificativa = request.POST.get("justificativa", "").strip()
+
+    if len(justificativa)>4000:
+        return JsonResponse({"success":False,"error":"A justificativa deve ter no máximo 4.000 caracteres."},status=400)
 
     if acao not in ["aprovar", "reprovar", "aprovar_pagamento", "reprovar_pagamento"]:
         return JsonResponse({
@@ -10354,7 +10807,7 @@ def avaliar_bm(request, bm_id):
                 "error": "Este BM já recebeu uma avaliação operacional."
             }, status=400)
 
-        if bm.evento_id and not user_has_evaluated_bm_event(usuario, bm):
+        if bm.evento_id and not bm_event_has_evaluation(bm):
             return JsonResponse({
                 "success": False,
                 "error": "Avalie o evento antes de aprovar ou reprovar o BM.",
@@ -10377,19 +10830,19 @@ def avaliar_bm(request, bm_id):
             usuarios_gerencia = User.objects.filter(grupo__in=get_gerente_contrato_action_groups())
             lista_emails_gerencia = [u.email for u in usuarios_gerencia if u.email]
             if lista_emails_gerencia:
-                assunto = f"BM aprovado pela liderança - Contrato {bm.contrato.num_contrato}"
+                assunto = f"BM aprovado pela liderança - Contrato {contrato.num_contrato}"
                 mensagem = (
                         f"Olá,\n\n"
-                        f"O BM {bm.numero_bm} do contrato {bm.contrato.num_contrato} "
+                        f"O BM {bm.numero_bm} do contrato {contrato.num_contrato} "
                         f"foi aprovado por {usuario.get_full_name() or usuario.username}.\n\n"
-                        f"Projeto: {bm.contrato.cod_projeto}\n"
+                        f"Projeto: {contrato.cod_projeto}\n"
                         f"{referencia_bm}\n"
                         f"Valor BM: R$ {bm.valor_pago}\n\n"
                         f"Seu registro adicional não é obrigatório, mas esta aprovação foi comunicada para acompanhamento.\n\n"
                         f"Atenciosamente,\n"
                         f"Sistema HIDROGestão"
                 )
-                send_mail(
+                notify(
                     assunto,
                     mensagem,
                     FROM_EMAIL,
@@ -10410,7 +10863,7 @@ def avaliar_bm(request, bm_id):
                 "error": "Este BM já recebeu uma avaliação operacional."
             }, status=400)
 
-        if usuario.grupo == "gerente_contrato" and bm.evento_id and not user_has_evaluated_bm_event(usuario, bm):
+        if usuario.grupo == "gerente_contrato" and bm.evento_id and not bm_event_has_evaluation(bm):
             return JsonResponse({
                 "success": False,
                 "error": "Avalie o evento antes de aprovar ou reprovar o BM.",
@@ -10437,7 +10890,10 @@ def avaliar_bm(request, bm_id):
                 "error": "Ação inválida para a diretoria."
             }, status=400)
 
-        cobre_gerente = user_can_cover_gerente_contrato(usuario) and bm.status_gerente == "pendente"
+        if bm.aprovacao_pagamento!='pendente':
+            return JsonResponse({'success':False,'error':'Este BM já recebeu uma decisão de pagamento. Uma revisão do BM deve reabrir a autorização.'},status=409)
+
+        cobre_gerente = user_can_cover_gerente_contrato(usuario) and bm_is_operationally_pending(bm)
 
         if not bm_has_operational_approval(bm) and not cobre_gerente:
             return JsonResponse({
@@ -10454,6 +10910,7 @@ def avaliar_bm(request, bm_id):
             bm.aprovacao_pagamento = "aprovado"
             bm.data_aprovacao_diretor = data_avaliacao
             bm.justificativa_reprovacao_diretor = None
+            bm.justificativa_aprovacao_diretor = justificativa or None
 
             usuarios_destino = User.objects.filter(grupo__in=["suprimento", "financeiro"])
             lista_emails = list(dict.fromkeys(u.email for u in usuarios_destino if u.email))
@@ -10463,15 +10920,16 @@ def avaliar_bm(request, bm_id):
                 mensagem = (
                     f"Olá, equipe!\n\n"
                     f"A diretoria APROVOU o pagamento do BM abaixo:\n\n"
-                    f"Projeto: {bm.contrato.cod_projeto}\n"
-                    f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
+                    f"Projeto: {contrato.cod_projeto}\n"
+                    f"Contrato: {contrato.num_contrato} - {contrato.empresa_terceira}\n"
                     f"{referencia_bm}\n"
                     f"Valor BM: R$ {bm.valor_pago}\n\n"
+                    f"Justificativa da Diretoria: {bm.justificativa_aprovacao_diretor or 'Não informada (opcional)'}\n\n"
                     f"Atenciosamente,\n"
                     f"Sistema HIDROGestão"
                 )
 
-                send_mail(
+                notify(
                     assunto,
                     mensagem,
                     FROM_EMAIL,
@@ -10493,7 +10951,15 @@ def avaliar_bm(request, bm_id):
             bm.aprovacao_pagamento = "reprovado"
             bm.data_aprovacao_diretor = data_avaliacao
             bm.justificativa_reprovacao_diretor = justificativa
+            bm.justificativa_aprovacao_diretor = None
 
+    else:
+        return JsonResponse({'success':False,'error':'Ação inválida para este perfil.'},status=400)
+
+    after={field:getattr(bm,field) for field in before}
+    bm._audit_bm_decision={'before':dict(bm_id=bm.pk,contrato_id=contrato.pk,evento_id=bm.evento_id,os_id=bm.os_id,**before),
+        'after':dict(bm_id=bm.pk,contrato_id=contrato.pk,evento_id=bm.evento_id,os_id=bm.os_id,**after),'reason':justificativa}
+    bm._audit_operation=f'Avaliação de BM: {acao}; pagamento {before["aprovacao_pagamento"]} → {bm.aprovacao_pagamento}; justificativa: {justificativa or "Não informada"}'
     bm.save()
 
     if user_has_gerente_contrato_role(usuario):
@@ -10507,24 +10973,24 @@ def avaliar_bm(request, bm_id):
 
                 if lista_emails:
                     if status_ger == "aprovado":
-                        assunto = f"BM aprovado - Contrato {bm.contrato.num_contrato}"
+                        assunto = f"BM aprovado - Contrato {contrato.num_contrato}"
                         mensagem = (
                             f"Olá, equipe de Suprimentos!\n\n"
                             f"O Boletim de Medição foi APROVADO pelo gerente de contrato.\n\n"
-                            f"Projeto: {bm.contrato.cod_projeto}\n"
-                            f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
+                            f"Projeto: {contrato.cod_projeto}\n"
+                            f"Contrato: {contrato.num_contrato} - {contrato.empresa_terceira}\n"
                             f"{referencia_bm}\n"
                             f"Valor BM: R$ {bm.valor_pago}\n\n"
                             f"Atenciosamente,\n"
                             f"Sistema HIDROGestão"
                         )
                     else:
-                        assunto = f"BM reprovado - Contrato {bm.contrato.num_contrato}"
+                        assunto = f"BM reprovado - Contrato {contrato.num_contrato}"
                         mensagem = (
                             f"Olá, equipe de Suprimentos!\n\n"
                             f"O Boletim de Medição foi REPROVADO.\n\n"
-                            f"Projeto: {bm.contrato.cod_projeto}\n"
-                            f"Contrato: {bm.contrato.num_contrato} - {bm.contrato.empresa_terceira}\n"
+                            f"Projeto: {contrato.cod_projeto}\n"
+                            f"Contrato: {contrato.num_contrato} - {contrato.empresa_terceira}\n"
                             f"{referencia_bm}\n\n"
                             f"Justificativas:\n"
                             f"- Líder: {bm.justificativa_reprovacao_coordenador or 'Aprovou'}\n"
@@ -10533,7 +10999,7 @@ def avaliar_bm(request, bm_id):
                             f"Sistema HIDROGestão"
                         )
 
-                    send_mail(
+                    notify(
                         assunto,
                         mensagem,
                         FROM_EMAIL,
@@ -10544,8 +11010,8 @@ def avaliar_bm(request, bm_id):
             print("Erro ao enviar e-mail de avaliação:", e)
     elif usuario.grupo == "diretoria" and bm.aprovacao_pagamento == "reprovado":
         try:
-            _send_stage_return_notification(
-                f"Pagamento de BM reprovado - Contrato {bm.contrato.num_contrato}",
+            defer_notification(_send_stage_return_notification,
+                f"Pagamento de BM reprovado - Contrato {contrato.num_contrato}",
                 (
                     f"Olá!\n\n"
                     f"O pagamento do BM foi reprovado pela Diretoria.\n\n"
@@ -10560,6 +11026,8 @@ def avaliar_bm(request, bm_id):
             print("Erro ao enviar e-mail de reprovação de pagamento:", e)
             messages.error(request, "⚠ Não foi possível enviar o e-mail para Suprimentos.")
 
+    for callback in notifications:transaction.on_commit(callback,robust=True)
+
     return JsonResponse({
         "success": True,
         "status_coordenador": bm.status_coordenador,
@@ -10568,8 +11036,90 @@ def avaliar_bm(request, bm_id):
         "justificativa_reprovacao_gerente": bm.justificativa_reprovacao_gerente,
         "aprovacao_pagamento": bm.aprovacao_pagamento,
         "justificativa_reprovacao_diretor": bm.justificativa_reprovacao_diretor,
+        "justificativa_aprovacao_diretor":bm.justificativa_aprovacao_diretor,
     })
 
+
+
+def forecast_period_start(data_inicial,data_limite):
+    if data_inicial:return data_inicial,''
+    previous=CalendarioPagamento.objects.filter(data_pagamento__lt=data_limite).order_by('-data_pagamento').values_list('data_pagamento',flat=True).first()
+    if previous:return previous+timedelta(days=1),''
+    return data_limite.replace(day=1),(
+        'O calendário não possui data de pagamento anterior à Data Limite. '
+        'Foi usado o primeiro dia do mês da Data Limite; você pode informar a Data Inicial.')
+
+
+def forecast_bms(user,data_inicial,data_limite,filtro_bm='pagamento',coordenador=None,*,approved_only=False):
+    """O intervalo automático começa no dia seguinte ao pagamento anterior ao limite."""
+    data_inicial,_=forecast_period_start(data_inicial,data_limite)
+    qs=BM.objects.all()
+    if filtro_bm=='medicao':
+        qs=qs.filter(data_final_medicao__date__lte=data_limite)
+        if data_inicial:qs=qs.filter(data_inicial_medicao__date__gte=data_inicial)
+    else:
+        leader=Q(data_aprovacao_coordenador__date__lte=data_limite)
+        manager=Q(data_aprovacao_gerente__date__lte=data_limite)
+        if data_inicial:
+            leader &= Q(data_aprovacao_coordenador__date__gte=data_inicial)
+            manager &= Q(data_aprovacao_gerente__date__gte=data_inicial)
+        qs=qs.filter(leader|manager).filter(bm_operational_approval_query())
+    if approved_only:qs=qs.filter(bm_operational_approval_query())
+    qs=filter_payment_bms_for_user(user,qs)
+    if coordenador:qs=qs.filter(bm_financial_coordinator_query(coordenador)).distinct()
+    return qs.select_related('contrato__cod_projeto__lider_contrato','contrato__empresa_terceira','contrato__lider_contrato',
+        'evento__contrato_terceiro__cod_projeto__lider_contrato','evento__contrato_terceiro__empresa_terceira',
+        'evento__contrato_terceiro__lider_contrato','os__contrato__empresa_terceira','os__contrato__cod_projeto__lider_contrato',
+        'os__contrato__lider_contrato','os__cod_projeto__lider_contrato','os__lider_contrato').order_by('-data_pagamento','-pk')
+
+
+def prepare_forecast_bms(user,queryset):
+    bms=list(queryset)
+    # Determina status de aprovação (para exibir na tabela)
+    for bm in bms:
+        # Define o status geral
+        if bm_has_operational_approval(bm):
+            bm.status_geral = 'Aprovado'
+            bm.falta_aprovar = '-'
+        elif bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado':
+            bm.status_geral = 'Reprovado'
+            bm.falta_aprovar = '-'
+        else:
+            bm.status_geral = 'Aguardando aprovação'
+            faltando = []
+            if bm.status_coordenador != 'aprovado':
+                faltando.append('Líder / Gerente-Líder')
+            if bm.status_gerente != 'aprovado':
+                faltando.append('Gerente de Contrato')
+            bm.falta_aprovar = ', '.join(faltando)
+
+    bm_approval_audit_map = build_bm_approval_audit_map(bms)
+
+    for bm in bms:
+        approval_info = bm_approval_audit_map.get(bm.id, {})
+        bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
+        bm.aprovacao_gerente_audit = approval_info.get("gerente")
+        bm.can_approve_pagamento = user_can_approve_bm_payment(user, bm)
+        projeto_referencia = (
+            bm.os.cod_projeto
+            if bm.os_id and bm.os and bm.os.cod_projeto
+            else bm.contrato_financeiro.cod_projeto if bm.contrato_financeiro else None
+        )
+        lider_referencia = None
+        if projeto_referencia and projeto_referencia.lider_contrato:
+            lider_referencia = projeto_referencia.lider_contrato
+        if not lider_referencia and bm.os_id and bm.os and bm.os.lider_contrato:
+            lider_referencia = bm.os.lider_contrato
+        if not lider_referencia:
+            lider_referencia = bm.contrato_financeiro.lider_contrato if bm.contrato_financeiro else None
+        bm.projeto_referencia = projeto_referencia.cod_projeto if projeto_referencia else ""
+        bm.lider_contrato_referencia = (
+            lider_referencia.get_full_name() or lider_referencia.username
+            if lider_referencia
+            else ""
+        )
+
+    return bms
 
 
 @login_required
@@ -10587,6 +11137,13 @@ def previsao_pagamentos(request):
     grafico_barras_lider_contrato = None
     grafico_barras_projeto = None
     grafico_barras_centros = None
+    nf_paid_series = []
+    nf_paid_chart = ""
+    nf_paid_total = Decimal("0")
+    export_query = ""
+    bm_export_query = ""
+    forecast_period_notice = ""
+    forecast_start = None
     bms = []
     total_bm_pago = None
     total_bm_previsto = None
@@ -10596,18 +11153,18 @@ def previsao_pagamentos(request):
         data_inicial = form.cleaned_data.get("data_inicial")
         coordenador = form.cleaned_data.get("coordenador")
 
-        hoje = timezone.now().date()
         usuario = request.user
-        data_inicio_filtro = data_inicial or hoje
+        data_inicio_filtro,forecast_period_notice=forecast_period_start(data_inicial,data_limite)
+        forecast_start=data_inicio_filtro
 
         filtros_base = Q(
             Q(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]) |
-            Q(data_pagamento__range=[data_inicio_filtro, data_limite])
+            Q(nota_fiscal__movimentos__data_pagamento__range=[data_inicio_filtro, data_limite])
         )
 
         filtros_os = Q(
             Q(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]) |
-            Q(data_pagamento__range=[data_inicio_filtro, data_limite])
+            Q(nota_fiscal__movimentos__data_pagamento__range=[data_inicio_filtro, data_limite])
         )
 
         eventos = filter_payment_events_for_user(usuario, filtros_base)
@@ -10621,8 +11178,10 @@ def previsao_pagamentos(request):
             eventos = eventos.filter(contrato_terceiro__coordenador=coordenador)
             os_queryset = os_queryset.filter(coordenador=coordenador)
 
-        eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
-        os_queryset = os_queryset.order_by('data_prevista_pagamento', 'data_pagamento')
+        eventos = eventos.distinct().order_by('data_prevista_pagamento', 'data_pagamento')
+        os_queryset = os_queryset.distinct().order_by('data_prevista_pagamento', 'data_pagamento')
+        cash_events=pq.origin_cash(eventos,'evento',data_inicio_filtro,data_limite)
+        cash_orders=pq.origin_cash(os_queryset,'os',data_inicio_filtro,data_limite)
 
         def data_no_periodo(data):
             return data and data_inicio_filtro <= data <= data_limite
@@ -10707,16 +11266,16 @@ def previsao_pagamentos(request):
                 chave_nome = chave_nome or rotulos_sem_referencia[chave]
                 if data_no_periodo(evento.data_prevista_pagamento):
                     totais[chave_nome][mes_referencia(evento.data_prevista_pagamento)]["Previsto"] += evento.valor_previsto or 0
-                if data_no_periodo(evento.data_pagamento):
-                    totais[chave_nome][mes_referencia(evento.data_pagamento)]["Pago"] += evento.valor_pago or 0
+                for day,amount in cash_events.get(evento.pk,[]):
+                    if day:totais[chave_nome][mes_referencia(day)]["Pago"] += amount
             for ordem_servico in os_queryset:
                 projeto, coordenador_nome, lider_nome = referencias_os(ordem_servico)
                 chave_nome = {"projeto": projeto, "coordenador": coordenador_nome, "lider": lider_nome}[chave]
                 chave_nome = chave_nome or rotulos_sem_referencia[chave]
                 if data_no_periodo(ordem_servico.data_prevista_pagamento):
                     totais[chave_nome][mes_referencia(ordem_servico.data_prevista_pagamento)]["Previsto"] += ordem_servico.valor or 0
-                if data_no_periodo(ordem_servico.data_pagamento):
-                    totais[chave_nome][mes_referencia(ordem_servico.data_pagamento)]["Pago"] += ordem_servico.valor_pago or 0
+                for day,amount in cash_orders.get(ordem_servico.pk,[]):
+                    if day:totais[chave_nome][mes_referencia(day)]["Pago"] += amount
             return totais
 
         meses = meses_do_periodo()
@@ -10736,8 +11295,8 @@ def previsao_pagamentos(request):
                 "fornecedor": evento.empresa_terceira.nome if evento.empresa_terceira else "",
                 "data_prevista": evento.data_prevista_pagamento,
                 "valor_previsto": Decimal(evento.valor_previsto or 0) if data_no_periodo(evento.data_prevista_pagamento) else Decimal("0"),
-                "data_pagamento": evento.data_pagamento if data_no_periodo(evento.data_pagamento) else None,
-                "valor_pago": Decimal(evento.valor_pago or 0) if data_no_periodo(evento.data_pagamento) else Decimal("0"),
+                "data_pagamento": pq.cash_date(cash_events.get(evento.pk,[])),
+                "valor_pago": pq.cash_amount(cash_events.get(evento.pk,[])),
             }
             for evento in eventos
         ]
@@ -10751,8 +11310,8 @@ def previsao_pagamentos(request):
                 "fornecedor": ordem_servico.contrato.empresa_terceira.nome if ordem_servico.contrato and ordem_servico.contrato.empresa_terceira else "",
                 "data_prevista": ordem_servico.data_prevista_pagamento,
                 "valor_previsto": Decimal(ordem_servico.valor or 0) if data_no_periodo(ordem_servico.data_prevista_pagamento) else Decimal("0"),
-                "data_pagamento": ordem_servico.data_pagamento if data_no_periodo(ordem_servico.data_pagamento) else None,
-                "valor_pago": Decimal(ordem_servico.valor_pago or 0) if data_no_periodo(ordem_servico.data_pagamento) else Decimal("0"),
+                "data_pagamento": pq.cash_date(cash_orders.get(ordem_servico.pk,[])),
+                "valor_pago": pq.cash_amount(cash_orders.get(ordem_servico.pk,[])),
             }
             for ordem_servico in os_queryset
         ]
@@ -10775,9 +11334,7 @@ def previsao_pagamentos(request):
         total_previsto = total_previsto_eventos + total_previsto_os
 
         total_pago_eventos = sum(item['valor_pago'] for item in pagamentos_eventos)
-        total_pago_os = os_queryset.filter(data_pagamento__range=[data_inicio_filtro, data_limite]).aggregate(
-            total=Coalesce(Sum("valor_pago"), Decimal("0.00"))
-        )["total"]
+        total_pago_os = sum((item['valor_pago'] for item in pagamentos_os),Decimal('0.00'))
 
         total_pago = total_pago_eventos + total_pago_os
 
@@ -10791,15 +11348,15 @@ def previsao_pagamentos(request):
         for e in eventos:
             if data_no_periodo(e.data_prevista_pagamento):
                 acumulado_previsto_por_data[e.data_prevista_pagamento] += e.valor_previsto or 0
-            if data_no_periodo(e.data_pagamento):
-                acumulado_pago_por_data[e.data_pagamento] += e.valor_pago or 0
+            for day,amount in cash_events.get(e.pk,[]):
+                if day:acumulado_pago_por_data[day] += amount
 
         # OS
         for os in os_queryset:
             if data_no_periodo(os.data_prevista_pagamento):
                 acumulado_previsto_por_data[os.data_prevista_pagamento] += os.valor or 0
-            if data_no_periodo(os.data_pagamento):
-                acumulado_pago_por_data[os.data_pagamento] += os.valor_pago or 0
+            for day,amount in cash_orders.get(os.pk,[]):
+                if day:acumulado_pago_por_data[day] += amount
 
         datas = sorted(set(acumulado_previsto_por_data.keys()) | set(acumulado_pago_por_data.keys()))
 
@@ -10852,7 +11409,7 @@ def previsao_pagamentos(request):
                 hovermode='x unified'
             )
 
-            grafico_html = plot(fig, auto_open=False, output_type='div')
+            grafico_html = plot(fig, auto_open=False, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
 
 
         # ==== GRÁFICO 2: POR COORDENADOR ====
@@ -10879,7 +11436,7 @@ def previsao_pagamentos(request):
             legend_title="Coordenador"
         )
 
-        grafico_barras = plot(fig_barra, output_type='div')
+        grafico_barras = plot(fig_barra, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
 
         # ==== GRÁFICO 2.1: POR LÍDER DE CONTRATO ====
         pagamentos_por_lider = totais_mensais_por_categoria("lider")
@@ -10905,7 +11462,7 @@ def previsao_pagamentos(request):
             legend_title="Líder de Contrato"
         )
 
-        grafico_barras_lider_contrato = plot(fig_barra_lider, output_type='div')
+        grafico_barras_lider_contrato = plot(fig_barra_lider, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
 
         # ==== GRÁFICO 2.2: POR PROJETO ====
         pagamentos_por_projeto = totais_mensais_por_categoria("projeto")
@@ -10931,7 +11488,7 @@ def previsao_pagamentos(request):
             legend_title="Projeto"
         )
 
-        grafico_barras_projeto = plot(fig_barra_proj, output_type='div')
+        grafico_barras_projeto = plot(fig_barra_proj, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
 
         # ==== GRÁFICO 3: PREVISTO x PAGO (EVENTOS + OS) ====
 
@@ -10940,13 +11497,13 @@ def previsao_pagamentos(request):
         for evento in eventos:
             if data_no_periodo(evento.data_prevista_pagamento):
                 previsto_por_mes[mes_referencia(evento.data_prevista_pagamento)] += evento.valor_previsto or 0
-            if data_no_periodo(evento.data_pagamento):
-                pago_por_mes[mes_referencia(evento.data_pagamento)] += evento.valor_pago or 0
+            for day,amount in cash_events.get(evento.pk,[]):
+                if day:pago_por_mes[mes_referencia(day)] += amount
         for ordem_servico in os_queryset:
             if data_no_periodo(ordem_servico.data_prevista_pagamento):
                 previsto_por_mes[mes_referencia(ordem_servico.data_prevista_pagamento)] += ordem_servico.valor or 0
-            if data_no_periodo(ordem_servico.data_pagamento):
-                pago_por_mes[mes_referencia(ordem_servico.data_pagamento)] += ordem_servico.valor_pago or 0
+            for day,amount in cash_orders.get(ordem_servico.pk,[]):
+                if day:pago_por_mes[mes_referencia(day)] += amount
 
         y_previstos = [previsto_por_mes.get(mes, Decimal("0.00")) for mes in meses]
         y_pagos = [pago_por_mes.get(mes, Decimal("0.00")) for mes in meses]
@@ -10965,7 +11522,7 @@ def previsao_pagamentos(request):
             height=500,
         )
 
-        grafico_barra = plot(fig_barra_final, output_type="div")
+        grafico_barra = plot(fig_barra_final, output_type="div", include_plotlyjs=False, config={"responsive":True,"displaylogo":False})
 
         # ==== GRÁFICO 4: PREVISTO x PAGO POR CENTRO ====
         pagamentos_por_centro = defaultdict(lambda: defaultdict(lambda: defaultdict(Decimal)))
@@ -10979,14 +11536,8 @@ def previsao_pagamentos(request):
                     coordenador_ref,
                     "Previsto",
                 )
-            if data_no_periodo(evento.data_pagamento):
-                distribuir_por_centros(
-                    pagamentos_por_centro,
-                    evento.data_pagamento,
-                    evento.valor_pago,
-                    coordenador_ref,
-                    "Pago",
-                )
+            for day,amount in cash_events.get(evento.pk,[]):
+                if day:distribuir_por_centros(pagamentos_por_centro,day,amount,coordenador_ref,"Pago")
 
         for ordem_servico in os_queryset:
             coordenador_ref = coordenador_os(ordem_servico)
@@ -10998,14 +11549,8 @@ def previsao_pagamentos(request):
                     coordenador_ref,
                     "Previsto",
                 )
-            if data_no_periodo(ordem_servico.data_pagamento):
-                distribuir_por_centros(
-                    pagamentos_por_centro,
-                    ordem_servico.data_pagamento,
-                    ordem_servico.valor_pago,
-                    coordenador_ref,
-                    "Pago",
-                )
+            for day,amount in cash_orders.get(ordem_servico.pk,[]):
+                if day:distribuir_por_centros(pagamentos_por_centro,day,amount,coordenador_ref,"Pago")
 
         fig_barra_centros = go.Figure()
         for centro in sorted(pagamentos_por_centro):
@@ -11029,107 +11574,51 @@ def previsao_pagamentos(request):
             legend_title="Centro",
         )
 
-        grafico_barras_centros = plot(fig_barra_centros, output_type="div")
+        grafico_barras_centros = plot(fig_barra_centros, output_type="div", include_plotlyjs=False, config={"responsive":True,"displaylogo":False})
 
 
-        # ==== TABELA DE BMs ====
-        # === FILTRO DE BM (Pagamento OU PerÃ­odo de Medição) ===
-        filtro_bm = request.GET.get("filtro_bm", "pagamento")
-
-        if filtro_bm == "medicao":
-            # filtra pelo perÃ­odo de medição definido no form
-            bms = BM.objects.filter(
-                data_inicial_medicao__date__gte=data_inicio_filtro,
-                data_final_medicao__date__lte=data_limite
-            )
-        else:
-            # filtro padrão: data da aprovação operacional
-            bms = BM.objects.filter(
-                Q(data_aprovacao_coordenador__date__range=[data_inicio_filtro, data_limite])
-                | Q(data_aprovacao_gerente__date__range=[data_inicio_filtro, data_limite])
-            ).filter(
-                bm_operational_approval_query()
-            )
-
-        bms = filter_payment_bms_for_user(usuario, bms)
-
-        bms = bms.select_related(
-            'contrato__cod_projeto',
-            'contrato__coordenador',
-            'contrato__lider_contrato',
-            'evento',
-            'os',
-            'os__cod_projeto',
-            'os__cod_projeto__lider_contrato',
-            'os__lider_contrato',
-        ).order_by('-data_pagamento')
-
-        # Se o coordenador foi selecionado, filtra também os BMs
+        # Série complementar por lançamento: não muda os relatórios por origem.
+        event_ids = filter_payment_events_for_user(usuario, Q())
+        order_ids = filter_payment_os_for_user(usuario, Q())
         if coordenador:
-            bms = bms.filter(
-                Q(contrato__coordenador=coordenador)
-                | Q(contrato__coordenadores=coordenador)
-                | Q(os__coordenador=coordenador)
-                | Q(os__cod_projeto__coordenador=coordenador)
-                | Q(os__cod_projeto__coordenadores=coordenador)
-            ).distinct()
+            event_ids = event_ids.filter(contrato_terceiro__coordenador=coordenador)
+            order_ids = order_ids.filter(coordenador=coordenador)
+        nf_scope = NF.objects.filter(
+            Q(evento_id__in=event_ids.values('pk'), contrato_id=F('evento__contrato_terceiro_id'))
+            | Q(os_id__in=order_ids.values('pk'), contrato_id=F('os__contrato_id')))
+        # Global inclui também legado sem origem, para não ocultar pagamento registrado.
+        if usuario.grupo in {'financeiro','suprimento','diretoria','gerente_contrato'} and not coordenador:
+            nf_scope = NF.objects.all()
+        nf_paid_series = fq.monthly_paid_series(nf_scope,data_inicio_filtro,data_limite)
+        nf_paid_total = sum((item['total'] for item in nf_paid_series), Decimal('0'))
+        nf_paid_chart = nf_monthly_chart(nf_paid_series, include_plotlyjs=False)
+        export_params = {'data_inicial':data_inicio_filtro.isoformat(), 'data_limite':data_limite.isoformat(),
+            'filtro_bm':request.GET.get('filtro_bm','pagamento')}
+        if coordenador: export_params['coordenador'] = coordenador.pk
+        export_query = urlencode(export_params)
 
-        # Determina status de aprovação (para exibir na tabela)
-        for bm in bms:
-            # Define o status geral
-            if bm_has_operational_approval(bm):
-                bm.status_geral = 'Aprovado'
-                bm.falta_aprovar = '-'
-            elif bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado':
-                bm.status_geral = 'Reprovado'
-                bm.falta_aprovar = '-'
-            else:
-                bm.status_geral = 'Aguardando aprovação'
-                faltando = []
-                if bm.status_coordenador != 'aprovado':
-                    faltando.append('Líder / Gerente-Líder')
-                if bm.status_gerente != 'aprovado':
-                    faltando.append('Gerente de Contrato')
-                bm.falta_aprovar = ', '.join(faltando)
-
-        bm_approval_audit_map = build_bm_approval_audit_map(bms)
-
-        for bm in bms:
-            approval_info = bm_approval_audit_map.get(bm.id, {})
-            bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
-            bm.aprovacao_gerente_audit = approval_info.get("gerente")
-            bm.can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
-            projeto_referencia = (
-                bm.os.cod_projeto
-                if bm.os_id and bm.os and bm.os.cod_projeto
-                else bm.contrato.cod_projeto
-            )
-            lider_referencia = None
-            if projeto_referencia and projeto_referencia.lider_contrato:
-                lider_referencia = projeto_referencia.lider_contrato
-            if not lider_referencia and bm.os_id and bm.os and bm.os.lider_contrato:
-                lider_referencia = bm.os.lider_contrato
-            if not lider_referencia:
-                lider_referencia = bm.contrato.lider_contrato
-            bm.projeto_referencia = projeto_referencia.cod_projeto if projeto_referencia else ""
-            bm.lider_contrato_referencia = (
-                lider_referencia.get_full_name() or lider_referencia.username
-                if lider_referencia
-                else ""
-            )
+        filtro_bm=request.GET.get('filtro_bm','pagamento')
+        bms=prepare_forecast_bms(usuario,forecast_bms(usuario,data_inicio_filtro,data_limite,filtro_bm,coordenador))
+        bm_params={'data_inicial':data_inicio_filtro.isoformat(),'data_limite':data_limite.isoformat(),'filtro_bm':filtro_bm}
+        if coordenador:bm_params['coordenador']=coordenador.pk
+        bm_export_query=urlencode(bm_params)
 
         total_bm_pago = sum(bm.valor_pago or 0 for bm in bms)
-        total_bm_previsto = sum(
-            (
-                bm.evento.valor_previsto if bm.evento and bm.evento.valor_previsto
-                else bm.os.valor if bm.os and bm.os.valor
-                else 0
-            )
-            for bm in bms
-        )
+        # Vários BMs/parcela podem referir a mesma origem. O planejamento da
+        # origem entra uma vez; as participações de cada BM são somadas acima.
+        origens_previstas = {}
+        for bm in bms:
+            if bm.evento_id:
+                origens_previstas[("evento", bm.evento_id)] = bm.evento.valor_previsto or 0
+            elif bm.os_id:
+                origens_previstas[("os", bm.os_id)] = bm.os.valor or 0
+        total_bm_previsto = sum(origens_previstas.values(), Decimal("0.00"))
 
     return render(request, "gestao_contratos/previsao_pagamentos.html", {
-        "form": form,
+        "form": form, "plotly_version":get_plotlyjs_version(),
+        "forecast_period_notice":forecast_period_notice,"forecast_start":forecast_start,
+        "nf_paid_series": nf_paid_series, "nf_paid_chart": nf_paid_chart, "nf_paid_total":nf_paid_total,
+        "export_query":export_query, "bm_export_query":bm_export_query, "financial_panel_allowed":fq.can_view_financial_panel(request.user),
         "pagamentos": pagamentos,
         "total_previsto": total_previsto,
         "total_pago": total_pago,
@@ -11147,7 +11636,10 @@ def previsao_pagamentos(request):
 
 @login_required
 def download_bms_aprovados(request):
-    if request.user.grupo not in ["suprimento", "diretoria", "gerente", "gerente_lider", "financeiro", "gerente_contrato"]:
+    if not request.user.is_active or not (
+        request.user.grupo in INTERNAL_ROLES or request.user.is_superuser
+        or (request.user.is_staff and request.user.has_perm("gestao_contratos.view_bm"))
+    ):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
@@ -11162,39 +11654,17 @@ def download_bms_aprovados(request):
 
 
     try:
-        data_inicial = datetime.strptime(data_inicial_str, "%Y-%m-%d").date() if data_inicial_str else timezone.now().date()
+        data_inicial = datetime.strptime(data_inicial_str, "%Y-%m-%d").date() if data_inicial_str else None
         data_limite = datetime.strptime(data_limite_str, "%Y-%m-%d").date()
     except ValueError:
         messages.error(request, "Datas inválidas no formato. Use YYYY-MM-DD.")
         return redirect("previsao_pagamentos")
 
-    bms_aprovados = BM.objects.filter(
-        bm_operational_approval_query()
-    )
-
-    # === FILTRAR POR PAGAMENTO OU MEDIÃ‡ÃƒO ===
-    if filtro_bm == "medicao":
-        bms_aprovados = bms_aprovados.filter(
-            data_inicial_medicao__date__gte=data_inicial,
-            data_final_medicao__date__lte=data_limite
-        )
-    else:
-        bms_aprovados = bms_aprovados.filter(
-            Q(data_aprovacao_coordenador__date__range=[data_inicial, data_limite])
-            | Q(data_aprovacao_gerente__date__range=[data_inicial, data_limite])
-        )
-
-    bms_aprovados = filter_payment_bms_for_user(request.user, bms_aprovados)
-
-    # === FILTRAR POR COORDENADOR, SE APLICADO ===
-    if coordenador:
-        bms_aprovados = bms_aprovados.filter(
-            Q(contrato__coordenador=coordenador)
-            | Q(contrato__coordenadores=coordenador)
-            | Q(os__coordenador=coordenador)
-            | Q(os__cod_projeto__coordenador=coordenador)
-            | Q(os__cod_projeto__coordenadores=coordenador)
-        ).distinct()
+    data_inicial,_=forecast_period_start(data_inicial,data_limite)
+    if data_inicial>data_limite:
+        messages.error(request,'A data inicial deve ser anterior ou igual à data limite.')
+        return redirect('previsao_pagamentos')
+    bms_aprovados=forecast_bms(request.user,data_inicial,data_limite,filtro_bm,coordenador,approved_only=True)
 
     # === APENAS COM ARQUIVO ===
     bms_aprovados = bms_aprovados.exclude(arquivo_bm='')
@@ -11209,7 +11679,7 @@ def download_bms_aprovados(request):
         arquivos_ja_incluidos = set()
         hashes_ja_incluidos = set()
         for bm in bms_aprovados:
-            if not bm.arquivo_bm:
+            if not bm.arquivo_bm or not can_access_document(request.user, bm):
                 continue
 
             try:
@@ -11226,8 +11696,8 @@ def download_bms_aprovados(request):
 
                 if bm.os and bm.os.cod_projeto:
                     nome_projeto = bm.os.cod_projeto.cod_projeto
-                elif bm.contrato and bm.contrato.cod_projeto:
-                    nome_projeto = bm.contrato.cod_projeto.cod_projeto
+                elif bm.contrato_financeiro and bm.contrato_financeiro.cod_projeto:
+                    nome_projeto = bm.contrato_financeiro.cod_projeto.cod_projeto
                 else:
                     nome_projeto = "SemProjeto"
                 nome_original = bm.arquivo_bm.name.split('/')[-1]
@@ -11243,12 +11713,36 @@ def download_bms_aprovados(request):
 
     buffer_zip.seek(0)
 
-    nome_arquivo_zip = f"BMs_Aprovados_{data_inicial.strftime('%Y-%m-%d')}_a_{data_limite.strftime('%Y-%m-%d')}.zip"
+    nome_arquivo_zip = f"BMs_Aprovados_{data_inicial.isoformat() if data_inicial else 'inicio'}_a_{data_limite.isoformat()}.zip"
 
     response = HttpResponse(buffer_zip.getvalue(), content_type="application/zip")
     response["Content-Disposition"] = f'attachment; filename=\"{nome_arquivo_zip}\"'
     return response
 
+
+
+@login_required
+@require_safe
+def exportar_bms_previsao_excel(request):
+    if request.user.grupo not in {'suprimento','gerente','gerente_lider','diretoria','financeiro','gerente_contrato'}:
+        return HttpResponse('Acesso restrito.',status=403)
+    form=FiltroPrevisaoForm(request.GET,user=request.user)
+    if not form.is_valid():return HttpResponse('Preencha os filtros corretamente antes de exportar.',status=400)
+    data=form.cleaned_data
+    first,last=data.get('data_inicial'),data['data_limite']
+    first,notice=forecast_period_start(first,last)
+    if first and first>last:return HttpResponse('A data inicial deve ser anterior ou igual à data limite.',status=400)
+    mode=request.GET.get('filtro_bm','pagamento')
+    queryset=forecast_bms(request.user,first,last,mode,data.get('coordenador'))
+    if queryset.count()>10000:return HttpResponse('Refine os filtros para exportar até 10.000 BMs.',status=400)
+    bms=prepare_forecast_bms(request.user,queryset)
+    from .bm_forecast_exports import export_bms
+    content=export_bms(request.user,bms,build_bm_approval_audit_map(bms),first=first,last=last,mode=mode,notice=notice)
+    response=HttpResponse(content,content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition']=f'attachment; filename="BMs_Previsao_ate_{last.isoformat()}.xlsx"'
+    response['Cache-Control']='private, no-store'
+    response['X-Content-Type-Options']='nosniff'
+    return response
 
 
 @login_required
@@ -11267,20 +11761,19 @@ def exportar_previsao_pagamentos_excel(request):
     data_inicial = form.cleaned_data.get("data_inicial")
     coordenador = form.cleaned_data.get("coordenador")
 
-    hoje = timezone.now().date()
     usuario = request.user
-    data_inicio_filtro = data_inicial or hoje
+    data_inicio_filtro,_=forecast_period_start(data_inicial,data_limite)
 
     filtros_base = Q(
         Q(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]) |
-        Q(data_pagamento__range=[data_inicio_filtro, data_limite])
+        Q(nota_fiscal__movimentos__data_pagamento__range=[data_inicio_filtro, data_limite])
     )
 
     eventos = filter_payment_events_for_user(usuario, filtros_base)
     os_queryset = filter_payment_os_for_user(
         usuario,
         Q(data_prevista_pagamento__range=[data_inicio_filtro, data_limite]) |
-        Q(data_pagamento__range=[data_inicio_filtro, data_limite])
+        Q(nota_fiscal__movimentos__data_pagamento__range=[data_inicio_filtro, data_limite])
     )
 
     if usuario.grupo not in ["suprimento", "diretoria", "financeiro", "gerente", "gerente_lider", "gerente_contrato"]:
@@ -11290,8 +11783,10 @@ def exportar_previsao_pagamentos_excel(request):
         eventos = eventos.filter(contrato_terceiro__coordenador=coordenador, contrato_terceiro__isnull=False)
         os_queryset = os_queryset.filter(coordenador=coordenador)
 
-    eventos = eventos.order_by('data_prevista_pagamento', 'data_pagamento')
-    os_queryset = os_queryset.order_by('data_prevista_pagamento', 'data_pagamento')
+    eventos = eventos.distinct().order_by('data_prevista_pagamento', 'data_pagamento')
+    os_queryset = os_queryset.distinct().order_by('data_prevista_pagamento', 'data_pagamento')
+    cash_events=pq.origin_cash(eventos,'evento',data_inicio_filtro,data_limite)
+    cash_orders=pq.origin_cash(os_queryset,'os',data_inicio_filtro,data_limite)
 
     def data_no_periodo(data):
         return data and data_inicio_filtro <= data <= data_limite
@@ -11305,8 +11800,8 @@ def exportar_previsao_pagamentos_excel(request):
             "fornecedor": evento.empresa_terceira.nome if evento.empresa_terceira else "",
             "coordenador": evento.contrato_terceiro.coordenador.username if evento.contrato_terceiro and evento.contrato_terceiro.coordenador else "",
             "valor_previsto": Decimal(evento.valor_previsto or 0) if data_no_periodo(evento.data_prevista_pagamento) else Decimal("0"),
-            "data_pagamento": evento.data_pagamento if data_no_periodo(evento.data_pagamento) else None,
-            "valor_pago": Decimal(evento.valor_pago or 0) if data_no_periodo(evento.data_pagamento) else Decimal("0"),
+            "data_pagamento": pq.cash_date(cash_events.get(evento.pk,[])),
+            "valor_pago": pq.cash_amount(cash_events.get(evento.pk,[])),
         })
 
     for ordem_servico in os_queryset:
@@ -11317,8 +11812,8 @@ def exportar_previsao_pagamentos_excel(request):
             "fornecedor": ordem_servico.contrato.empresa_terceira.nome if ordem_servico.contrato and ordem_servico.contrato.empresa_terceira else "",
             "coordenador": ordem_servico.coordenador.username if ordem_servico.coordenador else "",
             "valor_previsto": Decimal(ordem_servico.valor or 0) if data_no_periodo(ordem_servico.data_prevista_pagamento) else Decimal("0"),
-            "data_pagamento": ordem_servico.data_pagamento if data_no_periodo(ordem_servico.data_pagamento) else None,
-            "valor_pago": Decimal(ordem_servico.valor_pago or 0) if data_no_periodo(ordem_servico.data_pagamento) else Decimal("0"),
+            "data_pagamento": pq.cash_date(cash_orders.get(ordem_servico.pk,[])),
+            "valor_pago": pq.cash_amount(cash_orders.get(ordem_servico.pk,[])),
         })
 
     pagamentos_exportacao.sort(
@@ -11338,7 +11833,7 @@ def exportar_previsao_pagamentos_excel(request):
     # Planilha 1 - Dados completos
     headers = [
         "Tipo", "Data Prevista", "Projeto", "Fornecedor", "Coordenador",
-        "Valor Previsto", "Data Pagamento", "Valor Pago"
+        "Valor Previsto", "Última data de movimento no período", "Pago líquido por movimentos no período"
     ]
     ws.append(headers)
 
@@ -11349,9 +11844,9 @@ def exportar_previsao_pagamentos_excel(request):
             item["projeto"],
             item["fornecedor"],
             item["coordenador"],
-            float(item["valor_previsto"]),
+            item["valor_previsto"],
             item["data_pagamento"].strftime("%d/%m/%Y") if item["data_pagamento"] else '',
-            float(item["valor_pago"])
+            item["valor_pago"]
         ])
 
     # === Planilha 2 - Por Coordenador (com datas) ===
@@ -11369,7 +11864,7 @@ def exportar_previsao_pagamentos_excel(request):
                 for item in pagamentos_exportacao
                 if item["data_prevista"] == data and item["coordenador"] == coord
             )
-            linha.append(float(total or Decimal("0")))
+            linha.append(total or Decimal("0"))
         ws2.append(linha)
 
     # Gráfico
@@ -11398,7 +11893,7 @@ def exportar_previsao_pagamentos_excel(request):
                 for item in pagamentos_exportacao
                 if item["data_prevista"] == data and item["projeto"] == proj
             )
-            linha.append(float(total or Decimal("0")))
+            linha.append(total or Decimal("0"))
         ws3.append(linha)
 
     chart2 = BarChart()
@@ -11425,7 +11920,7 @@ def exportar_previsao_pagamentos_excel(request):
             if item["data_prevista"] == data
         ) or Decimal("0")
         acumulado += total
-        ws4.append([data.strftime("%d/%m/%Y"), float(acumulado)])
+        ws4.append([data.strftime("%d/%m/%Y"), acumulado])
 
     chart3 = LineChart()
     chart3.title = "Acumulado por Data Prevista"
@@ -11451,6 +11946,11 @@ def exportar_previsao_pagamentos_excel(request):
     response["Content-Disposition"] = (
         f'attachment; filename="previsao_pagamentos_{datetime.now().strftime("%Y%m%d_%H%M")}.xlsx"'
     )
+    for sheet in wb.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
     wb.save(response)
     return response
 
@@ -11503,12 +12003,13 @@ def ranking_fornecedores(request):
                 contrato.cod_projeto.cod_projeto
                 for contrato in contratos.select_related('cod_projeto')
                 if contrato.cod_projeto
-            }
+            } | set(OS.objects.filter(contrato__in=contratos).values_list("cod_projeto__cod_projeto", flat=True))
         )
 
         valor_total_contratos = contratos.aggregate(total=Sum('valor_total'))['total'] or 0
         valor_previsto = eventos.aggregate(total=Sum('valor_previsto'))['total'] or 0
-        valor_pago = eventos.aggregate(total=Sum('valor_pago'))['total'] or 0
+        valor_pago = pq.cash_total(NF.objects.filter(contrato__in=contratos))
+        valor_previsto += OS.objects.filter(contrato__in=contratos).aggregate(total=Sum('valor'))['total'] or Decimal('0')
 
         percentual_execucao = (valor_pago / valor_previsto * 100) if valor_previsto > 0 else 0
 
@@ -11539,6 +12040,8 @@ def ranking_fornecedores(request):
 
 
 @login_required
+@proteger_fluxo_solicitacao(Evento, key="evento_id")
+@locked_action(Evento, key="evento_id")
 def cadastrar_bm(request, contrato_id, evento_id):
     if request.user.grupo not in ["suprimento", "financeiro"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -11546,10 +12049,13 @@ def cadastrar_bm(request, contrato_id, evento_id):
 
     contrato = get_object_or_404(ContratoTerceiros, id=contrato_id)
     evento = get_object_or_404(Evento, id=evento_id)
+    token_name = f"cadastrar_bm:{contrato.pk}:{evento.pk}"
 
     if request.method == "POST":
         form = BMForm(request.POST, request.FILES)
         if form.is_valid():
+            if not _consume_submission_token(request, token_name):
+                return JsonResponse({"success": False, "error": DUPLICATE_SUBMISSION_MESSAGE}, status=409)
             bm = form.save(commit=False)
             bm.contrato = contrato
             bm.evento = evento
@@ -11633,10 +12139,12 @@ def cadastrar_bm(request, contrato_id, evento_id):
         "form": form,
         "contrato": contrato,
         "evento": evento,
+        "submission_token": _get_submission_token(request, token_name),
     })
 
 
 @login_required
+@locked_action(OS, key="os_id")
 def cadastrar_bm_os(request, os_id):
     if request.user.grupo not in ["suprimento", "financeiro"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -11644,10 +12152,13 @@ def cadastrar_bm_os(request, os_id):
 
     os_obj = get_object_or_404(OS, id=os_id)
     contrato = os_obj.contrato
+    token_name = f"cadastrar_bm_os:{os_obj.pk}"
 
     if request.method == "POST":
         form = BMForm(request.POST, request.FILES)
         if form.is_valid():
+            if not _consume_submission_token(request, token_name):
+                return JsonResponse({"success": False, "error": DUPLICATE_SUBMISSION_MESSAGE}, status=409)
             bm = form.save(commit=False)
             bm.contrato = contrato
             bm.os = os_obj
@@ -11672,10 +12183,13 @@ def cadastrar_bm_os(request, os_id):
         "form": form,
         "contrato": contrato,
         "os": os_obj,
+        "submission_token": _get_submission_token(request, token_name),
     })
 
 
 @login_required
+@proteger_fluxo_solicitacao(Evento, key="evento_id")
+@locked_action(Evento, key="evento_id")
 def cadastrar_nf(request, evento_id):
     if request.user.grupo not in ["suprimento", "financeiro"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -11686,23 +12200,21 @@ def cadastrar_nf(request, evento_id):
         messages.warning(request, "Este evento ainda não está vinculado a um contrato com fornecedor.")
         return redirect_to_event_origin(evento)
     contrato = get_object_or_404(ContratoTerceiros, id=evento.contrato_terceiro_id)
-
-    def atualizar_evento_com_base_na_nf(nf_obj):
-        if not nf_obj.financeiro_autorizou:
-            return
-        evento.valor_pago = nf_obj.valor_pago
-        evento.data_pagamento = nf_obj.data_pagamento
-        evento.justificativa = nf_obj.observacao
-        evento.save(update_fields=["valor_pago", "data_pagamento", "justificativa"])
+    token_name = f"cadastrar_nf:{evento.pk}"
 
     if request.method == "POST":
-        form = NFForm(request.POST, request.FILES, evento=evento)
+        form = NFForm(request.POST, request.FILES, evento=evento, user=request.user)
         if form.is_valid():
+            if not _consume_submission_token(request, token_name):
+                return JsonResponse({"success": False, "error": DUPLICATE_SUBMISSION_MESSAGE}, status=409)
             nf = form.save(commit=False)
             nf.contrato = contrato
             nf.evento = evento
+            lock_payment_origin(evento)
             nf.save()
-            atualizar_evento_com_base_na_nf(nf)
+            sync_paid_total(evento)
+            if not nf.financeiro_autorizou and nf.bm.aprovacao_pagamento != "aprovado":
+                messages.success(request, "NF cadastrada. Pagamento ainda não autorizado pela Diretoria.")
 
             # ==============================
             # ENVIO DE E-MAIL AUTOMÁTICO
@@ -11753,8 +12265,10 @@ def cadastrar_nf(request, evento_id):
     else:
         form = NFForm(
             evento=evento,
+            user=request.user,
             initial={
                 "valor_pago": evento.valor_previsto,
+                "bm": request.GET.get("bm"),
                 "data_pagamento": evento.data_pagamento or None
             }
         )
@@ -11763,10 +12277,12 @@ def cadastrar_nf(request, evento_id):
         "form": form,
         "contrato": contrato,
         "evento": evento,
+        "submission_token": _get_submission_token(request, token_name),
     })
 
 
 @login_required
+@locked_action(OS, key="os_id")
 def cadastrar_nf_os(request, os_id):
     if request.user.grupo not in ["suprimento", "financeiro"]:
         messages.error(request, "Você não tem permissão para isso!")
@@ -11774,30 +12290,29 @@ def cadastrar_nf_os(request, os_id):
 
     os_obj = get_object_or_404(OS, id=os_id)
     contrato = get_object_or_404(ContratoTerceiros, id=os_obj.contrato.id)
-
-    def atualizar_os_com_base_na_nf(nf_obj):
-        if not nf_obj.financeiro_autorizou:
-            return
-        os_obj.valor_pago = nf_obj.valor_pago
-        os_obj.data_pagamento = nf_obj.data_pagamento
-        os_obj.observacao = nf_obj.observacao
-        os_obj.save(update_fields=["valor_pago", "data_pagamento", "observacao"])
+    token_name = f"cadastrar_nf_os:{os_obj.pk}"
 
     if request.method == "POST":
-        form = NFForm(request.POST, request.FILES, os=os_obj)
+        form = NFForm(request.POST, request.FILES, os=os_obj, user=request.user)
         if form.is_valid():
+            if not _consume_submission_token(request, token_name):
+                return JsonResponse({"success": False, "error": DUPLICATE_SUBMISSION_MESSAGE}, status=409)
             nf = form.save(commit=False)
             nf.contrato = contrato
             nf.os = os_obj
             nf.evento = None
+            lock_payment_origin(os_obj)
             nf.save()
-            atualizar_os_com_base_na_nf(nf)
+            sync_paid_total(os_obj)
+            if not nf.financeiro_autorizou and nf.bm.aprovacao_pagamento != "aprovado":
+                messages.success(request, "NF cadastrada. Pagamento ainda não autorizado pela Diretoria.")
             return JsonResponse({"success": True})
         return JsonResponse({"success": False, "errors": form.errors})
 
     form = NFForm(
         os=os_obj,
-        initial={
+        user=request.user,
+        initial={"bm": request.GET.get("bm"),
             "valor_pago": os_obj.valor or None,
             "data_pagamento": os_obj.data_pagamento or None,
         }
@@ -11807,10 +12322,12 @@ def cadastrar_nf_os(request, os_id):
         "form": form,
         "contrato": contrato,
         "os": os_obj,
+        "submission_token": _get_submission_token(request, token_name),
     })
 
 
 @login_required
+@locked_action(BM, key="bm_id")
 def editar_bm(request, bm_id):
     bm = get_object_or_404(BM, id=bm_id)
 
@@ -11835,29 +12352,30 @@ def editar_bm(request, bm_id):
 
 
 @login_required
+@locked_action(NF, key="nf_id")
 def editar_nf(request, nf_id):
     if request.user.grupo not in ["suprimento", "financeiro"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
     nf = get_object_or_404(NF, id=nf_id)
+    if request.method == "POST" and not can_change_nf(request.user, nf):
+        return JsonResponse({"success": False, "error": PAID_NF_READ_ONLY_MESSAGE}, status=403)
+    was_paid = nf.financeiro_autorizou
     evento = nf.evento
     os_obj = nf.os
 
     if request.method == "POST":
-        form = NFForm(request.POST, request.FILES, evento=evento, os=os_obj, instance=nf)
+        form = NFForm(request.POST, request.FILES, evento=evento, os=os_obj, instance=nf, user=request.user)
         if form.is_valid():
-            nf = form.save()
-            if nf.financeiro_autorizou and evento:
-                evento.valor_pago = nf.valor_pago
-                evento.data_pagamento = nf.data_pagamento
-                evento.justificativa = nf.observacao
-                evento.save(update_fields=["valor_pago", "data_pagamento", "justificativa"])
-            if nf.financeiro_autorizou and os_obj:
-                os_obj.valor_pago = nf.valor_pago
-                os_obj.data_pagamento = nf.data_pagamento
-                os_obj.observacao = nf.observacao
-                os_obj.save(update_fields=["valor_pago", "data_pagamento", "observacao"])
+            lock_payment_origin(evento or os_obj)
+            nf = form.save(commit=False)
+            nf._audit_operation = (
+                f"Edição da NF #{nf.pk}; paga anteriormente: {'sim' if was_paid else 'não'}; "
+                f"pagamento realizado após edição: {'sim' if nf.financeiro_autorizou else 'não'}."
+            )
+            nf.save()
+            sync_paid_total(evento or os_obj)
             return JsonResponse({"success": True})
         return JsonResponse({"success": False, "errors": form.errors})
 
@@ -11866,6 +12384,7 @@ def editar_nf(request, nf_id):
             evento=evento,
             os=os_obj,
             instance=nf,
+            user=request.user,
             initial={
                 "valor_pago": nf.valor_pago,
                 "data_pagamento": nf.data_pagamento,
@@ -11884,6 +12403,8 @@ def editar_nf(request, nf_id):
 
 
 @login_required
+@require_POST
+@locked_action(BM)
 def deletar_bm(request, pk):
     bm = get_object_or_404(BM, pk=pk)
 
@@ -11893,9 +12414,16 @@ def deletar_bm(request, pk):
 
     evento_id = bm.evento.id if bm.evento else None
     os_id = bm.os.id if bm.os else None
-    bm.delete()
+    try:
+        bm.delete()
+    except ProtectedError:
+        messages.error(request, "Este registro possui documentos financeiros e não pode ser excluído.")
+        return redirect("home")
 
     messages.success(request, "BM apagado com sucesso!")
+    safe_next = approval_return_url(request, '')
+    if safe_next:
+        return redirect(safe_next)
     if os_id:
         return redirect("registrar_entrega_os", pk=os_id)
     if request.user.grupo == "financeiro":
@@ -11904,18 +12432,33 @@ def deletar_bm(request, pk):
 
 
 @login_required
+@require_POST
+@locked_action(NF, key="nf_id")
 def deletar_nf(request, nf_id):
     if request.user.grupo not in ["suprimento", "financeiro"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
     nf = get_object_or_404(NF, id=nf_id)
+    if not can_change_nf(request.user, nf) or (request.user.grupo=='financeiro' and nf.possui_historico_financeiro):
+        return JsonResponse({"success": False, "error": PAID_NF_READ_ONLY_MESSAGE}, status=403)
+    reason=request.POST.get('justificativa_correcao','').strip()
+    if (nf.possui_pagamentos or nf.programacoes.exists() or nf.reprogramacoes.exists()) and not reason:
+        return JsonResponse({'success':False,'error':'Informe a justificativa para excluir a NF paga.'},status=400)
+    nf._audit_reason=reason[:4000]
     evento_id = nf.evento.id if nf.evento else None
     os_id = nf.os.id if nf.os else None
 
 
+    origin = nf.evento or nf.os
+    lock_payment_origin(origin)
+    audit_nf_deletion(request.user, nf)
     nf.delete()
-    messages.success(request, "NF apagada com sucesso!")
+    sync_paid_total(origin)
+    messages.success(request, "NF cancelada com histórico preservado." if nf.cancelada_em else "NF apagada com sucesso!")
+    safe_next = approval_return_url(request, '')
+    if safe_next:
+        return redirect(safe_next)
     if os_id:
         return redirect("registrar_entrega_os", pk=os_id)
     if request.user.grupo == 'financeiro':
@@ -11924,6 +12467,7 @@ def deletar_nf(request, nf_id):
 
 
 @login_required
+@proteger_fluxo_solicitacao(Evento, key="evento_id")
 def detalhes_entrega(request, evento_id):
     evento = get_object_or_404(Evento, id=evento_id)
     if not evento.contrato_terceiro_id:
@@ -11966,6 +12510,7 @@ def detalhes_entrega(request, evento_id):
     })
 
 @login_required
+@proteger_fluxo_solicitacao(Evento, key="evento_id")
 def avaliar_evento_fornecedor(request, evento_id):
     evento = get_object_or_404(Evento, id=evento_id)
     if not evento.contrato_terceiro_id:
@@ -12064,30 +12609,20 @@ def avaliar_os_fornecedor(request, os_id):
 
 
 @login_required
+@financeiro_read_only
 def detalhes_os(request, pk):
-    if request.user.grupo not in ['suprimento', 'lider_contrato', 'coordenador', 'gerente', 'gerente_lider', 'gerente_contrato']:
+    if request.user.grupo not in ['suprimento', 'lider_contrato', 'coordenador', 'gerente', 'gerente_lider', 'gerente_contrato', 'financeiro', 'diretoria']:
         messages.error(request, "Você não tem permissão para isso.")
         return redirect('home')
 
     os = get_object_or_404(OS, pk=pk)
-
-    if request.user.grupo == 'lider_contrato' and os.lider_contrato != request.user:
+    if not can_read_os(request.user, os):
         messages.error(request, "Você não tem permissão para visualizar esta OS.")
-        return redirect('lista_solicitacoes')
+        return redirect("home")
 
-    if request.user.grupo == 'gerente_lider':
-        if not user_shares_center_with_coordinator(request.user, os.coordenador):
-            messages.error(request, "Você não tem permissão para visualizar esta OS.")
-            return redirect('lista_solicitacoes')
-
-    if request.user.grupo == 'coordenador' and request.user != os.coordenador:
-        messages.error(request, "Você não tem permissão para visualizar esta OS.")
-        return redirect('lista_solicitacoes')
 
     fornecedor = os.contrato.empresa_terceira
-    indicadores, _ = Indicadores.objects.get_or_create(
-        empresa_terceira=fornecedor
-    )
+    indicadores = Indicadores(empresa_terceira=fornecedor)
     avaliacao_os = os.avaliacoes.first()
     can_evaluate_os = (
         os.realizado
@@ -12100,6 +12635,12 @@ def detalhes_os(request, pk):
 
     context = {
         'os': os,
+        'can_view_os_financial_details': can_view_object(request.user, os),
+        'can_download_os': can_access_document(request.user, os),
+        'can_manage_os_delivery': can_user_manage_os_delivery(request.user, os),
+        'financial_bms': prepare_forecast_bms(request.user,fq.eager_bms(BM.objects.filter(os=os)).order_by('-data_pagamento','-pk')[:10]) if can_view_object(request.user, os) else [],
+        'financial_nfs': NF.objects.filter(os=os, contrato_id=os.contrato_id).order_by('-data_pagamento','-pk')[:10] if can_view_object(request.user, os) else [],
+        'has_financial_global_access': fq.can_view_financial_panel(request.user),
         'indicadores': indicadores,
         'avaliacao_os': avaliacao_os,
         'can_evaluate_os': can_evaluate_os,
@@ -12118,7 +12659,9 @@ def registrar_entrega_os(request, pk):
         messages.error(request, "Você não tem permissão para isso.")
         return redirect("detalhes_os", pk=os.id)
 
-    if os.status == "cancelada":
+    if os.status == "cancelada" and not (
+        request.user.grupo == "financeiro" and request.method in {"GET", "HEAD"}
+    ):
         messages.error(request, "Não é possível registrar entrega de uma OS cancelada.")
         return redirect("detalhes_os", pk=os.id)
 
@@ -12153,6 +12696,8 @@ def registrar_entrega_os(request, pk):
         })
 
     if request.method == "POST":
+        if not can_user_manage_os_delivery(request.user, os):
+            return JsonResponse({"success": False, "error": "Sem permissão para registrar entrega."}, status=403)
         form = RegistroEntregaOSForm(request.POST, instance=os, user=request.user)
         if form.is_valid():
             entrega = form.save(commit=False)
@@ -12182,3 +12727,388 @@ def registrar_entrega_os(request, pk):
             "notas_fiscais": notas_fiscais,
         }
     )
+
+# Acompanhamento financeiro: somente consultas; as ações usam os fluxos existentes.
+def financial_current_payment_period(today):
+    bounds = CalendarioPagamento.objects.aggregate(
+        previous=Max('data_pagamento', filter=Q(data_pagamento__lt=today)),
+        upcoming=Min('data_pagamento', filter=Q(data_pagamento__gte=today)),
+    )
+    if bounds['previous'] and bounds['upcoming']:
+        return bounds['previous'] + timedelta(days=1), bounds['upcoming'], ''
+    # Não inventa datas de pagamento quando o calendário está incompleto.
+    first = today.replace(day=1)
+    next_month = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return first, next_month - timedelta(days=1), (
+        'O calendário não possui as duas datas que delimitam o ciclo atual. '
+        'O mês corrente foi usado como padrão; você pode ajustar as datas abaixo.'
+    )
+
+
+def financial_filter_form(request, *, current_payment_period=False):
+    params = request.GET.copy()
+    notice = ''
+    if not params.get('historico'):
+        today = timezone.localdate()
+        first, last = date(today.year, 1, 1), date(today.year, 12, 31)
+        if current_payment_period and any(name not in params for name in ('data_inicial', 'data_limite')):
+            first, last, notice = financial_current_payment_period(today)
+        params.setdefault('data_inicial', first.isoformat())
+        params.setdefault('data_limite', last.isoformat())
+    form = FiltroFinanceiroForm(params, user=request.user, dynamic_choices=current_payment_period)
+    form.default_period_notice = notice
+    return form
+
+
+def nf_monthly_chart(series, include_plotlyjs="cdn"):
+    if not series:
+        return ''
+    fig = go.Figure(go.Bar(x=[x['month'].strftime('%m/%Y') if x['month'] else 'Data não conhecida' for x in series],
+        y=[float(x['total']) for x in series], marker_color='#0d7e66', name='Pago líquido por movimentos'))
+    fig.update_layout(template='plotly_white', height=300, margin=dict(l=50,r=20,t=25,b=45),
+        yaxis_title='Valor pago líquido (R$)', xaxis_title='Mês efetivo do movimento', autosize=True)
+    return fig.to_html(full_html=False, include_plotlyjs=include_plotlyjs, config={'responsive': True, 'displaylogo': False})
+
+
+def financial_period_label(form):
+    if form.cleaned_data.get('historico'):
+        return 'Todo o histórico'
+    return f"{form.cleaned_data['data_inicial']:%d/%m/%Y} a {form.cleaned_data['data_limite']:%d/%m/%Y}"
+
+
+def financial_forecast_url(form):
+    params = {}
+    if form.is_valid() and not form.cleaned_data.get('historico'):
+        for name in ('data_inicial','data_limite'):
+            params[name] = form.cleaned_data[name].isoformat()
+    if form.is_valid() and form.cleaned_data.get('coordenador'):
+        params['coordenador'] = form.cleaned_data['coordenador'].pk
+    return reverse('previsao_pagamentos') + ('?' + urlencode(params) if params else '')
+
+
+def financial_page_links(request, filter_params=None):
+    params = (filter_params if filter_params is not None else request.GET).copy()
+    for key in ('page','fila','registro','next'):
+        params.pop(key, None)
+    result = []
+    for key, letter, title, help_text, kind in fq.QUEUE_DEFINITIONS:
+        params['fila'] = key
+        result.append(dict(key=key, letter=letter, title=title, help=help_text, kind=kind,
+            url=reverse('pendencias_financeiras') + '?' + params.urlencode()))
+    return result
+
+
+def financial_kpi_cards(stats):
+    specs = (
+        ('previsto','Previsto','Eventos e OS, uma vez por origem; data prevista.'),
+        ('medido','Medido','Participações de BM; data de referência do BM.'),
+        ('autorizado','Autorizado pela Diretoria','Medição com aprovação operacional e autorização válidas; não é pagamento.'),
+        ('faturado','Faturado','NFs de fornecedores cadastradas, pagas ou não.'),
+        ('pago','Pago','NFs marcadas como pagas, inclusive as que exigem revisão.'),
+        ('nao_autorizado','NF ainda não autorizada','NFs não pagas da fila C.'),
+        ('a_pagar','NF liberada a pagar','NFs não pagas da fila D.'),
+        ('em_revisao','NF não paga em revisão','NFs não pagas da fila F; avaliar o contexto.'),
+    )
+    return [dict(key=k,label=label,help=help_text,value=stats[k]) for k,label,help_text in specs]
+
+
+FINANCIAL_HOME_CARDS = (
+    ('autorizados', 'BMs aprovados pela Diretoria', 'Autorizações válidas, com ou sem NF e pagamento.', 'success', 'bm', {'autorizacao': 'autorizado'}),
+    ('diretoria', 'BMs aguardando Diretoria', 'Aprovados operacionalmente, aguardando autorização de pagamento.', 'warning', 'bm', {'autorizacao': 'diretoria'}),
+    ('operacional', 'BMs aguardando avaliação', 'Acompanhamento da aprovação operacional pela liderança ou gerência.', 'primary', 'bm', {'autorizacao': 'operacional'}),
+    ('sem_nf', 'BMs autorizados sem NF', 'Participações autorizadas sem NF vinculada em todo o histórico.', 'info', 'bm', {'autorizacao': 'autorizado'}),
+    ('pagamento', 'NFs aguardando pagamento', 'NFs liberadas com saldo pendente, incluindo pagamentos parciais.', 'success', 'nf', {'autorizacao': 'autorizado', 'pagamento': 'pendente'}),
+    ('atencao', 'Registros que exigem atenção', 'BMs e NFs para revisão do contexto e do histórico.', 'danger', 'nf', {}),
+)
+
+
+def financial_home_cards(counts):
+    return [dict(key=key, title=title, help=help_text, color=color, kind=kind, count=counts[key],
+        url=reverse('painel_financeiro') + '?' + urlencode({'historico': 'on', 'selecao': key, **filters}))
+        for key, title, help_text, color, kind, filters in FINANCIAL_HOME_CARDS]
+
+
+def build_financial_home_context(request):
+    # Pendências atuais em todo o histórico; a home não instancia filtros/gráficos.
+    data = fq.FinancialData(request.user, {'historico': True})
+    counts = data.home_counts()
+    cards = financial_home_cards(counts)
+    lists = []
+    for key in ('diretoria', 'autorizados', 'operacional', 'pagamento'):
+        card = next(c for c in cards if c['key'] == key).copy()
+        qs = data.queries[key]
+        if card['kind'] == 'bm':
+            if key == 'autorizados':
+                qs = qs.order_by('-data_aprovacao_diretor', '-data_pagamento', '-pk')
+            else:
+                qs = qs.annotate(priority_date=Coalesce('evento__data_entrega', 'os__data_entrega', 'data_pagamento')).order_by('priority_date', 'pk')
+            card['rows'] = [fq.bm_row(bm, request.user, request.path) for bm in fq.eager_bms(qs)[:5]]
+        else:
+            card['rows'] = fq.nf_rows(fq.eager_nfs(qs).order_by('data_pagamento', 'pk')[:5], request.user, request.path)
+        lists.append(card)
+    # Preserva o acompanhamento/SLA existente com prévias limitadas.
+    pending_qs = data.queries['aprovacao'].annotate(priority_date=Coalesce('evento__data_entrega', 'os__data_entrega', 'data_pagamento')).order_by('priority_date', 'pk')
+    pending = attach_bm_home_sla_displays(list(fq.eager_bms(pending_qs)[:5]))
+    pending.sort(key=lambda bm: -(getattr(bm, 'sla_display', {}) or {}).get('dias_uteis_decorridos', 0))
+    without_nf = list(fq.eager_bms(data.queries['sem_nf']).order_by('-data_pagamento', '-pk')[:5])
+    return dict(painel_titulo='Painel do Financeiro', is_financeiro=True,
+        financial_home_cards=cards, financial_home_counts=counts, financial_home_lists=lists,
+        bms_pendentes=pending, eventos_sem_nf=list({b.evento_id: b.evento for b in without_nf if b.evento_id}.values()))
+
+
+def financial_selection_context(request, data, key):
+    spec = next(c for c in FINANCIAL_HOME_CARDS if c[0] == key)
+    kind = request.GET.get('registro', 'nf') if key == 'atencao' else spec[4]
+    qs = data.queries['atencao_' + kind if key == 'atencao' else key].order_by('-data_pagamento', '-pk')
+    page = Paginator(fq.eager_bms(qs) if kind == 'bm' else fq.eager_nfs(qs), 20).get_page(request.GET.get('page'))
+    rows = [fq.bm_row(b, request.user, request.get_full_path()) for b in page] if kind == 'bm' else fq.nf_rows(page, request.user, request.get_full_path())
+    params = request.GET.copy(); params.pop('page', None)
+    bm_params = params.copy(); bm_params['registro'] = 'bm'
+    nf_params = params.copy(); nf_params['registro'] = 'nf'
+    return dict(key=key, title=spec[1], kind=kind, rows=rows, page_obj=page, pagination_query=params.urlencode(),
+        bm_url='?' + bm_params.urlencode(), nf_url='?' + nf_params.urlencode())
+
+
+@login_required
+@require_safe
+def opcoes_filtros_financeiros(request):
+    if not fq.can_view_exclusive_financial_panel(request.user):
+        return JsonResponse({'error': 'Esta página é exclusiva do grupo Financeiro.'}, status=403)
+    names = ('lider_contrato', 'coordenador', 'fornecedor', 'projeto', 'contrato')
+    params = {name: request.GET[name] for name in names if name in request.GET}
+    params['historico'] = 'on'
+    form = FiltroFinanceiroForm(params, user=request.user, dynamic_choices=True)
+    if not form.is_valid():
+        return JsonResponse({'error': 'Revise a combinação dos filtros selecionados.', 'errors': form.errors}, status=400)
+    options = {}
+    for name in ('fornecedor', 'projeto', 'contrato'):
+        field = form.fields[name]
+        options[name] = [{'value': str(obj.pk), 'label': field.label_from_instance(obj)} for obj in field.queryset]
+    return JsonResponse({'options': options})
+
+
+@login_required
+@require_safe
+def painel_financeiro(request):
+    if not fq.can_view_exclusive_financial_panel(request.user):
+        return HttpResponse('Esta página é exclusiva do grupo Financeiro.', status=403)
+    selection = request.GET.get('selecao', '')
+    if selection and selection not in {c[0] for c in FINANCIAL_HOME_CARDS}:
+        return HttpResponse('Seleção financeira inválida.', status=400)
+    if selection == 'atencao' and request.GET.get('registro', 'nf') not in {'bm', 'nf'}:
+        return HttpResponse('Tipo de registro inválido.', status=400)
+    return render(request, 'financeiro/painel.html', build_financial_dashboard_context(request))
+
+
+def build_financial_dashboard_context(request):
+    form = financial_filter_form(request, current_payment_period=True)
+    context = {'financial_form':form, 'financial_queues':[], 'is_financeiro':True,
+        'financial_selection_key': request.GET.get('selecao', ''), 'financial_record_kind': request.GET.get('registro', 'nf')}
+    if not form.is_valid():
+        return context
+    data = fq.FinancialData(request.user, form.cleaned_data)
+    stats = data.indicators()
+    queues = financial_page_links(request, form.data)
+    for queue in queues:
+        key = queue['key']
+        queue['count'] = stats[key + '_count']
+        if key == 'atencao':
+            queue['rows'] = [fq.bm_row(b,request.user,request.get_full_path()) for b in fq.eager_bms(data.queries['atencao_bm']).order_by('-data_pagamento','-pk')[:3]]
+            queue['rows'] += fq.nf_rows(fq.eager_nfs(data.queries['atencao_nf']).order_by('-data_pagamento','-pk')[:3],request.user,request.get_full_path())
+        elif queue['kind'] == 'bm':
+            qs = data.queries[key].annotate(priority_date=Coalesce('evento__data_entrega','os__data_entrega','data_pagamento')).order_by('priority_date','pk')
+            queue['rows'] = [fq.bm_row(b,request.user,request.get_full_path()) for b in fq.eager_bms(qs)[:5]]
+        else:
+            queue['rows'] = fq.nf_rows(fq.eager_nfs(data.queries[key]).order_by('-data_pagamento','-pk')[:5],request.user,request.get_full_path())
+    context.update(financial_queues=queues, financial_stats=stats, financial_kpis=financial_kpi_cards(stats),
+        financial_period=financial_period_label(form), financial_chart=nf_monthly_chart(fq.monthly_paid_series(data.nfs_scope,None if form.cleaned_data.get('historico') else form.cleaned_data.get('data_inicial'),None if form.cleaned_data.get('historico') else form.cleaned_data.get('data_limite'))),
+        financial_forecast_url=financial_forecast_url(form))
+    if context['financial_selection_key']:
+        context['financial_selection'] = financial_selection_context(request, data, context['financial_selection_key'])
+        context['financial_selection'].update(bm_count=stats['atencao_bm_count'], nf_count=stats['atencao_nf_count'])
+    return context
+
+
+@login_required
+@require_safe
+def pendencias_financeiras(request):
+    if not fq.can_view_financial_panel(request.user):
+        return HttpResponse('Acesso restrito aos perfis com consulta financeira global.',status=403)
+    form = financial_filter_form(request)
+    queues = financial_page_links(request)
+    key = request.GET.get('fila','pagamento')
+    queue = next((q for q in queues if q['key']==key),None)
+    kind = request.GET.get('registro','nf') if key=='atencao' else (queue['kind'] if queue else '')
+    if not queue or kind not in ('bm','nf'):
+        return HttpResponse('Fila financeira inválida.',status=400)
+    context = dict(financial_form=form,financial_queues=queues,queue=queue,rows=[],record_kind=kind)
+    if form.is_valid():
+        data = fq.FinancialData(request.user,form.cleaned_data)
+        stats = data.indicators()
+        for q in queues: q['count'] = stats[q['key']+'_count']
+        qs = data.queries[key+'_'+kind if key=='atencao' else key].order_by('-data_pagamento','-pk')
+        page = Paginator(fq.eager_bms(qs) if kind=='bm' else fq.eager_nfs(qs),20).get_page(request.GET.get('page'))
+        rows = [fq.bm_row(b,request.user,request.get_full_path()) for b in page] if kind=='bm' else fq.nf_rows(page,request.user,request.get_full_path())
+        params = request.GET.copy(); params.pop('page',None)
+        bm_params=params.copy(); bm_params['registro']='bm'
+        nf_params=params.copy(); nf_params['registro']='nf'
+        context.update(rows=rows,page_obj=page,pagination_query=params.urlencode(),financial_stats=stats,
+            financial_period=financial_period_label(form),financial_forecast_url=financial_forecast_url(form),
+            attention_bm_url='?'+bm_params.urlencode(),attention_nf_url='?'+nf_params.urlencode())
+    return render(request,'financeiro/pendencias.html',context)
+
+
+@login_required
+@require_safe
+def detalhe_bm_financeiro(request,bm_id):
+    bm = get_object_or_404(fq.eager_bms(fq.financial_bms()),pk=bm_id)
+    if not (can_view_object(request.user,bm) and can_access_document(request.user,bm)):
+        raise Http404
+    qs = fq.eager_nfs(NF.objects.filter(bm=bm)).order_by('-data_pagamento','-pk')
+    if not fq.can_view_financial_panel(request.user):
+        if not bm.contrato_financeiro: raise Http404
+        qs=qs.filter(evento_id=bm.evento_id,os_id=bm.os_id,contrato_id=bm.contrato_financeiro.pk)
+    reconciliation=fr.bm_totals(bm,qs)
+    page=Paginator(qs,20).get_page(request.GET.get('page'))
+    back=approval_return_url(request,reverse('home'))
+    params=request.GET.copy(); params.pop('page',None)
+    return render(request,'financeiro/detalhe_bm.html',dict(row=fq.bm_row(bm,request.user),
+        rows=fq.nf_rows(page,request.user,request.get_full_path()),page_obj=page,pagination_query=params.urlencode(),
+        shared_participations=[fq.bm_row(other,request.user) for other in fq.eager_bms(fq.financial_bms().filter(arquivo_bm=bm.arquivo_bm.name).exclude(pk=bm.pk))[:10]] if bm.arquivo_bm and fq.can_view_financial_panel(request.user) else [],
+        reconciliation=reconciliation, return_url=back,can_delete=request.user.grupo in {'financeiro','suprimento'} and not NF.objects.filter(bm=bm).exists(),
+        bm_history=RegistroAuditoria.objects.filter(content_type=ContentType.objects.get_for_model(BM),object_id=bm.pk).select_related('usuario').order_by('-data_hora','-pk')[:20] if fq.can_view_financial_panel(request.user) else [],
+        can_approve_pagamento=user_can_approve_bm_payment(request.user,bm),
+        delete_url=reverse('deletar_bm',args=[bm.pk])))
+
+
+@login_required
+@require_safe
+def detalhe_nf(request,nf_id):
+    nf=get_object_or_404(fq.eager_nfs(NF.objects.all()),pk=nf_id)
+    if not (can_view_object(request.user,nf) and can_access_document(request.user,nf)):
+        raise Http404
+    if nf.bm_id and not (can_view_object(request.user,nf.bm) and can_access_document(request.user,nf.bm)):
+        raise Http404
+    row=fq.nf_rows([nf],request.user)[0]
+    from . import payment_queries as pq
+    movements=nf.movimentos.select_related('registrado_por','programacao','referencia_estorno').annotate(reverted_cents=Coalesce(Sum('estornos__centavos'),0)).order_by('-registrado_em','-pk')
+    return render(request,'financeiro/detalhe_nf.html',dict(row=row,
+        ledger_state=pq.financial_state(nf),movements=list(movements[:50]),movement_count=movements.count(),
+        agreements=list(nf.reprogramacoes.select_related('registrado_por','programacao').order_by('-pk')[:50]),
+        schedule_history=list(nf.programacoes.select_related('registrado_por','acordo').order_by('-pk')[:50]),
+        can_operate=request.user.grupo in {'financeiro','suprimento'} and not nf.cancelada_em and nf.saldo_pendente>0,
+        can_reverse=request.user.grupo=='suprimento',
+        history_rows=fr.audit_rows(RegistroAuditoria.objects.filter(content_type=ContentType.objects.get_for_model(NF),object_id=nf.pk,operacao_financeira__isnull=False).select_related('usuario').order_by('-data_hora','-pk')[:20],request.user),
+        legacy_history=RegistroAuditoria.objects.filter(content_type=ContentType.objects.get_for_model(NF),object_id=nf.pk,operacao_financeira__isnull=True).select_related('usuario').order_by('-data_hora','-pk')[:20] if fq.can_view_financial_panel(request.user) else [],
+        diagnostic_reasons=fr.nf_diagnostic_reasons(nf),
+        duplicates=fr.possible_duplicates(nf)[:10] if fq.can_view_financial_panel(request.user) else [],
+        history_url=reverse('historico_financeiro')+'?'+urlencode({'nf_id':nf.pk}) if fq.can_view_financial_panel(request.user) else '',
+        bm_row=fq.bm_row(nf.bm,request.user) if row['bm_url'] else None,
+        return_url=approval_return_url(request,reverse('home')),is_financeiro=request.user.grupo=='financeiro'))
+
+
+def conference_data(request):
+    params=request.GET.copy()
+    if not any(params.get(key) for key in ('data_inicial','data_limite','historico')):
+        params['historico']='on'
+    form=FiltroFinanceiroForm(params,user=request.user)
+    return form,fq.FinancialData(request.user,form.cleaned_data) if form.is_valid() else None
+
+
+@login_required
+@require_safe
+def conferencia_financeira(request):
+    if not fq.can_view_financial_panel(request.user): return HttpResponse('Acesso restrito.',status=403)
+    form,data=conference_data(request)
+    kind=request.GET.get('visao','bm')
+    if kind not in {'bm','nf','evento','os'}: return HttpResponse('Visão inválida.',status=400)
+    context=dict(financial_form=form,kind=kind,conference_kind=kind,rows=[])
+    if data:
+        params=request.GET.copy(); params.pop('page',None)
+        context.update(financial_period=financial_period_label(form),pagination_query=params.urlencode())
+        if kind=='bm':
+            qs=fq.eager_bms(fr.with_bm_totals(data.bms)).order_by('-data_pagamento','-pk')
+            page=Paginator(qs,20).get_page(request.GET.get('page'))
+            context['rows']=[fr.bm_reconciliation_row(b,request.user,request.get_full_path()) for b in page]
+        elif kind=='nf':
+            page=Paginator(fq.eager_nfs(fr.diagnostic_nfs(data.nfs)).order_by('-data_pagamento','-pk'),20).get_page(request.GET.get('page'))
+            context['rows']=fq.nf_rows(page,request.user,request.get_full_path())
+            for row in context['rows']: row['reasons']=fr.nf_diagnostic_reasons(row['record'])
+        else:
+            qs=fr.filtered_legacy_origins(data,kind).select_related('contrato_terceiro' if kind=='evento' else 'contrato').order_by('-pk')
+            page=Paginator(qs,20).get_page(request.GET.get('page'))
+            context['origins']=[dict(record=o,url=reverse('detalhes_entrega' if kind=='evento' else 'detalhes_os',args=[o.pk])) for o in page]
+        context['page_obj']=page
+        if form.cleaned_data.get('contrato'):
+            contract=form.cleaned_data['contrato']
+            stats=fq.FinancialData(request.user,{'historico':True,'contrato':contract}).indicators()
+            position=fr.contract_position(contract,stats,fr.contract_reference(contract))
+            context.update(contract=contract,contract_stats=position['stats'],contract_value=position['reference'],contract_alerts=position['alerts'])
+    return render(request,'financeiro/conferencia.html',context)
+
+
+@login_required
+@require_safe
+def exportar_conferencia_financeira(request):
+    if not fq.can_view_financial_panel(request.user): return HttpResponse('Acesso restrito.',status=403)
+    form,data=conference_data(request)
+    if not data: return HttpResponse('Revise os filtros.',status=400)
+    workbook=Workbook(write_only=True); sheet=workbook.create_sheet('Conferência por BM')
+    sheet.append(['Participação ID','BM','Contrato financeiro','Fornecedor','Projeto','Medido','Faturado','Pago','Medido menos faturado','Faturado não pago'])
+    def safe(value):
+        if isinstance(value,str) and value.lstrip().startswith(('=','+','-','@')): return "'"+value
+        return value
+    qs=fq.eager_bms(fr.with_bm_totals(data.bms)).order_by('pk')
+    if qs.count()>10000: return HttpResponse('Refine os filtros para exportar até 10.000 participações.',status=400)
+    for bm in qs.iterator(chunk_size=200):
+        contract=bm.contrato_financeiro
+        sheet.append([safe(x) for x in [bm.pk,bm.numero_bm,contract.num_contrato if contract else '',
+            contract.empresa_terceira.nome if contract else '',(bm.os.cod_projeto if bm.os_id else contract.cod_projeto if contract else None).cod_projeto if (bm.os.cod_projeto if bm.os_id else contract.cod_projeto if contract else None) else '',
+            bm.valor_pago,bm.nf_billed,bm.nf_paid,bm.valor_pago-bm.nf_billed,bm.nf_billed-bm.nf_paid]])
+    output=BytesIO(); workbook.save(output)
+    response=HttpResponse(output.getvalue(),content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition']='attachment; filename="conferencia_financeira.xlsx"'
+    response['Cache-Control']='private, no-store'
+    return response
+
+
+@login_required
+@require_safe
+def historico_financeiro(request):
+    if not fq.can_view_financial_panel(request.user): return HttpResponse('Acesso restrito.',status=403)
+    qs=RegistroAuditoria.objects.filter(content_type=ContentType.objects.get_for_model(NF),operacao_financeira__isnull=False).select_related('usuario')
+    for key in ('nf_id','contrato'):
+        if request.GET.get(key):
+            try: value=int(request.GET[key]); assert 0<value<2**63
+            except (ValueError,AssertionError): return HttpResponse('Identificação inválida.',status=400)
+            qs=qs.filter(object_id=value) if key=='nf_id' else qs.filter(Q(estado_anterior__contrato_id=value)|Q(estado_posterior__contrato_id=value))
+    if request.GET.get('operacao'):
+        if request.GET['operacao'] not in {'criacao','alteracao','pagamento','correcao_paga','desmarcacao','exclusao','liquidacao','estorno','programacao','reprogramacao','cancelamento'}: return HttpResponse('Operação inválida.',status=400)
+        qs=qs.filter(operacao_financeira=request.GET['operacao'])
+    for key,lookup in (('data_inicial','data_hora__date__gte'),('data_limite','data_hora__date__lte')):
+        if request.GET.get(key):
+            try: value=date.fromisoformat(request.GET[key])
+            except ValueError: return HttpResponse('Data inválida.',status=400)
+            qs=qs.filter(**{lookup:value})
+    page=Paginator(qs.order_by('-data_hora','-pk'),20).get_page(request.GET.get('page'))
+    params=request.GET.copy(); params.pop('page',None)
+    return render(request,'financeiro/historico.html',dict(history_rows=fr.audit_rows(page,request.user),page_obj=page,pagination_query=params.urlencode()))
+
+
+@login_required
+@require_safe
+def documento_historico_nf(request,event_id,side,field):
+    from pathlib import PurePosixPath
+    from django.http import FileResponse
+    event=get_object_or_404(RegistroAuditoria,pk=event_id,content_type=ContentType.objects.get_for_model(NF),operacao_financeira__isnull=False)
+    if not fr.can_view_audit(request.user,event) or side not in {'anterior','posterior'} or field not in {'arquivo_nf','comprovante_pagamento','documento_acordo'}: raise Http404
+    state=event.estado_anterior if side=='anterior' else event.estado_posterior
+    name=(state or {}).get(field)
+    if not name or PurePosixPath(name).is_absolute() or '..' in PurePosixPath(name).parts or '\\' in name: raise Http404
+    from .models import ReprogramacaoPagamento
+    storage=ReprogramacaoPagamento._meta.get_field('documento').storage if field=='documento_acordo' else NF._meta.get_field(field).storage
+    try: handle=storage.open(name,'rb')
+    except (OSError,ValueError): raise Http404 from None
+    response=FileResponse(handle,as_attachment=True,filename=PurePosixPath(name).name)
+    response['X-Content-Type-Options']='nosniff'; response['Cache-Control']='private, no-store'
+    return response

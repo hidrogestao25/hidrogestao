@@ -7,3 +7,5 @@ class GestaoContratosConfig(AppConfig):
 
     def ready(self):
         import gestao_contratos.signals  # noqa: F401
+        from .financial_audit import install
+        install()

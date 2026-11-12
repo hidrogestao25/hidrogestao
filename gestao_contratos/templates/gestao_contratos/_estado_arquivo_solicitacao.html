@@ -1,0 +1,7 @@
+{% if solicitacao.arquivada %}
+  <span class="badge bg-secondary">Arquivada</span>
+  <div class="small text-muted text-break">
+    {{ solicitacao.arquivada_em|date:"d/m/Y H:i" }} · {{ solicitacao.arquivada_por.get_full_name|default:solicitacao.arquivada_por|default:"Usuário indisponível" }}
+    <div>Motivo: {{ solicitacao.motivo_arquivamento|default:"Não informado" }}</div>
+  </div>
+{% endif %}

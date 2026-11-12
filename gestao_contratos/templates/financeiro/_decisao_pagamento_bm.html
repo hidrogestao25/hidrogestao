@@ -1,0 +1,6 @@
+{% if request.user.grupo == 'diretoria' and can_decide %}
+<div class="d-flex flex-wrap gap-1 mt-2">
+  <button type="button" class="btn btn-sm btn-success" data-bm-payment-action="aprovar_pagamento" data-bm-payment-url="{% url 'avaliar_bm' bm.pk %}" data-bm-payment-number="{{ bm.numero_bm }}">Aprovar Pagamento</button>
+  <button type="button" class="btn btn-sm btn-danger" data-bm-payment-action="reprovar_pagamento" data-bm-payment-url="{% url 'avaliar_bm' bm.pk %}" data-bm-payment-number="{{ bm.numero_bm }}">Reprovar Pagamento</button>
+</div>
+{% endif %}

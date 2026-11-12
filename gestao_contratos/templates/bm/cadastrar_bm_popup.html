@@ -1,5 +1,6 @@
 <form method="post" enctype="multipart/form-data" id="bmForm">
     {% csrf_token %}
+    <input type="hidden" name="submission_token" value="{{ submission_token }}">
     {{ form.as_p }}
 
     <div class="d-flex justify-content-end gap-2">

@@ -1,0 +1,29 @@
+.fin-workspace { --fin-ink:#163e49; --fin-green:#0d7e66; color:#233a42; min-width:0; }
+.fin-eyebrow { color:var(--fin-green); font-size:.72rem; font-weight:700; letter-spacing:.12em; }
+.fin-workspace h1,.fin-workspace h2 { color:var(--fin-ink); }
+.fin-workspace .card { border:1px solid #dce5e7; border-radius:12px; box-shadow:0 3px 12px #163e4905; overflow:hidden; }
+.fin-kpi { border-top:3px solid #0d7e66!important; }
+.fin-kpi-value { font-size:clamp(1.25rem,2vw,1.7rem); font-weight:700; line-height:1.5; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.fin-kpi p { line-height:1.45; margin-top:.4rem; }
+.fin-queue-link { text-decoration:none; color:var(--fin-ink); transition:background .15s; }
+.fin-queue-link:hover { background:#eaf5f1; border-color:#0d7e66; }
+.fin-table { min-width:850px; font-size:.86rem; }
+.fin-table th { background:#eff4f5; color:#47616b; font-size:.74rem; text-transform:uppercase; padding:12px; }
+.fin-table td { padding:14px 12px; vertical-align:top; }
+.fin-table a:not(.btn),.fin-context a { color:#176d66; text-decoration:none; }
+.fin-table a:hover,.fin-context a:hover { text-decoration:underline; }
+.fin-context { color:#65767c; margin-top:.35rem; max-width:320px; }
+.fin-money { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; }
+.fin-actions { min-width:120px; }
+.fin-filters summary { padding:14px 18px; cursor:pointer; }
+.fin-filters input:not([type=checkbox]),.fin-filters select { width:100%; }
+.fin-filters .errorlist { color:#a02b37; font-size:.85rem; padding-left:1rem; }
+.fin-chart { width:100%; min-width:0; }
+.fin-workspace .badge { white-space:normal; text-align:left; line-height:1.4; }
+#financeModal input:not([type=checkbox]):not([type=hidden]),#financeModal select,#financeModal textarea { max-width:100%; }
+#financeModal .modal-body { overflow-wrap:anywhere; }
+#financeModal [data-finance-modal-content] { min-height:0; overflow-y:auto; padding:1rem; }
+#financeModal [data-finance-modal-content] .modal-body { padding:0; }
+#financeModal [data-finance-modal-content] .modal-footer { padding:1rem 0 0; }
+@media(max-width:767px) { .fin-heading .btn{flex:1 1 auto;} .fin-workspace .card-body{padding:1rem;} .fin-table-wrap{border-radius:0;} .fin-filters .form-label{font-size:.85rem;} .fin-workspace h1{font-size:1.5rem;} }
+@media(prefers-reduced-motion:reduce){.fin-queue-link{transition:none;}}

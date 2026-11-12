@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
+from django.core.exceptions import ImproperlyConfigured
 
 from pathlib import Path
 
@@ -40,7 +41,20 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-key-change-me")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
+DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+
+if not DEBUG and (
+    len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5 or SECRET_KEY.startswith("django-insecure-")
+):
+    raise ImproperlyConfigured("Configure DJANGO_SECRET_KEY forte antes de iniciar em produção.")
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_SSL_REDIRECT = not DEBUG
+SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "0" if DEBUG else "3600"))
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origin.strip()]
+EMAIL_TIMEOUT = 15
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -69,6 +83,7 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    "gestao_contratos.middleware.UploadValidationMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "gestao_contratos.middleware.AuditoriaUsuarioMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -149,11 +164,12 @@ FORMAT_MODULE_PATH = ['django.conf.locale.pt_BR']
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
 
-MEDIA_URL = '/media/'
+MEDIA_URL = '/arquivos/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Default primary key field type

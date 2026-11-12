@@ -1,0 +1,5 @@
+{% extends 'admin/delete_selected_confirmation.html' %}
+{% block content %}{{ block.super }}
+<template id="nf-delete-reason"><p><label>Justificativa da exclusão/cancelamento (obrigatória para NFs com histórico)<textarea name="justificativa_correcao" maxlength="4000" rows="3"></textarea></label></p></template>
+<script>document.addEventListener('DOMContentLoaded',()=>{const f=document.querySelector('input[name="action"][value="delete_selected"]')?.form;if(f)f.prepend(document.getElementById('nf-delete-reason').content.cloneNode(true));});</script>
+{% endblock %}

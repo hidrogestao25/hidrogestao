@@ -1,10 +1,12 @@
 {% extends "base.html" %}
-{% load custom_tags %}
+{% load custom_tags static %}
 {% load l10n %}
 
 {% block content %}
 <div class="container mt-4">
+{% include "gestao_contratos/_historico_arquivo_solicitacao.html" with solicitacao=os %}
 
+  {% if not os.cancelada %}
   <div class="timeline">
       <div id="timeline-progress" class="timeline-progress"></div>
 
@@ -38,6 +40,7 @@
           }, 200);
       });
   </script>
+  {% endif %}
 
     <div class="card shadow-sm">
         <div class="card-header bg-primary text-white">
@@ -61,6 +64,8 @@
                     <span class="badge bg-success">Aprovada</span>
                 {% elif os.status == 'reprovada' %}
                     <span class="badge bg-danger">Reprovada</span>
+                {% elif os.cancelada %}
+                    <span class="badge bg-danger">Cancelada</span>
                 {% elif os.status == 'finalizada' %}
                     <span class="badge bg-dark">Finalizada</span>
                 {% endif %}
@@ -180,6 +185,7 @@
                     Voltar
                 </a>
 
+{% if not os.cancelada and not os.arquivada %}
                 {% if request.user.grupo == 'gerente' or request.user.grupo == 'gerente_lider' or request.user.grupo == 'gerente_contrato' or request.user.grupo == 'suprimento' %}
                     {% if os.status != 'finalizada' and os.status != 'aprovada' %}
                         <a href="{% url 'editar_ordem_servico' os.id %}" class="btn btn-warning">
@@ -189,20 +195,18 @@
                 {% endif %}
 
                 {% if request.user.grupo == 'gerente_contrato' and os.status == 'pendente_gerente' %}
-                    <a href="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}" class="btn btn-success"
-                       onclick="return confirm('Confirmar aprovacao da solicitacao de OS?')">
+                    <form method="post" action="{% url 'aprovar_os_gerente_contrato' os.id 'aprovar' %}" class="d-inline" onsubmit="return confirm('Confirmar aprovacao da solicitacao de OS?')">{% csrf_token %}<button type="submit" class="btn btn-success">
                         Aprovar Solicitacao
-                    </a>
+                    </button></form>
                     <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarOSGerente">
                         Reprovar Solicitacao
                     </button>
                 {% endif %}
 
                 {% if request.user.grupo == 'diretoria' and os.status == 'pendente_diretoria' or request.user.grupo == 'diretoria' and can_act_as_gerente_contrato and os.status == 'pendente_gerente' %}
-                    <a href="{% url 'aprovar_os_diretoria' os.id 'aprovar' %}" class="btn btn-success"
-                       onclick="return confirm('Confirmar aprovacao da solicitacao de OS?')">
+                    <form method="post" action="{% url 'aprovar_os_diretoria' os.id 'aprovar' %}?next={{ approval_next|urlencode }}" class="d-inline" onsubmit="return confirm('Confirmar aprovacao da solicitacao de OS?')">{% csrf_token %}<button type="submit" class="btn btn-success">
                         Aprovar Solicitacao
-                    </a>
+                    </button></form>
                     <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalReprovarOSDiretoria">
                         Reprovar Solicitacao
                     </button>
@@ -212,6 +216,20 @@
                     <a href="{% url 'upload_contrato_os' os.id %}" class="btn btn-success">
                         Inserir Minuta da OS
                     </a>
+                {% endif %}
+
+                {% if regression_options %}
+                    <form method="post" action="{% url 'regredir_solicitacao_os' os.id %}" class="d-inline-flex gap-2 align-items-center" data-prevent-double-submit="true" onsubmit="return confirm('Tem certeza que deseja voltar esta solicitação de OS para a etapa selecionada?');">
+                        {% csrf_token %}
+                        <select name="target_status" class="form-select form-select-sm" style="width: auto;" required>
+                            {% for option in regression_options %}
+                                <option value="{{ option.status }}">{{ option.label }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-outline-warning">
+                            Voltar etapa
+                        </button>
+                    </form>
                 {% endif %}
 
                 {% if can_act_as_gerente_contrato and os.status == 'pendente_minuta_gerente' %}
@@ -226,6 +244,7 @@
                         Reprovar Minuta
                     </button>
                 {% endif %}
+{% endif %}
             </div>
 
         </div>
@@ -233,6 +252,7 @@
 
 </div>
 
+{% if request.user.grupo != 'financeiro' and not os.cancelada and not os.arquivada %}
 <div class="modal fade" id="modalReprovarOSGerente" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -260,6 +280,7 @@
     <div class="modal-content">
       <form method="post" action="{% url 'aprovar_os_diretoria' os.id 'reprovar' %}">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ approval_next }}">
         <div class="modal-header">
           <h5 class="modal-title">Reprovar solicitacao de OS</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
@@ -298,4 +319,6 @@
     </div>
   </div>
 </div>
+{% endif %}
+<script src="{% static 'js/solicitacoes_arquivo.js' %}" defer></script>
 {% endblock %}

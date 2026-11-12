@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container my-4">
+  <h1 class="h4">Condições contratuais formalizadas</h1>
+  <p class="alert alert-warning">{{ reason }}</p>
+  {% for contrato in contratos_efetivos %}
+    <p><a class="btn btn-outline-primary" href="{% url 'contrato_fornecedor_detalhe' contrato.pk %}">Consultar contrato {{ contrato.num_contrato }}</a></p>
+  {% endfor %}
+  <a class="btn btn-secondary" href="{% url 'detalhes_solicitacao' solicitacao.pk %}">Voltar à solicitação</a>
+</div>
+{% endblock %}
