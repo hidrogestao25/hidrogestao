@@ -3,9 +3,11 @@ from . import views
 from . import financial_views
 from . import payment_views
 from . import solicitacao_views
+from . import bm_recebimento
 from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, ContratoFornecedorCreateView, OSCreateView
 
 urlpatterns = [
+    path('bms/<int:bm_id>/medicao-recebimento/', bm_recebimento.informacao_medicao_recebimento, name='informacao_medicao_recebimento_bm'),
     path('solicitacoes/<str:tipo>/<int:pk>/estado/<str:operacao>/', solicitacao_views.operar_solicitacao, name='operar_solicitacao'),
     path('notas-fiscais/<int:nf_id>/pagamentos/novo/',payment_views.invoice_action,{'action':'pagamento'},name='pagamento_nf'),
     path('notas-fiscais/<int:nf_id>/programacao/',payment_views.invoice_action,{'action':'programacao'},name='programacao_nf'),

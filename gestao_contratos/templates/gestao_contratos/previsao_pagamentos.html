@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% load custom_tags static %}
-{% block extra_css %}<script src="https://cdn.plot.ly/plotly-{{ plotly_version }}.min.js" charset="utf-8"></script><link rel="stylesheet" href="{% static 'css/financeiro.css' %}">{% endblock %}
+{% block content_container_class %}container-fluid fin-forecast-container{% endblock %}
+{% block extra_css %}<script src="https://cdn.plot.ly/plotly-{{ plotly_version }}.min.js" charset="utf-8"></script><link rel="stylesheet" href="{% static 'css/financeiro.css' %}?v=20261113-bm-layout">{% endblock %}
 
 {% block content %}
 <div class="fin-workspace mt-4">
@@ -97,7 +98,8 @@
             <th>Valor medido (participação)</th>
             <th>Data de referência do BM</th>
             <th>Aprovações</th>
-            <th>Ações</th>
+            <th>Medição e recebimento</th>
+            <th class="fin-actions">Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -146,7 +148,8 @@
                   <span class="text-muted">-</span>
                 {% endif %}
               </td>
-              <td>
+              <td>{% include 'bm/_medicao_recebimento.html' with bm=bm permitir_edicao=True %}</td>
+              <td class="fin-actions">
                 {% if bm.evento %}
                   {% if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
                     <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank" class="btn btn-sm btn-outline-success">
@@ -194,7 +197,7 @@
             <td colspan="5" class="text-end">Totais Gerais:</td>
             <td>R$ {{ total_bm_previsto|floatformat:2 }}</td>
             <td>R$ {{ total_bm_pago|floatformat:2 }}</td>
-            <td colspan="3"></td>
+            <td colspan="4"></td>
           </tr>
         </tbody>
       </table></div>
@@ -325,4 +328,5 @@
     {{ grafico_barra|safe }}
   </div>
 {% endif %}
+{% include 'bm/_modal_medicao_recebimento.html' %}
 {% endblock %}

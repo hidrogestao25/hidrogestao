@@ -1411,6 +1411,46 @@ class BM(BusinessValidationMixin, models.Model):
         super().save(*args, **kwargs)
 
 
+class MedicaoRecebimentoBM(models.Model):
+    """Informação do Financeiro, independente da medição e de suas aprovações."""
+    bm = models.OneToOneField(BM, on_delete=models.CASCADE, related_name='medicao_recebimento')
+    sobre_medicao = models.TextField('Sobre medição', max_length=4000)
+    sobre_medicao_recebimento = models.TextField('Sobre medição e recebimento', max_length=4000)
+    criado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', editable=False)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', editable=False)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Medição e recebimento do BM'
+        verbose_name_plural = 'Informações de medição e recebimento dos BMs'
+        constraints = [models.CheckConstraint(
+            condition=~models.Q(sobre_medicao='') & ~models.Q(sobre_medicao_recebimento=''),
+            name='bm_medicao_recebimento_textos_preenchidos')]
+
+    def __str__(self):
+        return f'Medição e recebimento do BM #{self.bm_id}'
+
+    @staticmethod
+    def identificar(usuario):
+        return f'{usuario.get_full_name() or usuario.username} (@{usuario.username})'
+
+    @property
+    def identificacao_criador(self):
+        return self.identificar(self.criado_por)
+
+    @property
+    def identificacao_editor(self):
+        return self.identificar(self.atualizado_por)
+
+    @property
+    def texto_exportacao(self):
+        return '\n'.join([
+            f'Sobre medição: {self.sobre_medicao}',
+            f'Sobre medição e recebimento: {self.sobre_medicao_recebimento}',
+        ])
+
+
 class NF(BusinessValidationMixin, models.Model):
     vencimento_original=models.DateField(null=True,blank=True)
     cancelada_em=models.DateTimeField(null=True,blank=True,editable=False)

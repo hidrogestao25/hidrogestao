@@ -148,10 +148,10 @@ class DecisaoPagamentoBMTests(BaseUserTestCase):
         response=self.client.get(reverse('exportar_bms_previsao_excel'),{'data_inicial':'2026-01-01','data_limite':'2026-12-31'})
         self.assertEqual(response.status_code,200)
         sheet=load_workbook(BytesIO(response.content))['Boletins de Medição']
-        self.assertEqual(sheet.max_column,13)
-        self.assertEqual(sheet.cell(1,13).value,'Justificativa da gerência')
-        self.assertEqual(sheet.cell(2,13).value,"' =Texto gerencial legado")
-        self.assertIn('Justificativa opcional da Diretoria',sheet.cell(2,10).value)
+        self.assertEqual(sheet.max_column,14)
+        self.assertEqual(sheet.cell(1,14).value,'Justificativa da gerência')
+        self.assertEqual(sheet.cell(2,14).value,"' =Texto gerencial legado")
+        self.assertIn('Justificativa opcional da Diretoria',sheet.cell(2,11).value)
 
     def test_telas_de_evento_os_e_consulta_financeira_compartilham_modal(self):
         event=self.bm(operational='aprovado');order=self.bm(os=True,operational='aprovado')

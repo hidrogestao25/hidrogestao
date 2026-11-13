@@ -11143,7 +11143,8 @@ def forecast_bms(user,data_inicial,data_limite,filtro_bm='pagamento',coordenador
     return qs.select_related('contrato__cod_projeto__lider_contrato','contrato__empresa_terceira','contrato__lider_contrato',
         'evento__contrato_terceiro__cod_projeto__lider_contrato','evento__contrato_terceiro__empresa_terceira',
         'evento__contrato_terceiro__lider_contrato','os__contrato__empresa_terceira','os__contrato__cod_projeto__lider_contrato',
-        'os__contrato__lider_contrato','os__cod_projeto__lider_contrato','os__lider_contrato').order_by('-data_pagamento','-pk')
+        'os__contrato__lider_contrato','os__cod_projeto__lider_contrato','os__lider_contrato',
+        'medicao_recebimento__criado_por','medicao_recebimento__atualizado_por').order_by('-data_pagamento','-pk')
 
 
 def prepare_forecast_bms(user,queryset):
@@ -12552,7 +12553,8 @@ def detalhes_entrega(request, evento_id):
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
 
-    bms = list(BM.objects.filter(evento=evento).order_by('-data_pagamento'))
+    bms = list(BM.objects.filter(evento=evento).select_related(
+        'medicao_recebimento__criado_por', 'medicao_recebimento__atualizado_por').order_by('-data_pagamento'))
     notas_fiscais = evento.nota_fiscal.all()
     bm_approval_audit_map = build_bm_approval_audit_map(bms)
 

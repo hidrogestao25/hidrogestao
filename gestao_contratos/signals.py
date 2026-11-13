@@ -14,7 +14,7 @@ def registrar_auditoria_post_save(sender, instance, created, raw=False, **kwargs
     if sender._meta.app_label != "gestao_contratos":
         return
 
-    if sender is RegistroAuditoria or sender.__name__ in {"User", "ChaveIdempotencia", "NF", "PagamentoNF", "ProgramacaoPagamento", "ReprogramacaoPagamento"}:
+    if sender is RegistroAuditoria or sender.__name__ in {"User", "ChaveIdempotencia", "NF", "PagamentoNF", "ProgramacaoPagamento", "ReprogramacaoPagamento", "MedicaoRecebimentoBM"}:
         return
 
     user = get_current_user()

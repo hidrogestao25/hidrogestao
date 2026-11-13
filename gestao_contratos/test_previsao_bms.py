@@ -105,19 +105,19 @@ class PrevisaoBMsTests(BaseUserTestCase):
         sheet=self.excel()['Boletins de Medição']
         self.assertEqual([c.value for c in sheet[1]],HEADERS)
         row=[c.value for c in sheet[2]]
-        self.assertEqual(row[:5],[self.supplier.nome,self.events[0].descricao,'Observação específica do BM',self.projects[0].cod_projeto,self.leader.get_full_name()])
-        self.assertEqual(row[5:7],[60000,100])
-        self.assertEqual(row[7].date(),date(2026,11,15))
-        self.assertIn('Gerência: Aprovado',row[8]);self.assertIn('Aprovado',row[9])
-        self.assertEqual(row[10:12],['Sim','12/09/2026\n05/10/2026'])
-        self.assertEqual(sheet.cell(2,6).data_type,'n');self.assertEqual(sheet.cell(2,8).number_format,'dd/mm/yyyy')
+        self.assertEqual(row[:6],[self.supplier.nome,self.events[0].descricao,'Observação específica do BM',None,self.projects[0].cod_projeto,self.leader.get_full_name()])
+        self.assertEqual(row[6:8],[60000,100])
+        self.assertEqual(row[8].date(),date(2026,11,15))
+        self.assertIn('Gerência: Aprovado',row[9]);self.assertIn('Aprovado',row[10])
+        self.assertEqual(row[11:13],['Sim','12/09/2026\n05/10/2026'])
+        self.assertEqual(sheet.cell(2,7).data_type,'n');self.assertEqual(sheet.cell(2,9).number_format,'dd/mm/yyyy')
 
     def test_data_pagamento_em_branco_sem_movimento_e_sem_estorno_integral(self):
         bm=self.approved();nf=self.nf(bm,value='100')
-        self.assertIsNone(self.excel()['Boletins de Medição'].cell(2,12).value)
+        self.assertIsNone(self.excel()['Boletins de Medição'].cell(2,13).value)
         p,_=payments.record_payment(nf_id=nf.pk,user=self.finance,valor=20,data_pagamento=date(2026,9,12),key='p1')
         payments.reverse_payment(movement_id=p.pk,user=self.supply,valor=20,data_estorno=date(2026,9,13),motivo='Correção',key='e1')
-        self.assertIsNone(self.excel()['Boletins de Medição'].cell(2,12).value)
+        self.assertIsNone(self.excel()['Boletins de Medição'].cell(2,13).value)
 
     def test_excel_filtro_coordenador_e_contrato_financeiro_bm_compartilhado(self):
         bm=self.approved(index=1,evento=self.events[0],arquivo_bm='BM/compartilhado.pdf')
@@ -127,8 +127,8 @@ class PrevisaoBMsTests(BaseUserTestCase):
         self.client.force_login(self.finance)
         sheet=self.excel(data_limite='2026-09-30',coordenador=self.coord.pk)['Boletins de Medição']
         self.assertEqual(sheet.max_row,2)
-        self.assertEqual(sheet.cell(2,4).value,self.projects[0].cod_projeto)
-        self.assertEqual(sheet.cell(2,5).value,self.leader.get_full_name())
+        self.assertEqual(sheet.cell(2,5).value,self.projects[0].cod_projeto)
+        self.assertEqual(sheet.cell(2,6).value,self.leader.get_full_name())
 
     def test_excel_escopo_restrito_e_rejeicao_perfis_externos(self):
         self.approved();self.approved(index=1)
@@ -136,7 +136,7 @@ class PrevisaoBMsTests(BaseUserTestCase):
         center=self.create_center('EXP','Exportação');manager.centros.add(center);self.coord.centros.add(center)
         self.client.force_login(manager)
         sheet=self.excel()['Boletins de Medição'];self.assertEqual(sheet.max_row,2)
-        self.assertEqual(sheet.cell(2,4).value,self.projects[0].cod_projeto)
+        self.assertEqual(sheet.cell(2,5).value,self.projects[0].cod_projeto)
         self.client.force_login(self.create_user('export_external','fornecedor'))
         self.assertEqual(self.client.get(reverse('exportar_bms_previsao_excel'),{'data_limite':'2026-09-30'}).status_code,403)
 

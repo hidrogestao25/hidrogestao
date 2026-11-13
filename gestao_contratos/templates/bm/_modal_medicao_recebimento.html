@@ -1,0 +1,33 @@
+{% load static %}
+{% if request.user.grupo == 'financeiro' %}
+<div class="modal fade" id="medicaoRecebimentoBMModal" tabindex="-1" aria-labelledby="medicaoRecebimentoBMTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <form method="post" data-bm-recebimento-form>
+      {% csrf_token %}
+      <input type="hidden" name="acao"><input type="hidden" name="versao">
+      <div class="modal-header">
+        <h2 class="modal-title fs-5" id="medicaoRecebimentoBMTitle">Medição e recebimento</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small" data-bm-recebimento-author></p>
+        <p class="alert alert-warning d-none" data-bm-recebimento-delete>Confirma a exclusão destas informações? O histórico da alteração será preservado.</p>
+        <div class="mb-3">
+          <label for="sobreMedicaoBM" class="form-label">Sobre medição <span class="text-danger">*</span></label>
+          <textarea id="sobreMedicaoBM" name="sobre_medicao" class="form-control" rows="4" maxlength="4000" required></textarea>
+        </div>
+        <div class="mb-3">
+          <label for="sobreMedicaoRecebimentoBM" class="form-label">Sobre medição e recebimento <span class="text-danger">*</span></label>
+          <textarea id="sobreMedicaoRecebimentoBM" name="sobre_medicao_recebimento" class="form-control" rows="4" maxlength="4000" required></textarea>
+        </div>
+        <p class="alert alert-danger d-none" role="alert" data-bm-recebimento-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary" data-bm-recebimento-submit>Salvar informações</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+<script src="{% static 'js/bm_medicao_recebimento.js' %}?v=20261113-context" defer></script>
+{% endif %}

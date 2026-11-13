@@ -45,6 +45,7 @@
         <h5>Boletins de Medição Cadastrados</h5>
 
         {% if bms %}
+          <div class="table-responsive">
           <table class="table table-striped mt-2">
             <thead>
               <tr>
@@ -64,6 +65,7 @@
                     <th>Justificativa Diretor</th>
                 {% endif %}
                 <th>Observações</th>
+                <th>Medição e recebimento</th>
                 <th>Arquivo</th>
                 <th>Ações</th>
               </tr>
@@ -150,6 +152,7 @@
                   {% endif %}
 
                   <td>{% if bm.observacao %}{{ bm.observacao }}{% else %}-{% endif %}</td>
+                  <td>{% include 'bm/_medicao_recebimento.html' with bm=bm permitir_edicao=False %}</td>
                   <td>
                     {% if bm.arquivo_bm %}
                       <a href="{{ bm.arquivo_bm.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
@@ -196,6 +199,7 @@
               {% endfor %}
             </tbody>
           </table>
+          </div>
         {% else %}
           <p class="mt-3 text-muted">Nenhum Boletim de Medição cadastrado para este evento.</p>
         {% endif %}

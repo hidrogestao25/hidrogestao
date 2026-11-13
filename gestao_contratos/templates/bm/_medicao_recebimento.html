@@ -1,0 +1,28 @@
+{% with info=bm.medicao_recebimento %}
+  <div class="bm-medicao-recebimento" style="min-width:18rem;max-width:30rem;overflow-wrap:anywhere" data-bm-recebimento-display="{{ bm.pk }}">
+    {% if info %}
+      <div><strong>Sobre medição:</strong><br>{{ info.sobre_medicao|linebreaksbr }}</div>
+      <div class="mt-2"><strong>Sobre medição e recebimento:</strong><br>{{ info.sobre_medicao_recebimento|linebreaksbr }}</div>
+      <small class="d-block text-muted mt-2">Inserido por {{ info.identificacao_criador }} em {{ info.criado_em|date:"d/m/Y H:i" }}.</small>
+      {% if info.atualizado_em != info.criado_em %}
+        <small class="d-block text-muted">Última alteração por {{ info.identificacao_editor }} em {{ info.atualizado_em|date:"d/m/Y H:i" }}.</small>
+      {% endif %}
+    {% else %}
+      <span class="text-muted">Não informado.</span>
+    {% endif %}
+    {% if permitir_edicao and request.user.grupo == 'financeiro' %}
+      <div class="d-flex flex-wrap gap-1 mt-2">
+        <button type="button" class="btn btn-sm btn-outline-primary" data-bm-recebimento-action="salvar"
+                data-bm-recebimento-url="{% url 'informacao_medicao_recebimento_bm' bm.pk %}" data-bm-number="{{ bm.numero_bm }}"
+                data-bm-supplier="{{ bm.contrato_financeiro.empresa_terceira.nome|default:'' }}" data-bm-project="{{ bm.projeto_referencia|default:'' }}">
+          {% if info %}Editar{% else %}Inserir informação{% endif %}
+        </button>
+        {% if info %}
+          <button type="button" class="btn btn-sm btn-outline-danger" data-bm-recebimento-action="excluir"
+                  data-bm-recebimento-url="{% url 'informacao_medicao_recebimento_bm' bm.pk %}" data-bm-number="{{ bm.numero_bm }}"
+                  data-bm-supplier="{{ bm.contrato_financeiro.empresa_terceira.nome|default:'' }}" data-bm-project="{{ bm.projeto_referencia|default:'' }}">Excluir</button>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endwith %}
