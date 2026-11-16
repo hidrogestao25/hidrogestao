@@ -152,6 +152,17 @@ class HomeFinanceiroTests(BaseUserTestCase):
         response=self.client.get(reverse('painel_financeiro'))
         self.assertRedirects(response,reverse('login')+'?next='+reverse('painel_financeiro'),fetch_redirect_response=False)
 
+    def test_home_anonima_redireciona_login_antes_de_consultar_ciclos(self):
+        self.client.logout()
+        for ciclos_ativos in (True, False):
+            with self.subTest(ciclos_ativos=ciclos_ativos):
+                with patch('gestao_contratos.bm_cycles.enabled', return_value=ciclos_ativos) as enabled:
+                    response = self.client.get(reverse('home'))
+                    enabled.assert_not_called()
+                self.assertRedirects(response, reverse('login')+'?next='+reverse('home'),
+                                     fetch_redirect_response=False)
+                self.assertEqual(self.client.get(response.url).status_code, 200)
+
     def test_menu_link_exclusivo_e_homes_dos_outros_perfis(self):
         response=self.client.get(reverse('home'))
         self.assertContains(response,'href="'+reverse('painel_financeiro')+'"')

@@ -15,7 +15,7 @@ _context = ContextVar('financial_audit', default=None)
 
 def guard_writes(execute,sql,params,many,context):
     """Falha fechada se uma reconstrução futura perder os triggers."""
-    target=re.match(r'^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM)\s+["\[]?(gestao_contratos_nf|gestao_contratos_registroauditoria|gestao_contratos_pagamentonf|gestao_contratos_programacaopagamento|gestao_contratos_reprogramacaopagamento)\b',sql,re.I)
+    target=re.match(r'^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM)\s+["\[]?(gestao_contratos_nf|gestao_contratos_registroauditoria|gestao_contratos_pagamentonf|gestao_contratos_programacaopagamento|gestao_contratos_reprogramacaopagamento|gestao_contratos_ciclopagamentobm|gestao_contratos_decisaociclobm|gestao_contratos_pagamentociclobm)\b',sql,re.I)
     if target and not sql.lstrip().upper().startswith('INSERT INTO "GESTAO_CONTRATOS_REGISTROAUDITORIA"'):
         expected={'hidro_nf_audit_insert','hidro_nf_audit_update','hidro_nf_audit_delete',
             'hidro_nf_paid_reason','hidro_nf_delete_reason','hidro_nf_requires_bm',
@@ -27,6 +27,11 @@ def guard_writes(execute,sql,params,many,context):
         if dual:
             expected|={'hidro_bm_dual_insert','hidro_bm_dual_decision','hidro_bm_dual_revision',
                 'hidro_bm_dual_director','hidro_pagamento_dual_bm','hidro_evento_dual_revision'}
+        with context['connection'].cursor() as cursor:
+            cycles=cursor.execute("SELECT 1 FROM django_migrations WHERE app='gestao_contratos' AND name='0129_ciclos_pagamento_bm'").fetchone()
+        if cycles:
+            from .bm_cycle_sql import TRIGGERS
+            expected |= TRIGGERS
         from .payment_context import _mode,LEDGER_TRIGGERS
         if not _mode.get().get('bootstrap') and (target.group(1).lower() not in {'gestao_contratos_nf','gestao_contratos_registroauditoria'} or 'hidro_nf_compat_insert' in found):
             expected|=LEDGER_TRIGGERS
@@ -89,6 +94,33 @@ def configure(connection, **kwargs):
         from .payment_context import mode_json,project_invoice
         connection.connection.create_function('hidro_ledger_mode',0,mode_json)
         connection.connection.create_function('hidro_project_invoice',1,lambda nf_id:project_invoice(connection,nf_id))
+        from . import bm_cycles, bm_cycle_sql
+        connection.connection.create_function('hidro_validar_ciclo_bm',2,
+            lambda kind,payload:bm_cycle_sql.validate_record(connection.connection,kind,payload))
+        def cycle_payment_error(nf_id,amount):
+            nf=bm_cycles.row(connection.connection,'SELECT bm_id FROM gestao_contratos_nf WHERE id=?',(nf_id,))
+            return bm_cycles.payment_error_sql(connection.connection,nf['bm_id'],amount) if nf and nf['bm_id'] else 'NF sem BM válido.'
+        connection.connection.create_function('hidro_ciclo_erro_pagamento',2,cycle_payment_error)
+        connection.connection.create_function('hidro_vincular_pagamento_ciclo',1,
+            lambda payment_id:bm_cycle_sql.link_payment(connection,payment_id))
+        connection.connection.create_function('hidro_bm_cycle_stage',1,
+            lambda bm_id:bm_cycles.sql_stage(connection,bm_id))
+        connection.connection.create_function('hidro_bm_cycle_authorized',1,
+            lambda bm_id:int(bm_cycles.sql_stage(connection,bm_id) in ('sem_ciclo','inicial','autorizado','liquidado')))
+        for amount_kind in ('balance','authorized','unbilled'):
+            connection.connection.create_function('hidro_bm_cycle_'+amount_kind+('_cents' if amount_kind=='authorized' else ''),1,
+                lambda bm_id,kind=amount_kind:bm_cycles.sql_amount(connection,bm_id,kind))
+        def cycle_manager(bm_id):
+            if bm_id is None or not bm_cycles.enabled(connection):return 0
+            state=bm_cycles.financial_state(connection.connection,bm_id)
+            manager=bm_cycles.responsible(connection.connection,state)
+            return manager['id'] if manager else 0
+        def liquidation(bm_id):
+            if bm_id is None:return 'nao_pago'
+            state=bm_cycles.financial_state(connection.connection,bm_id)
+            return 'integral' if state['full'] else 'parcial' if state['paid_cents']>0 and state['balance_cents']>0 else 'nao_pago'
+        connection.connection.create_function('hidro_bm_cycle_manager',1,cycle_manager)
+        connection.connection.create_function('hidro_bm_cycle_liquidation',1,liquidation)
         if guard_writes not in connection.execute_wrappers:
             connection.execute_wrappers.append(guard_writes)
 

@@ -4,9 +4,15 @@ from . import financial_views
 from . import payment_views
 from . import solicitacao_views
 from . import bm_recebimento
+from . import bm_cycle_views
 from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, ContratoFornecedorCreateView, OSCreateView
 
 urlpatterns = [
+    path('bms/<int:bm_id>/reprogramar/',bm_cycle_views.reprogramar,name='reprogramar_bm'),
+    path('bms/programacao/processar/',bm_cycle_views.processar,name='processar_ciclos_bm'),
+    path('bms/<int:bm_id>/programacao/processar/',bm_cycle_views.processar,name='processar_ciclos_bm_individual'),
+    path('bms/ciclos/<int:ciclo_id>/<str:etapa>/decidir/',bm_cycle_views.decidir,name='decidir_ciclo_bm'),
+    path('bms/ciclos/<int:ciclo_id>/revisar/',bm_cycle_views.revisar,name='revisar_ciclo_bm'),
     path('bms/<int:bm_id>/medicao-recebimento/', bm_recebimento.informacao_medicao_recebimento, name='informacao_medicao_recebimento_bm'),
     path('solicitacoes/<str:tipo>/<int:pk>/estado/<str:operacao>/', solicitacao_views.operar_solicitacao, name='operar_solicitacao'),
     path('notas-fiscais/<int:nf_id>/pagamentos/novo/',payment_views.invoice_action,{'action':'pagamento'},name='pagamento_nf'),

@@ -1869,3 +1869,4 @@ class AditivoContratoTerceiro(BusinessValidationMixin, EstadoSolicitacao):
 
 # Entidades financeiras registradas no mesmo app, sem duplicar NF ou BM.
 from .payment_models import PagamentoNF,ProgramacaoPagamento,ReprogramacaoPagamento
+from .bm_cycle_models import CicloPagamentoBM,DecisaoCicloBM,PagamentoCicloBM

@@ -145,6 +145,7 @@
                                                 {% endif %}
                                             </div>
                                             {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
+{% if bm.ciclo_contexto.cycle.anterior_id %}{% include 'bm/_ciclo_resumo.html' with ciclo=bm.ciclo_contexto %}{% endif %}
                                         </div>
 
                                         {% if bm.evento %}
@@ -616,6 +617,7 @@
                                                   {% endif %}
                                               </div>
                                               {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
+{% if bm.ciclo_contexto.cycle.anterior_id %}{% include 'bm/_ciclo_resumo.html' with ciclo=bm.ciclo_contexto %}{% endif %}
                                           </div>
 
                                           {% if bm.evento %}
@@ -885,6 +887,7 @@
                                                   {% endif %}
                                               </div>
                                               {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
+{% if bm.ciclo_contexto.cycle.anterior_id %}{% include 'bm/_ciclo_resumo.html' with ciclo=bm.ciclo_contexto %}{% endif %}
                                           </div>
 
                                               {% if bm.evento %}
@@ -1956,6 +1959,7 @@
                                                   {% endif %}
                                               </div>
                                               {% include "gestao_contratos/_sla_hint_home.html" with sla=bm.sla_display %}
+{% if bm.ciclo_contexto.cycle.anterior_id %}{% include 'bm/_ciclo_resumo.html' with ciclo=bm.ciclo_contexto %}{% endif %}
                                           </div>
 
                                               {% if bm.evento %}

@@ -101,6 +101,9 @@ def record_payment(*,nf_id,user,valor,data_pagamento,key,comprovante=None,observ
             if existing.payload_hash!=fingerprint:raise ValidationError('A chave já foi utilizada com outro conteúdo.')
             return existing,False
         validate_payment(nf)
+        from . import bm_cycles
+        cycle_error=bm_cycles.payment_error(nf.bm, money(amount))
+        if cycle_error:raise ValidationError(cycle_error)
         if amount>cents(nf.valor_pago)-invoice_paid_cents(nf):raise ValidationError('Pagamento superior ao saldo fiscal disponível.')
         program=None
         if programacao_id:

@@ -74,7 +74,7 @@
               {% for bm in bms %}
                 <tr id="bm-row-{{ bm.id }}"
                     class="{% if bm.status_coordenador == 'reprovado' or bm.status_gerente == 'reprovado' %}table-danger{% elif bm.aprovacao_operacional_completa %}table-success{% else %}table-warning{% endif %}">
-                  <td><a href="{% url 'detalhe_bm_financeiro' bm.id %}?next={{ request.get_full_path|urlencode }}">{{ bm.numero_bm }}</a></td>
+                  <td><a href="{% url 'detalhe_bm_financeiro' bm.id %}?next={{ request.get_full_path|urlencode }}">{{ bm.numero_bm }}</a>{% if bm.ciclo_contexto.cycle %}{% include 'bm/_ciclo_resumo.html' with ciclo=bm.ciclo_contexto %}{% endif %}</td>
                   <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
                   <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
                   {% if bm.status_coordenador == "aprovado" %}

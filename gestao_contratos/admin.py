@@ -476,6 +476,6 @@ class RegistroAuditoriaAdmin(DefaultAdmin):
         return tuple(field.name for field in self.model._meta.fields)
 
 
-from .models import PagamentoNF,ProgramacaoPagamento,ReprogramacaoPagamento
-for financial_model in (PagamentoNF,ProgramacaoPagamento,ReprogramacaoPagamento):
+from .models import PagamentoNF,ProgramacaoPagamento,ReprogramacaoPagamento,CicloPagamentoBM,DecisaoCicloBM,PagamentoCicloBM
+for financial_model in (PagamentoNF,ProgramacaoPagamento,ReprogramacaoPagamento,CicloPagamentoBM,DecisaoCicloBM,PagamentoCicloBM):
     admin.site.register(financial_model,RegistroAuditoriaAdmin)

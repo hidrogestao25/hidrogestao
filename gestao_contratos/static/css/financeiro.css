@@ -14,6 +14,12 @@
 .fin-table { min-width:850px; font-size:.86rem; }
 .fin-table th { background:#eff4f5; color:#47616b; font-size:.74rem; text-transform:uppercase; padding:12px; }
 .fin-table td { padding:14px 12px; vertical-align:top; }
+.fin-table > tbody > tr.fin-bm-reprogramado {
+  --bs-table-bg:#fff9e6;
+  --bs-table-striped-bg:#fff9e6;
+  --bs-table-hover-bg:#fff3cd;
+}
+.fin-table > tbody > tr.fin-bm-reprogramado > td { background-color:#fff9e6; }
 .fin-table a:not(.btn),.fin-context a { color:#176d66; text-decoration:none; }
 .fin-table a:hover,.fin-context a:hover { text-decoration:underline; }
 .fin-context { color:#65767c; margin-top:.35rem; max-width:320px; }

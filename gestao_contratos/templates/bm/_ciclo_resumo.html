@@ -1,0 +1,26 @@
+{% if ciclo %}
+<div class="small mt-2" data-bm-cycle-summary>
+  {% if ciclo.cycle.anterior_id %}<strong class="d-block text-warning-emphasis">{% if ciclo.cycle.tipo == 'revisao' %}Revisão expressa do ciclo{% else %}Reprogramado — não pago no ciclo anterior{% endif %}</strong>{% else %}<strong class="d-block">Programação original</strong>{% endif %}
+  <div>{{ ciclo.liquidacao }}</div>
+  {% if ciclo.previous_date %}<div>Data anterior: {{ ciclo.previous_date|date:'d/m/Y' }}</div>{% endif %}
+  {% if ciclo.scheduled_date %}<div>Programação: {{ ciclo.scheduled_date|date:'d/m/Y' }}{% if ciclo.cycle %} · ciclo {{ ciclo.cycle.numero }}{% endif %}</div>{% endif %}
+  {% if not ciclo.cycle.anterior_id %}<div class="text-muted">Data de pagamento cadastrada no BM.</div>{% endif %}
+  <div>Pago: R$ {{ ciclo.paid|floatformat:2 }}</div>
+  <div><strong>Saldo: R$ {{ ciclo.balance|floatformat:2 }}</strong></div>
+  <div>{{ ciclo.label }}</div>
+  {% if ciclo.pending_reason %}<div class="text-warning-emphasis">{{ ciclo.pending_reason }}</div>{% endif %}
+  {% if ciclo.cycle.anterior_id %}<div>Liderança: {{ ciclo.decisions.gerencia.situacao|default:'pendente' }} · Diretoria: {{ ciclo.decisions.diretoria.situacao|default:'pendente' }}</div>{% endif %}
+  {% if ciclo.cycle.anterior_id %}<div>{{ ciclo.cycle.motivo|default:'Pagamento não realizado no ciclo anterior — motivo não informado.' }}</div>{% endif %}
+  {% for error in ciclo.errors %}<div class="text-warning-emphasis">{{ error }}</div>{% endfor %}
+  <a href="{{ ciclo.detail_url }}">Programação e histórico</a>
+  {% if ciclo.can_reprogram %}
+    {% if ciclo.reprogramming.available %}
+      <a class="btn btn-sm btn-outline-primary mt-2" href="{% url 'reprogramar_bm' ciclo.bm.id %}?next={{ request.get_full_path|urlencode }}">Reprogramar BM para {{ ciclo.reprogramming.next_date|date:'d/m/Y' }}</a>
+    {% else %}
+      <button type="button" class="btn btn-sm btn-outline-secondary mt-2" disabled>Reprogramar BM</button>
+      <div class="text-muted mt-1">{{ ciclo.reprogramming.reason }}</div>
+    {% endif %}
+  {% endif %}
+  {% if ciclo.can_decide %}<a class="btn btn-sm btn-outline-primary mt-1" href="{% url 'decidir_ciclo_bm' ciclo.cycle.id ciclo.stage_to_decide %}">{% if ciclo.stage_to_decide == 'gerencia' %}Reaprovar ciclo{% else %}Autorizar ciclo{% endif %}</a>{% endif %}
+</div>
+{% endif %}

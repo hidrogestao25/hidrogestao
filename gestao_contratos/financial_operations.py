@@ -1,7 +1,7 @@
 """Projeções operacionais sobre as NFs existentes; nenhuma escrita financeira."""
 from decimal import Decimal
 from urllib.parse import urlencode
-from django.db.models import Q,Sum,Count,Case,When,Value,CharField,OuterRef,Subquery,Exists,F,DateField
+from django.db.models import Q,Sum,Count,Case,When,Value,CharField,OuterRef,Subquery,Exists,F,DateField,Func,BigIntegerField
 from django.db.models.functions import TruncMonth
 from django.urls import reverse
 from . import financial_queries as fq,financial_reconciliation as fr,models as m
@@ -115,10 +115,10 @@ def monthly_projection(user,filters):
         if filters.get('historico'):return qs
         return qs.filter(Q(**{field+'__range':[filters['data_inicial'],filters['data_limite']]})|Q(**{field+'__isnull':True}))
 
-    def add(qs,day,value,supplier,project,metric,in_cents=False,obligation=False):
+    def add(qs,day,value,supplier,project,metric,in_cents=False,obligation=False,obligation_due=None):
         grouping=qs.order_by().annotate(month=TruncMonth(day),supplier_id=F(supplier+'__pk'),supplier_label=F(supplier+'__nome'),
             project_id=F(project+'__pk'),project_label=F(project+'__cod_projeto')).values('month','supplier_id','supplier_label','project_id','project_label')
-        rows=grouping.annotate(total=Sum(value,default=0),overdue_total=Sum(value,filter=Q(**{day+'__lt':timezone.localdate()}),default=0))
+        rows=grouping.annotate(total=Sum(value,default=0),overdue_total=Sum(value,filter=Q(**{(obligation_due or day)+'__lt':timezone.localdate()}),default=0))
         for row in rows.iterator(chunk_size=200):
             key=(row['month'],row['supplier_id'],row['project_id'])
             if key not in groups:
@@ -153,10 +153,25 @@ def monthly_projection(user,filters):
         for qs,project in origin_groups(programs.filter(condition),'nf__'):
             add(period(qs,'data_prevista'),'data_prevista','restante_centavos','nf__contrato__empresa_terceira',project,metric,True,True)
     unscheduled=consistent.annotate(unprogrammed_cents=F('ledger_balance_cents')-F('ledger_scheduled_cents')).filter(unprogrammed_cents__gt=0)
+    from . import bm_cycles
+    projection_day='ledger_due'
+    if bm_cycles.enabled():
+        current_cycle=m.CicloPagamentoBM.objects.filter(bm_id=OuterRef('bm_id'),sucessor__isnull=True).exclude(tipo='inicial').values('data_prevista')[:1]
+        explicit_agreement=m.ReprogramacaoPagamento.objects.filter(nf_id=OuterRef('pk'),programacao__isnull=True)
+        unscheduled=unscheduled.annotate(_cycle_date=Subquery(current_cycle),_explicit_agreement=Exists(explicit_agreement)).annotate(
+            cycle_projection_date=Case(When(_cycle_date__isnull=False,_explicit_agreement=False,ledger_scheduled_cents=0,then=F('_cycle_date')),default=F('ledger_due'),output_field=DateField()))
+        projection_day='cycle_projection_date'
     ready=fq.authorized_query('bm__')&~fq.nf_attention_query()
     for condition,metric in ((ready,'authorized_unpaid'),(~ready,'other_unpaid')):
         for qs,project in origin_groups(unscheduled.filter(condition)):
-            add(period(qs,'ledger_due'),'ledger_due','unprogrammed_cents','contrato__empresa_terceira',project,metric,True,True)
+            add(period(qs,projection_day),projection_day,'unprogrammed_cents','contrato__empresa_terceira',project,metric,True,True,obligation_due='ledger_due')
+    if bm_cycles.enabled():
+        current_cycle=m.CicloPagamentoBM.objects.filter(bm_id=OuterRef('pk'),sucessor__isnull=True).exclude(tipo='inicial').values('data_prevista')[:1]
+        unbilled=data.bms_scope.annotate(cycle_projection_date=Subquery(current_cycle),
+            cycle_unbilled=Func(F('pk'),function='hidro_bm_cycle_unbilled',output_field=BigIntegerField())).filter(cycle_projection_date__isnull=False,cycle_unbilled__gt=0)
+        for condition,supplier,project in ((Q(evento__isnull=False),'evento__contrato_terceiro__empresa_terceira','evento__contrato_terceiro__cod_projeto'),
+                                           (Q(os__isnull=False),'os__contrato__empresa_terceira','os__cod_projeto')):
+            add(period(unbilled.filter(condition),'cycle_projection_date'),'cycle_projection_date','cycle_unbilled',supplier,project,'other_unpaid',True,True)
     monthly=defaultdict(lambda:{name:Decimal('0') for name in metrics})
     for item in groups.values():
         for metric in metrics:monthly[item['month']][metric]+=item[metric]

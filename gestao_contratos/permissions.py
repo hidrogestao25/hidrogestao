@@ -47,6 +47,10 @@ def payment_registration_error(user, bm, origin=None):
         return "O BM precisa de aprovação operacional válida para registrar o pagamento."
     if bm.aprovacao_pagamento != "aprovado":
         return "Pagamento ainda não autorizado pela Diretoria."
+    from . import bm_cycles
+    error=bm_cycles.payment_error(bm)
+    if error:
+        return error
     return None
 
 

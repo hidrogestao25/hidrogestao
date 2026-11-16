@@ -17,6 +17,38 @@ class PrevisaoBMsTests(BaseUserTestCase):
     bm=fixtures.FinanceiroFase2Tests.bm
     nf=fixtures.FinanceiroFase2Tests.nf
 
+    def test_diretoria_recebe_atalho_aprovar_pagamento_no_bm_da_os(self):
+        director=self.create_user('previsao_diretoria_os','diretoria')
+        bm=self.bm(os=True,operational='aprovado',data_aprovacao_gerente=timezone.make_aware(datetime(2026,11,15,12)))
+        self.client.force_login(director)
+        response=self.client.get(reverse('previsao_pagamentos'),{'data_inicial':'2026-11-01','data_limite':'2026-11-30'})
+        self.assertEqual([item.pk for item in response.context['bms']],[bm.pk])
+        self.assertTrue(response.context['bms'][0].can_approve_pagamento)
+        self.assertContains(response,'Aprovar Pagamento')
+        target=reverse('detalhe_bm_financeiro',args=[bm.pk])
+        self.assertContains(response,f'href="{target}"')
+        self.assertContains(self.client.get(target),'data-bm-payment-action="aprovar_pagamento"')
+
+    def test_atalho_aprovar_os_nao_aparece_para_outro_perfil_ou_bm_decidido(self):
+        director=self.create_user('previsao_diretoria_sem_acao','diretoria')
+        manager=self.create_user('previsao_gerente_sem_acao','gerente_contrato')
+        bm=self.bm(os=True,operational='aprovado',data_aprovacao_gerente=timezone.make_aware(datetime(2026,11,15,12)))
+        filters={'data_inicial':'2026-11-01','data_limite':'2026-11-30'}
+        for actor in (self.finance,self.supply,manager):
+            with self.subTest(profile=actor.grupo):
+                self.client.force_login(actor)
+                response=self.client.get(reverse('previsao_pagamentos'),filters)
+                self.assertNotContains(response,'Aprovar Pagamento')
+                self.assertContains(response,reverse('detalhes_os',args=[self.order.pk]))
+        self.client.force_login(self.leader)
+        self.assertRedirects(self.client.get(reverse('previsao_pagamentos'),filters),reverse('home'),fetch_redirect_response=False)
+        self.client.force_login(director)
+        for status in ('aprovado','reprovado'):
+            m.BM.objects.filter(pk=bm.pk).update(aprovacao_pagamento=status)
+            response=self.client.get(reverse('previsao_pagamentos'),filters)
+            self.assertNotContains(response,'Aprovar Pagamento')
+            self.assertContains(response,reverse('detalhes_os',args=[self.order.pk]))
+
     def approved(self,day=date(2026,9,10),**extra):
         return self.bm(operational='aprovado',director='aprovado',
             data_aprovacao_gerente=timezone.make_aware(datetime.combine(day,datetime.min.time()).replace(hour=12)),**extra)

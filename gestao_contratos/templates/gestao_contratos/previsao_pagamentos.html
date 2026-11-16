@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load custom_tags static %}
 {% block content_container_class %}container-fluid fin-forecast-container{% endblock %}
-{% block extra_css %}<script src="https://cdn.plot.ly/plotly-{{ plotly_version }}.min.js" charset="utf-8"></script><link rel="stylesheet" href="{% static 'css/financeiro.css' %}?v=20261113-bm-layout">{% endblock %}
+{% block extra_css %}<script src="https://cdn.plot.ly/plotly-{{ plotly_version }}.min.js" charset="utf-8"></script><link rel="stylesheet" href="{% static 'css/financeiro.css' %}?v=20261113-bm-reprogramado">{% endblock %}
 
 {% block content %}
 <div class="fin-workspace mt-4">
@@ -42,6 +42,7 @@
         <button type="submit" class="btn btn-primary w-100 mt-2">Filtrar</button>
       </div>
     </div>
+    <div class="row mt-3"><div class="col-md-6"><label class="form-label" for="{{ form.ciclo.id_for_label }}">{{ form.ciclo.label }}</label>{{ form.ciclo }}</div><div class="col-md-6"><label class="form-label" for="{{ form.gerente_ciclo.id_for_label }}">{{ form.gerente_ciclo.label }}</label>{{ form.gerente_ciclo }}</div></div>
   </form>
 
   {% if forecast_start %}<p class="small text-muted">Período considerado: <strong>{{ forecast_start|date:"d/m/Y" }} a {{ form.cleaned_data.data_limite|date:"d/m/Y" }}</strong>. Sem Data Inicial, o início é calculado pelo calendário de pagamentos.</p>{% endif %}
@@ -84,6 +85,7 @@
         <input type="hidden" name="data_inicial" value="{{ form.data_inicial.value|default:'' }}">
         <input type="hidden" name="data_limite" value="{{ form.data_limite.value }}">
         <input type="hidden" name="coordenador" value="{{ form.coordenador.value|default:'' }}">
+        <input type="hidden" name="ciclo" value="{{ form.ciclo.value|default:'' }}"><input type="hidden" name="gerente_ciclo" value="{{ form.gerente_ciclo.value|default:'' }}">
       </form>
 
       <div class="table-responsive" tabindex="0" role="region" aria-label="Relatório financeiro"><table class="table table-bordered table-striped fin-table">
@@ -97,14 +99,14 @@
             <th>Valor Previsto</th>
             <th>Valor medido (participação)</th>
             <th>Data de referência do BM</th>
-            <th>Aprovações</th>
+            <th>Aprovações e programação</th>
             <th>Medição e recebimento</th>
             <th class="fin-actions">Ações</th>
           </tr>
         </thead>
         <tbody>
           {% for bm in bms %}
-            <tr>
+            <tr{% if bm.ciclo_contexto.cycle.anterior_id %} class="fin-bm-reprogramado"{% endif %}>
               <td>{{ bm.projeto_referencia }}</td>
               <td>{{ bm.contrato_financeiro.empresa_terceira.nome }}</td>
               <td>{{ bm.lider_contrato_referencia }}</td>
@@ -128,6 +130,7 @@
               <td>R$ {{ bm.valor_pago|floatformat:2 }}</td>
               <td>{{ bm.data_pagamento|date:"d/m/Y" }}</td>
               <td>
+                {% include 'bm/_ciclo_resumo.html' with ciclo=bm.ciclo_contexto %}
                 {% if bm.aprovacao_coordenador_audit %}
                   <div>
                     {{ bm.aprovacao_coordenador_audit.usuario.get_full_name|default:bm.aprovacao_coordenador_audit.usuario.username }}
@@ -183,9 +186,15 @@
                     <span class="text-muted">-</span>
                   {% endif %}
                 {% elif bm.os %}
-                  <a href="{% url 'detalhes_os' bm.os.id %}" target="_blank" class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-eye"></i> Verificar
-                  </a>
+                  {% if request.user.grupo == 'diretoria' and bm.can_approve_pagamento %}
+                    <a href="{% url 'detalhe_bm_financeiro' bm.pk %}" target="_blank" class="btn btn-sm btn-primary">
+                      <i class="bi bi-box-arrow-up-right"></i> Aprovar Pagamento
+                    </a>
+                  {% else %}
+                    <a href="{% url 'detalhes_os' bm.os.id %}" target="_blank" class="btn btn-sm btn-outline-success">
+                      <i class="bi bi-eye"></i> Verificar
+                    </a>
+                  {% endif %}
                 {% else %}
                   <span class="text-muted">Sem evento</span>
                 {% endif %}
@@ -233,6 +242,7 @@
         <input type="hidden" name="data_inicial" value="{{ form.data_inicial.value|default:'' }}">
         <input type="hidden" name="data_limite" value="{{ form.data_limite.value }}">
         <input type="hidden" name="coordenador" value="{{ form.coordenador.value|default:'' }}">
+        <input type="hidden" name="ciclo" value="{{ form.ciclo.value|default:'' }}"><input type="hidden" name="gerente_ciclo" value="{{ form.gerente_ciclo.value|default:'' }}">
       </form>
     </div>
   {% endif %}

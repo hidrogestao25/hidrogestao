@@ -121,7 +121,7 @@
           <tbody id="lista-bms-os">
             {% for item in boletins_detalhados %}
             <tr id="bm-row-{{ item.bm.id }}" class="{{ item.row_class }}">
-              <td><a href="{% url 'detalhe_bm_financeiro' item.bm.id %}?next={{ request.get_full_path|urlencode }}">{{ item.bm.numero_bm }}</a></td>
+              <td><a href="{% url 'detalhe_bm_financeiro' item.bm.id %}?next={{ request.get_full_path|urlencode }}">{{ item.bm.numero_bm }}</a>{% if item.bm.ciclo_contexto.cycle %}{% include 'bm/_ciclo_resumo.html' with ciclo=item.bm.ciclo_contexto %}{% endif %}</td>
               <td>{{ item.bm.parcela_paga }}</td>
               <td>R$ {{ item.bm.valor_pago|floatformat:2 }}</td>
               <td>{{ item.bm.data_pagamento|date:"d/m/Y" }}</td>

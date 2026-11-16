@@ -7,6 +7,7 @@
     <td class="text-end fin-money">R$ {{ row.value|floatformat:2 }}</td>
     <td class="text-nowrap">{{ row.date|date:'d/m/Y'|default:'Não informada' }}{% if row.kind == 'bm' and row.authorized %}<div class="small text-muted">Autorizado {{ row.record.data_aprovacao_diretor|date:'d/m/Y'|default:'data não registrada' }}</div>{% endif %}</td>
     <td>{% if row.kind == 'bm' %}<div class="small">Operacional: {{ row.operational }}</div><div class="small">Diretoria: {{ row.director }}</div>{% if not row.record.has_nf %}<div class="small text-muted">Sem NF vinculada</div>{% endif %}{% else %}<span class="badge {% if row.paid %}text-bg-success{% elif row.authorized %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ row.status }}</span>{% if row.paid %}<div class="small text-muted mt-1">{{ row.payment_actor }}</div>{% endif %}{% endif %}
+      {% if row.ciclo.cycle %}{% include 'bm/_ciclo_resumo.html' with ciclo=row.ciclo %}{% endif %}
       {% for reason in row.reasons %}<div class="small text-warning-emphasis mt-1"><i class="bi bi-info-circle"></i> {{ reason }}</div>{% endfor %}
     </td><td>{% include 'financeiro/_acoes.html' %}</td>
   </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">Nenhum registro nesta fila para os filtros selecionados.</td></tr>{% endfor %}</tbody>

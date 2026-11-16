@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card card-body my-4">
+  <h1 class="h4">Reprogramar BM {{ bm.numero_bm }} · {{ bm.contrato_financeiro.empresa_terceira.nome }}</h1>
+  <p>Contrato {{ bm.contrato_financeiro.num_contrato }} · {% if bm.os_id %}OS {{ bm.os_id }} · projeto {{ bm.os.cod_projeto }}{% else %}Evento {{ bm.evento_id }} · projeto {{ bm.contrato_financeiro.cod_projeto }}{% endif %}</p>
+  <dl class="row">
+    <dt class="col-md-4">Data prevista anterior</dt><dd class="col-md-8">{{ plan.previous_date|date:'d/m/Y'|default:'Não informada' }}</dd>
+    <dt class="col-md-4">Próxima data do calendário</dt><dd class="col-md-8">{{ plan.next_date|date:'d/m/Y'|default:'Não disponível' }}</dd>
+    <dt class="col-md-4">Valor medido</dt><dd class="col-md-8">R$ {{ ciclo.measured|floatformat:2 }}</dd>
+    <dt class="col-md-4">Pago líquido de estornos</dt><dd class="col-md-8">R$ {{ ciclo.paid|floatformat:2 }}</dd>
+    <dt class="col-md-4">Saldo a reapresentar</dt><dd class="col-md-8"><strong>R$ {{ ciclo.balance|floatformat:2 }}</strong></dd>
+  </dl>
+  <p class="alert alert-info">A reprogramação preserva o BM, as NFs, os pagamentos e as decisões anteriores. O saldo será submetido à aprovação do Líder de Contrato e à autorização da Diretoria na nova programação.</p>
+  {% if not plan.available %}<p class="alert alert-warning">{{ plan.reason }}</p>{% endif %}
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ back }}">
+    {{ form.as_p }}
+    {% if plan.available %}<button type="submit" class="btn btn-primary">Confirmar reprogramação para {{ plan.next_date|date:'d/m/Y' }}</button>{% endif %}
+    <a href="{{ back }}" class="btn btn-outline-secondary">Voltar</a>
+  </form>
+</section>
+{% endblock %}

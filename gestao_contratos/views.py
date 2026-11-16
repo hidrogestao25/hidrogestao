@@ -20,7 +20,7 @@ from .workflows import locked_action, sync_paid_total, lock_payment_origin, clai
 from .forms import parse_decimal_from_form_value, DadosBancariosFornecedorForm, FiltroFinanceiroForm
 from .forms import RenegociacaoValorForm, RenegociacaoPrazoForm, RevisaoProspeccaoForm
 from . import prospeccao_services as prospect_services
-from . import bm_approvals
+from . import bm_approvals, bm_cycles
 from django.forms.models import model_to_dict
 from django.forms import inlineformset_factory
 from .forms import PropostaFornecedorForm
@@ -4018,6 +4018,10 @@ def document_contract_has_draft(documento_contrato):
 
 
 def user_can_approve_bm_payment(user, bm):
+    if bm and bm_cycles.enabled():
+        current=bm_cycles.head(bm_cycles.raw_connection(),bm.pk)
+        if current and current['tipo']!='inicial':
+            return False
     return bool(
         user
         and bm
@@ -4279,6 +4283,7 @@ def duplicar_os_cadastrada(request, pk):
 #def is_financeiro(user):
 #    return user.is_authenticated and getattr(user, "grupo", None) == "financeiro"
 
+@login_required
 def home(request):
     user = request.user
     hoje = timezone.now().date()
@@ -5096,6 +5101,17 @@ def home(request):
         extra=list(BM.objects.filter(bm_approvals.pending_query(user)).exclude(pk__in=known).select_related(
             'contrato','contrato__empresa_terceira','evento__contrato_terceiro','contrato__cod_projeto'))
         context['bms_pendentes']=current+attach_bm_home_sla_displays(extra)
+    if bm_cycles.enabled() and user.grupo in bm_cycles.RESPONSIBLE_ROLES|{'diretoria'}:
+        from .financial_queries import cycle_stage_query
+        current=list(context.get('bms_pendentes',[]))
+        extra=BM.objects.filter(cycle_stage_query(['gerencia'] if user.grupo in bm_cycles.RESPONSIBLE_ROLES else ['diretoria']))
+        if user.grupo in bm_cycles.RESPONSIBLE_ROLES:
+            extra=bm_cycles.apply_filter(extra,manager=user)
+        context['bms_pendentes']=current+list(extra.exclude(pk__in=[bm.pk for bm in current]))
+    if bm_cycles.enabled():
+        from .bm_cycle_views import info as cycle_info
+        for bm in context.get('bms_pendentes',[]):
+            bm.ciclo_contexto=cycle_info(bm,user)
     return render(request, "home.html", context)
 
 
@@ -10732,6 +10748,8 @@ def registrar_entrega(request, pk):
     for bm in boletins:
         operational_pending = bm_is_operationally_pending(bm)
         bm.shared_can_decide=bool(bm_approvals.pending_sides(request.user,bm))
+        from .bm_cycle_views import info as cycle_info
+        bm.ciclo_contexto=cycle_info(bm,request.user)
         can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
 
         if bm_has_operational_approval(bm):
@@ -10826,6 +10844,11 @@ def avaliar_bm(request, bm_id):
             "success": False,
             "error": "Ação inválida.",
         }, status=400)
+
+    if acao in {'aprovar_pagamento','reprovar_pagamento'} and bm_cycles.enabled():
+        current_cycle=bm_cycles.head(bm_cycles.raw_connection(),bm.pk)
+        if current_cycle and current_cycle['tipo']!='inicial':
+            return JsonResponse({'success':False,'error':'Este BM foi reapresentado. Registre a decisão da Diretoria no ciclo atual.'},status=409)
 
     if bm_approvals.shared(bm) and acao in ('aprovar','reprovar'):
         if request.POST.get('versao_bm') and request.POST['versao_bm']!=bm_approvals.version(bm):
@@ -11123,7 +11146,7 @@ def forecast_period_start(data_inicial,data_limite):
         'Foi usado o primeiro dia do mês da Data Limite; você pode informar a Data Inicial.')
 
 
-def forecast_bms(user,data_inicial,data_limite,filtro_bm='pagamento',coordenador=None,*,approved_only=False):
+def forecast_bms(user,data_inicial,data_limite,filtro_bm='pagamento',coordenador=None,*,approved_only=False,cycle_filter='',cycle_manager=None):
     """O intervalo automático começa no dia seguinte ao pagamento anterior ao limite."""
     data_inicial,_=forecast_period_start(data_inicial,data_limite)
     qs=BM.objects.all()
@@ -11136,10 +11159,13 @@ def forecast_bms(user,data_inicial,data_limite,filtro_bm='pagamento',coordenador
         if data_inicial:
             leader &= Q(data_aprovacao_coordenador__date__gte=data_inicial)
             manager &= Q(data_aprovacao_gerente__date__gte=data_inicial)
-        qs=qs.filter(leader|manager).filter(bm_operational_approval_query())
-    if approved_only:qs=qs.filter(bm_operational_approval_query())
+        qs=qs.filter(((leader|manager)&bm_operational_approval_query()) | bm_cycles.period_query(data_inicial,data_limite))
+    if approved_only:
+        from .financial_queries import cycle_stage_query
+        qs=qs.filter(bm_operational_approval_query()).exclude(cycle_stage_query(['gerencia','sem_gerente','reprovado','revisao','conferencia']))
     qs=filter_payment_bms_for_user(user,qs)
     if coordenador:qs=qs.filter(bm_financial_coordinator_query(coordenador)).distinct()
+    qs=bm_cycles.apply_filter(qs,cycle_filter,cycle_manager)
     return qs.select_related('contrato__cod_projeto__lider_contrato','contrato__empresa_terceira','contrato__lider_contrato',
         'evento__contrato_terceiro__cod_projeto__lider_contrato','evento__contrato_terceiro__empresa_terceira',
         'evento__contrato_terceiro__lider_contrato','os__contrato__empresa_terceira','os__contrato__cod_projeto__lider_contrato',
@@ -11148,6 +11174,7 @@ def forecast_bms(user,data_inicial,data_limite,filtro_bm='pagamento',coordenador
 
 
 def prepare_forecast_bms(user,queryset):
+    from .bm_cycle_views import info as cycle_info
     bms=list(queryset)
     # Determina status de aprovação (para exibir na tabela)
     for bm in bms:
@@ -11171,6 +11198,7 @@ def prepare_forecast_bms(user,queryset):
 
     for bm in bms:
         approval_info = bm_approval_audit_map.get(bm.id, {})
+        bm.ciclo_contexto=cycle_info(bm,user)
         bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
         bm.aprovacao_gerente_audit = approval_info.get("gerente")
         bm.can_approve_pagamento = user_can_approve_bm_payment(user, bm)
@@ -11672,8 +11700,11 @@ def previsao_pagamentos(request):
         export_query = urlencode(export_params)
 
         filtro_bm=request.GET.get('filtro_bm','pagamento')
-        bms=prepare_forecast_bms(usuario,forecast_bms(usuario,data_inicio_filtro,data_limite,filtro_bm,coordenador))
+        bms=prepare_forecast_bms(usuario,forecast_bms(usuario,data_inicio_filtro,data_limite,filtro_bm,coordenador,
+            cycle_filter=form.cleaned_data.get('ciclo',''),cycle_manager=form.cleaned_data.get('gerente_ciclo')))
         bm_params={'data_inicial':data_inicio_filtro.isoformat(),'data_limite':data_limite.isoformat(),'filtro_bm':filtro_bm}
+        if form.cleaned_data.get('ciclo'):bm_params['ciclo']=form.cleaned_data['ciclo']
+        if form.cleaned_data.get('gerente_ciclo'):bm_params['gerente_ciclo']=form.cleaned_data['gerente_ciclo'].pk
         if coordenador:bm_params['coordenador']=coordenador.pk
         bm_export_query=urlencode(bm_params)
 
@@ -11703,6 +11734,8 @@ def previsao_pagamentos(request):
         "grafico_barras_centros": grafico_barras_centros,
         "grafico_barra": grafico_barra,
         "bms": bms,
+        "bm_cycles_enabled":bm_cycles.enabled(),
+        "cycle_operator_allowed":request.user.grupo in {'suprimento','financeiro'},
         "total_bm_pago": total_bm_pago,
         "total_bm_previsto": total_bm_previsto,
     })
@@ -11738,7 +11771,8 @@ def download_bms_aprovados(request):
     if data_inicial>data_limite:
         messages.error(request,'A data inicial deve ser anterior ou igual à data limite.')
         return redirect('previsao_pagamentos')
-    bms_aprovados=forecast_bms(request.user,data_inicial,data_limite,filtro_bm,coordenador,approved_only=True)
+    bms_aprovados=forecast_bms(request.user,data_inicial,data_limite,filtro_bm,coordenador,approved_only=True,
+        cycle_filter=request.GET.get('ciclo',''),cycle_manager=request.GET.get('gerente_ciclo'))
 
     # === APENAS COM ARQUIVO ===
     bms_aprovados = bms_aprovados.exclude(arquivo_bm='')
@@ -11807,11 +11841,14 @@ def exportar_bms_previsao_excel(request):
     first,notice=forecast_period_start(first,last)
     if first and first>last:return HttpResponse('A data inicial deve ser anterior ou igual à data limite.',status=400)
     mode=request.GET.get('filtro_bm','pagamento')
-    queryset=forecast_bms(request.user,first,last,mode,data.get('coordenador'))
+    queryset=forecast_bms(request.user,first,last,mode,data.get('coordenador'),cycle_filter=data.get('ciclo',''),cycle_manager=data.get('gerente_ciclo'))
     if queryset.count()>10000:return HttpResponse('Refine os filtros para exportar até 10.000 BMs.',status=400)
     bms=prepare_forecast_bms(request.user,queryset)
     from .bm_forecast_exports import export_bms
-    content=export_bms(request.user,bms,build_bm_approval_audit_map(bms),first=first,last=last,mode=mode,notice=notice)
+    try:
+        content=export_bms(request.user,bms,build_bm_approval_audit_map(bms),first=first,last=last,mode=mode,notice=notice)
+    except ValidationError as error:
+        return HttpResponse(' '.join(error.messages),status=400)
     response=HttpResponse(content,content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition']=f'attachment; filename="BMs_Previsao_ate_{last.isoformat()}.xlsx"'
     response['Cache-Control']='private, no-store'
@@ -12543,6 +12580,7 @@ def deletar_nf(request, nf_id):
 @login_required
 @proteger_fluxo_solicitacao(Evento, key="evento_id")
 def detalhes_entrega(request, evento_id):
+    from .bm_cycle_views import info as cycle_info
     evento = get_object_or_404(Evento, id=evento_id)
     if not evento.contrato_terceiro_id:
         messages.warning(request, "Este evento ainda não está vinculado a um contrato com fornecedor.")
@@ -12559,8 +12597,11 @@ def detalhes_entrega(request, evento_id):
     bm_approval_audit_map = build_bm_approval_audit_map(bms)
 
     for bm in bms:
+        bm.ciclo_contexto=cycle_info(bm,request.user)
         bm.operational_pending = bm_is_operationally_pending(bm)
         bm.shared_can_decide=bool(bm_approvals.pending_sides(request.user,bm))
+        from .bm_cycle_views import info as cycle_info
+        bm.ciclo_contexto=cycle_info(bm,request.user)
         bm.can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
         approval_info = bm_approval_audit_map.get(bm.id, {})
         bm.aprovacao_coordenador_audit = approval_info.get("coordenador")
@@ -12750,6 +12791,8 @@ def registrar_entrega_os(request, pk):
     for bm in boletins:
         operational_pending = bm_is_operationally_pending(bm)
         bm.shared_can_decide=bool(bm_approvals.pending_sides(request.user,bm))
+        from .bm_cycle_views import info as cycle_info
+        bm.ciclo_contexto=cycle_info(bm,request.user)
         can_approve_pagamento = user_can_approve_bm_payment(request.user, bm)
 
         if bm_has_operational_approval(bm):
@@ -13039,6 +13082,7 @@ def pendencias_financeiras(request):
 @login_required
 @require_safe
 def detalhe_bm_financeiro(request,bm_id):
+    from .bm_cycle_views import info as cycle_info
     bm = get_object_or_404(fq.eager_bms(fq.financial_bms()),pk=bm_id)
     if not (can_view_object(request.user,bm) and can_access_document(request.user,bm)):
         raise Http404
@@ -13057,6 +13101,7 @@ def detalhe_bm_financeiro(request,bm_id):
         reconciliation=reconciliation, return_url=back,can_delete=request.user.grupo in {'financeiro','suprimento'} and not NF.objects.filter(bm=bm).exists(),
         bm_history=RegistroAuditoria.objects.filter(content_type=ContentType.objects.get_for_model(BM),object_id=bm.pk).select_related('usuario').order_by('-data_hora','-pk')[:20] if fq.can_view_financial_panel(request.user) else [],
         can_approve_pagamento=user_can_approve_bm_payment(request.user,bm),
+        ciclo=cycle_info(bm,request.user,history=True),
         shared_can_decide=bool(bm_approvals.pending_sides(request.user,bm)),
         delete_url=reverse('deletar_bm',args=[bm.pk])))
 

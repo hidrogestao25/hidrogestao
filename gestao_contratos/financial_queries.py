@@ -9,12 +9,13 @@ from urllib.parse import urlencode
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q, F, Case, When, Value, IntegerField, BooleanField, Exists, OuterRef, Count, Sum
+from django.db.models import Q, F, Case, When, Value, IntegerField, BooleanField, Exists, OuterRef, Count, Sum, Func, CharField, BigIntegerField
 from django.db.models.functions import Coalesce, TruncMonth
 from django.urls import reverse
 
 from . import models as m
 from . import payment_queries as pq
+from . import bm_cycles
 from .permissions import GLOBAL_ROLES, is_internal, can_change_nf, can_view_object, can_access_document, bm_has_valid_operational_approval
 
 
@@ -43,8 +44,17 @@ def operational_query(prefix=""):
         Q(**{prefix + "status_coordenador": "reprovado"}) | Q(**{prefix + "status_gerente": "reprovado"}))
 
 
-def authorized_query(prefix=""):
+def original_authorized_query(prefix=""):
     return operational_query(prefix) & Q(**{prefix + "aprovacao_pagamento": "aprovado"})
+
+
+def cycle_stage_query(stages, prefix=''):
+    from django.db.models.lookups import In
+    return Q(In(Func(F(prefix+'pk'),function='hidro_bm_cycle_stage',output_field=CharField()),stages))
+
+
+def authorized_query(prefix=''):
+    return original_authorized_query(prefix) & Q(Func(F(prefix+'pk'),function='hidro_bm_cycle_authorized',output_field=BooleanField()))
 
 
 def rejected_query(prefix=""):
@@ -94,22 +104,24 @@ def financial_nfs():
 
 def bm_attention_query():
     return (Q(origin_valid=False) | rejected_query() | Q(os__status="cancelada")
-            | (Q(aprovacao_pagamento="aprovado") & ~operational_query()))
+            | (Q(aprovacao_pagamento="aprovado") & ~operational_query())
+            | cycle_stage_query(['conferencia','reprovado','revisao']))
 
 
 def nf_attention_query():
     return (Q(origin_valid=False) | rejected_query("bm__") | Q(os__status="cancelada") | Q(cancelada_em__isnull=False)
             | (Q(bm__aprovacao_pagamento="aprovado") & ~operational_query("bm__"))
-            | (Q(ledger_paid_cents__gt=0) & ~authorized_query("bm__"))
-            | Q(ledger_balance_cents__gt=0,ledger_scheduled_cents__gt=F('ledger_balance_cents')))
+            | (Q(ledger_paid_cents__gt=0) & ~original_authorized_query("bm__"))
+            | Q(ledger_balance_cents__gt=0,ledger_scheduled_cents__gt=F('ledger_balance_cents'))
+            | cycle_stage_query(['conferencia','reprovado','revisao'],'bm__'))
 
 
 def bm_home_stages():
     valid = ~bm_attention_query()
     return {
         "autorizados": valid & authorized_query(),
-        "diretoria": valid & operational_query() & Q(aprovacao_pagamento="pendente"),
-        "operacional": valid & ~operational_query(),
+        "diretoria": valid & operational_query() & (Q(aprovacao_pagamento="pendente") | cycle_stage_query(['diretoria'])),
+        "operacional": valid & (~operational_query() | cycle_stage_query(['gerencia','sem_gerente'])),
     }
 
 
@@ -182,13 +194,13 @@ def apply_structural_filters(queryset, filters, *, kind):
         queryset = queryset.filter(**{("bm_id" if kind == "nf" else "pk"): filters["bm_id"]})
     status = filters.get("autorizacao")
     if status == "operacional":
-        queryset = queryset.filter(**{prefix + "status_coordenador": "pendente", prefix + "status_gerente": "pendente"})
+        queryset = queryset.filter(Q(**{prefix + "status_coordenador": "pendente", prefix + "status_gerente": "pendente"}) | cycle_stage_query(['gerencia','sem_gerente'],prefix))
     elif status == "diretoria":
-        queryset = queryset.filter(operational_query(prefix), **{prefix + "aprovacao_pagamento": "pendente"})
+        queryset = queryset.filter(operational_query(prefix), Q(**{prefix + "aprovacao_pagamento": "pendente"}) | cycle_stage_query(['diretoria'],prefix))
     elif status == "autorizado":
         queryset = queryset.filter(authorized_query(prefix))
     elif status == "reprovado":
-        queryset = queryset.filter(rejected_query(prefix))
+        queryset = queryset.filter(rejected_query(prefix) | cycle_stage_query(['reprovado'],prefix))
     if filters.get("pagamento"):
         paid = filters["pagamento"] == "pago"
         if kind == "nf":
@@ -206,7 +218,7 @@ def apply_structural_filters(queryset, filters, *, kind):
         leader = filters['lider_contrato']
         contracts = m.ContratoTerceiros.objects.filter(pk=OuterRef('finance_contract_id')).filter(leader_assignment_query(leader))
         queryset = queryset.filter(Exists(contracts) | Q(os__lider_contrato=leader) | Q(os__cod_projeto__lider_contrato=leader))
-    return queryset
+    return bm_cycles.apply_filter(queryset,filters.get('ciclo',''),filters.get('gerente_ciclo'),'bm__' if kind=='nf' else '')
 
 
 def in_period(queryset, filters, field):
@@ -222,8 +234,11 @@ class FinancialData:
         self.filters = filters
         self.bms_scope = apply_structural_filters(financial_bms(), filters, kind="bm")
         self.nfs_scope = apply_structural_filters(financial_nfs(), filters, kind="nf")
-        self.bms = in_period(self.bms_scope, filters, "data_pagamento")
-        self.nfs = in_period(self.nfs_scope, filters, "data_pagamento")
+        from . import bm_cycles
+        self.bm_record_period = Q() if filters.get('historico') else Q(data_pagamento__range=(filters['data_inicial'],filters['data_limite']))
+        self.nf_record_period = self.bm_record_period
+        self.bms = self.bms_scope if filters.get('historico') else self.bms_scope.filter(self.bm_record_period | bm_cycles.period_query(filters['data_inicial'],filters['data_limite']))
+        self.nfs = self.nfs_scope if filters.get('historico') else self.nfs_scope.filter(self.nf_record_period | bm_cycles.period_query(filters['data_inicial'],filters['data_limite'],'bm__'))
         self.payments=in_period(m.PagamentoNF.objects.filter(nf_id__in=self.nfs_scope.values('pk')),filters,'data_pagamento')
         bm_attention, nf_attention = bm_attention_query(), nf_attention_query()
         self.queries = {
@@ -253,15 +268,15 @@ class FinancialData:
 
     def indicators(self, *, by_contract=False):
         bm_expressions = dict(
-            medido=Sum("valor_pago", default=Decimal("0")),
-            autorizado=Sum("valor_pago", filter=authorized_query() & ~bm_attention_query(), default=Decimal("0")),
-            operacional=Sum("valor_pago", filter=operational_query(), default=Decimal("0")),
+            medido=Sum("valor_pago", filter=self.bm_record_period, default=Decimal("0")),
+            autorizado_centavos=Sum(Func(F('pk'),function='hidro_bm_cycle_authorized_cents',output_field=BigIntegerField()), filter=authorized_query() & ~bm_attention_query(), default=0),
+            operacional=Sum("valor_pago", filter=operational_query() & self.bm_record_period, default=Decimal("0")),
             aprovacao_count=Count("pk", filter=~bm_attention_query() & ~authorized_query()),
             sem_nf_count=Count("pk", filter=~bm_attention_query() & authorized_query() & Q(has_nf=False)),
             atencao_bm_count=Count("pk", filter=bm_attention_query()),
         )
         nf_expressions = dict(
-            faturado=Sum("valor_pago",filter=Q(cancelada_em__isnull=True),default=Decimal("0")),
+            faturado=Sum("valor_pago",filter=Q(cancelada_em__isnull=True) & self.nf_record_period,default=Decimal("0")),
             nao_autorizado_centavos=Sum("ledger_balance_cents",filter=~nf_attention_query() & ~authorized_query("bm__") & Q(ledger_balance_cents__gt=0),default=0),
             a_pagar_centavos=Sum("ledger_balance_cents",filter=~nf_attention_query() & authorized_query("bm__") & Q(ledger_balance_cents__gt=0),default=0),
             em_revisao_centavos=Sum("ledger_balance_cents",filter=nf_attention_query() & Q(ledger_balance_cents__gt=0),default=0),
@@ -287,9 +302,11 @@ class FinancialData:
             for row in self.nfs_scope.order_by().values('finance_contract_id').annotate(balance=Sum('ledger_balance_cents',default=0),paid=Sum('ledger_paid_cents',default=0)):
                 grouped[row['finance_contract_id']].update(saldo_pendente=pq.money(row['balance']),pago_acumulado=pq.money(row['paid']))
             for values in grouped.values():
+                values['autorizado']=pq.money(values.pop('autorizado_centavos',0))
                 for name in ('nao_autorizado','a_pagar','em_revisao'):values[name]=pq.money(values.pop(name+'_centavos',0))
             return grouped
         b=self.bms.aggregate(**bm_expressions)
+        b['autorizado']=pq.money(b.pop('autorizado_centavos'))
         n=self.nfs.aggregate(**nf_expressions)
         n['pago']=pq.money(self.payments.aggregate(total=Sum(pq.signed_cents(),default=0))['total'])
         current=self.nfs_scope.aggregate(balance=Sum('ledger_balance_cents',default=0),paid=Sum('ledger_paid_cents',default=0))
@@ -360,6 +377,10 @@ def bm_review_reasons(bm):
     if bm.os_id and bm.os.status == "cancelada": reasons.append("OS cancelada com medição registrada")
     if bm.aprovacao_pagamento == "aprovado" and not bm_has_valid_operational_approval(bm):
         reasons.append("Autorização da Diretoria sem aprovação operacional válida no estado atual")
+    if bm_cycles.enabled():
+        state=bm_cycles.cycle_state(bm_cycles.raw_connection(),bm.pk)
+        if state['stage'] in {'conferencia','reprovado','revisao'}:
+            reasons.append('Ciclo atual exige conferência ou revisão expressa das decisões; pagamentos anteriores preservados.')
     return reasons
 
 
@@ -395,18 +416,20 @@ def context_links(user, contract, origin):
 
 
 def bm_row(bm, user, next_url=""):
+    from .bm_cycle_views import info as cycle_info
     origin = bm.evento or bm.os
     contract = bm.contrato_financeiro
     row = context_links(user, contract, origin)
     op = bm_has_valid_operational_approval(bm)
     row.update(kind="bm", record=bm, id=bm.pk, number=bm.numero_bm, value=bm.valor_pago, date=bm.data_pagamento,
         operational="Aprovado" if op else "Reprovado" if "reprovado" in (bm.status_coordenador, bm.status_gerente) else "Pendente",
-        director=bm.get_aprovacao_pagamento_display(), authorized=op and bm.aprovacao_pagamento == "aprovado",
+        director=bm.get_aprovacao_pagamento_display(), authorized=op and bm.aprovacao_pagamento == "aprovado" and not bm_cycles.payment_error(bm),
         detail_url=with_return(reverse("detalhe_bm_financeiro", args=[bm.pk]), next_url),
         document_url=bm.arquivo_bm.url if bm.arquivo_bm else "", reasons=bm_review_reasons(bm),
         can_edit=user.grupo in {"financeiro", "suprimento"},
         edit_url=reverse("editar_bm", args=[bm.pk]),
         nf_create_url=(reverse("cadastrar_nf" if bm.evento_id else "cadastrar_nf_os", args=[origin.pk]) + "?" + urlencode({"bm": bm.pk})) if origin and contract else "")
+    row['ciclo']=cycle_info(bm,user)
     return row
 
 
@@ -428,7 +451,8 @@ def nf_rows(nfs, user, next_url=""):
     for nf in nfs:
         row = context_links(user, nf.contrato, nf.evento or nf.os)
         reasons = nf_review_reasons(nf)
-        ready = bool(nf.bm and not reasons and bm_has_valid_operational_approval(nf.bm) and nf.bm.aprovacao_pagamento == "aprovado")
+        from . import bm_cycles
+        ready = bool(nf.bm and not reasons and bm_has_valid_operational_approval(nf.bm) and nf.bm.aprovacao_pagamento == "aprovado" and not bm_cycles.payment_error(nf.bm))
         if getattr(nf,'ledger_scheduled_cents',0)>getattr(nf,'ledger_balance_cents',0) and nf.saldo_pendente>0:
             reasons.append('Programação superior ao saldo: exige conferência de pagamentos sem vínculo.')
         actor = actors.get(nf.pk)
@@ -448,6 +472,8 @@ def nf_rows(nfs, user, next_url=""):
             document_url=nf.arquivo_nf.url if nf.arquivo_nf else "",
             receipt_url=(m.PagamentoNF._meta.get_field('comprovante').storage.url(nf.ledger_last_receipt) if getattr(nf,'ledger_last_receipt',None) else nf.comprovante_pagamento.url if nf.comprovante_pagamento else ''),
             payment_actor=actor or "Responsável não identificado no histórico disponível.")
+        from .bm_cycle_views import info as cycle_info
+        row['ciclo']=cycle_info(nf.bm,user) if visible_bm else None
         result.append(row)
     return result
 

@@ -981,6 +981,9 @@ class EventoEntregaForm(forms.ModelForm):
 
 
 class FiltroPrevisaoForm(forms.Form):
+    from .bm_cycles import CYCLE_FILTERS
+    ciclo = forms.ChoiceField(label='Programação do BM', choices=CYCLE_FILTERS, required=False,widget=forms.Select(attrs={'class':'form-select'}))
+    gerente_ciclo = forms.ModelChoiceField(label='Líder de Contrato responsável pelo ciclo',queryset=User.objects.filter(grupo__in=['lider_contrato','gerente_lider','gerente_contrato'],is_active=True),required=False,widget=forms.Select(attrs={'class':'form-select'}))
     data_inicial = forms.DateField(
         label="Data inicial (opcional)",
         required=False,
