@@ -57,7 +57,13 @@ def info(bm, user, *, history=False):
         elif (state.get('scheduled_date') or state['reference']) < timezone.localdate():
             from datetime import timedelta
             floor=max(timezone.localdate(),(state.get('scheduled_date') or state['reference'])+timedelta(days=1),state['not_before'] or state['reference'])
-            if not m.CalendarioPagamento.objects.filter(data_pagamento__gte=floor).exists():
+            # A maior data basta para saber se existe programação após o limite.
+            # Listagens carregam esse valor na consulta principal, sem SELECT por linha.
+            if hasattr(bm, 'cycle_calendar_last_date'):
+                has_next_date = bm.cycle_calendar_last_date is not None and bm.cycle_calendar_last_date >= floor
+            else:
+                has_next_date = m.CalendarioPagamento.objects.filter(data_pagamento__gte=floor).exists()
+            if not has_next_date:
                 state['pending_reason']='Pagamento pendente — aguardando definição de nova programação no calendário.'
     if history:
         state['history']=list(m.CicloPagamentoBM.objects.filter(bm=bm).select_related('registrado_por','anterior')

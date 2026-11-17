@@ -5,9 +5,11 @@ from . import payment_views
 from . import solicitacao_views
 from . import bm_recebimento
 from . import bm_cycle_views
+from . import bm_payment_views
 from .views import ContratoCreateView, ClienteCreateView, FornecedorCreateView, ContratoFornecedorCreateView, OSCreateView
 
 urlpatterns = [
+    path('bms/<int:bm_id>/pagamento/previsao/', bm_payment_views.action, name='acao_pagamento_bm_previsao'),
     path('bms/<int:bm_id>/reprogramar/',bm_cycle_views.reprogramar,name='reprogramar_bm'),
     path('bms/programacao/processar/',bm_cycle_views.processar,name='processar_ciclos_bm'),
     path('bms/<int:bm_id>/programacao/processar/',bm_cycle_views.processar,name='processar_ciclos_bm_individual'),

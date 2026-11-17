@@ -37,3 +37,4 @@
 #financeModal [data-finance-modal-content] .modal-footer { padding:1rem 0 0; }
 @media(max-width:767px) { .fin-heading .btn{flex:1 1 auto;} .fin-workspace .card-body{padding:1rem;} .fin-table-wrap{border-radius:0;} .fin-filters .form-label{font-size:.85rem;} .fin-workspace h1{font-size:1.5rem;} }
 @media(prefers-reduced-motion:reduce){.fin-queue-link{transition:none;}}
+.fin-bm-justificativa { min-width: 240px; max-width: 360px; }

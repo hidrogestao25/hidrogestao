@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load custom_tags static %}
 {% block content_container_class %}container-fluid fin-forecast-container{% endblock %}
-{% block extra_css %}<script src="https://cdn.plot.ly/plotly-{{ plotly_version }}.min.js" charset="utf-8"></script><link rel="stylesheet" href="{% static 'css/financeiro.css' %}?v=20261113-bm-reprogramado">{% endblock %}
+{% block extra_css %}{% if show_forecast_charts %}<script src="https://cdn.plot.ly/plotly-{{ plotly_version }}.min.js" charset="utf-8"></script>{% endif %}<link rel="stylesheet" href="{% static 'css/financeiro.css' %}?v=20261113-bm-reprogramado">{% endblock %}
 
 {% block content %}
 <div class="fin-workspace mt-4">
@@ -48,7 +48,7 @@
   {% if forecast_start %}<p class="small text-muted">Período considerado: <strong>{{ forecast_start|date:"d/m/Y" }} a {{ form.cleaned_data.data_limite|date:"d/m/Y" }}</strong>. Sem Data Inicial, o início é calculado pelo calendário de pagamentos.</p>{% endif %}
   {% if forecast_period_notice %}<p class="alert alert-info small" role="status">{{ forecast_period_notice }}</p>{% endif %}
   <section id="exportacoes" class="card card-body mb-4"><h2 class="h5">Relatórios e exportações</h2><p class="small text-muted">XLSX: planejamento e acumulados por origem. ZIP: documentos dos BMs com aprovação operacional válida, pelo filtro selecionado; não significa autorização da Diretoria nem pagamento.</p>{% if export_query %}<div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-success" href="{% url 'exportar_previsao_pagamentos_excel' %}?{{ export_query }}">Baixar Excel</a><a class="btn btn-sm btn-outline-success" href="{% url 'download_bms_aprovados' %}?{{ bm_export_query }}">Baixar BMs Aprovados (.zip)</a></div>{% else %}<p class="text-muted mb-0">Selecione as datas para habilitar as exportações.</p>{% endif %}</section>
-  {% if export_query %}<section class="card card-body mb-4"><h2 class="h5">Pagamentos efetivos por NF</h2><p class="mb-2 fw-semibold">R$ {{ nf_paid_total|floatformat:2 }}</p><p class="small text-muted">Movimentos de pagamento e estorno de NFs de fornecedores, na data efetiva de cada movimento, sob o escopo e o líder técnico deste relatório. Medição e aprovação não são pagamentos.</p>{% if nf_paid_chart %}<div class="fin-chart">{{ nf_paid_chart|safe }}</div>{% else %}<p class="text-muted mb-0">Nenhuma NF paga neste período.</p>{% endif %}</section>{% endif %}
+  {% if export_query %}<section class="card card-body mb-4"><h2 class="h5">Pagamentos efetivos por NF</h2><p class="mb-2 fw-semibold">R$ {{ nf_paid_total|floatformat:2 }}</p><p class="small text-muted">Movimentos de pagamento e estorno de NFs de fornecedores, na data efetiva de cada movimento, sob o escopo e o líder técnico deste relatório. Medição e aprovação não são pagamentos.</p>{% if show_forecast_charts %}{% if nf_paid_chart %}<div class="fin-chart">{{ nf_paid_chart|safe }}</div>{% else %}<p class="text-muted mb-0">Nenhuma NF paga neste período.</p>{% endif %}{% endif %}</section>{% endif %}
   {% if bms %}
     <div class="mt-5">
       <div class="d-flex justify-content-between align-items-center mt-5">
@@ -101,12 +101,13 @@
             <th>Data de referência do BM</th>
             <th>Aprovações e programação</th>
             <th>Medição e recebimento</th>
+            <th>Justificativa</th>
             <th class="fin-actions">Ações</th>
           </tr>
         </thead>
         <tbody>
           {% for bm in bms %}
-            <tr{% if bm.ciclo_contexto.cycle.anterior_id %} class="fin-bm-reprogramado"{% endif %}>
+            <tr data-bm-forecast-row data-bm-forecast-token="{{ bm.pagamento_diretoria.token }}" data-bm-forecast-url="{{ bm.pagamento_diretoria.url }}" data-bm-forecast-number="{{ bm.numero_bm }}" data-bm-forecast-context="{{ bm.contrato_financeiro.empresa_terceira.nome }} · {{ bm.projeto_referencia }}"{% if bm.ciclo_contexto.cycle.anterior_id %} class="fin-bm-reprogramado"{% endif %}>
               <td>{{ bm.projeto_referencia }}</td>
               <td>{{ bm.contrato_financeiro.empresa_terceira.nome }}</td>
               <td>{{ bm.lider_contrato_referencia }}</td>
@@ -152,8 +153,29 @@
                 {% endif %}
               </td>
               <td>{% include 'bm/_medicao_recebimento.html' with bm=bm permitir_edicao=True %}</td>
+              <td class="fin-bm-justificativa">
+                {% include 'financeiro/_justificativa_pagamento_atual.html' with payment=bm.pagamento_diretoria %}
+                {% if bm.pagamento_diretoria.can_edit %}
+                  <div class="d-flex flex-wrap gap-1 mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-bm-forecast-action="salvar_justificativa">{% if bm.pagamento_diretoria.text %}Editar{% else %}Adicionar justificativa{% endif %}</button>
+                    {% if bm.pagamento_diretoria.text %}<button type="button" class="btn btn-sm btn-outline-danger" data-bm-forecast-action="excluir_justificativa">Excluir</button>{% endif %}
+                  </div>
+                {% endif %}
+              </td>
               <td class="fin-actions">
-                {% if bm.evento %}
+                {% if request.user.grupo == 'diretoria' %}
+                  <div class="d-flex flex-column align-items-start gap-2">
+                    {% if bm.pagamento_diretoria.can_decide %}
+                      <button type="button" class="btn btn-sm btn-success" data-bm-forecast-action="aprovar_pagamento">Aprovar Pagamento</button>
+                      <button type="button" class="btn btn-sm btn-danger" data-bm-forecast-action="reprovar_pagamento">Reprovar Pagamento</button>
+                    {% elif bm.pagamento_diretoria.status == 'aprovado' %}<span class="badge bg-success">Aprovado</span>
+                    {% elif bm.pagamento_diretoria.status == 'reprovado' %}<span class="badge bg-danger">Reprovado</span>
+                    {% endif %}
+                    {% if bm.evento_id %}<a href="{% url 'detalhes_entrega' bm.evento_id %}" target="_blank" class="btn btn-sm btn-outline-success">Ver Detalhes</a>
+                    {% elif bm.os_id %}<a href="{% if bm.pagamento_diretoria.can_decide %}{% url 'detalhe_bm_financeiro' bm.pk %}{% else %}{% url 'detalhes_os' bm.os_id %}{% endif %}" target="_blank" class="btn btn-sm btn-outline-success">Ver Detalhes</a>{% endif %}
+                  </div>
+                  <p class="text-danger small mt-2 d-none" role="alert" data-bm-forecast-error></p>
+                {% elif bm.evento %}
                   {% if request.user.grupo == 'suprimento' or request.user.grupo == 'financeiro' %}
                     <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank" class="btn btn-sm btn-outline-success">
                       <i class="bi bi-eye"></i> Verificar
@@ -170,12 +192,6 @@
                       <i class="bi bi-box-arrow-up-right"></i>
                       {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}Aprovar{% else %}Verificar{% endif %}
                     </a>
-                  {% elif request.user.grupo == 'diretoria' and bm.can_approve_pagamento %}
-                    <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
-                       class="btn btn-sm btn-primary">
-                      <i class="bi bi-box-arrow-up-right"></i>
-                      Aprovar Pagamento
-                    </a>
                   {% elif request.user.grupo == 'gerente_contrato' %}
                     <a href="{% url 'detalhes_entrega' bm.evento.id %}" target="_blank"
                        class="btn btn-sm {% if bm.status_coordenador == 'pendente' and bm.status_gerente == 'pendente' %}btn-primary{% else %}btn-outline-success{% endif %}">
@@ -186,15 +202,9 @@
                     <span class="text-muted">-</span>
                   {% endif %}
                 {% elif bm.os %}
-                  {% if request.user.grupo == 'diretoria' and bm.can_approve_pagamento %}
-                    <a href="{% url 'detalhe_bm_financeiro' bm.pk %}" target="_blank" class="btn btn-sm btn-primary">
-                      <i class="bi bi-box-arrow-up-right"></i> Aprovar Pagamento
-                    </a>
-                  {% else %}
-                    <a href="{% url 'detalhes_os' bm.os.id %}" target="_blank" class="btn btn-sm btn-outline-success">
-                      <i class="bi bi-eye"></i> Verificar
-                    </a>
-                  {% endif %}
+                  <a href="{% url 'detalhes_os' bm.os.id %}" target="_blank" class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-eye"></i> Verificar
+                  </a>
                 {% else %}
                   <span class="text-muted">Sem evento</span>
                 {% endif %}
@@ -206,7 +216,7 @@
             <td colspan="5" class="text-end">Totais Gerais:</td>
             <td>R$ {{ total_bm_previsto|floatformat:2 }}</td>
             <td>R$ {{ total_bm_pago|floatformat:2 }}</td>
-            <td colspan="4"></td>
+            <td colspan="5"></td>
           </tr>
         </tbody>
       </table></div>
@@ -339,4 +349,5 @@
   </div>
 {% endif %}
 {% include 'bm/_modal_medicao_recebimento.html' %}
+{% include 'financeiro/_modal_decisao_pagamento_bm.html' %}
 {% endblock %}

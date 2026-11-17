@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q, F, Case, When, Value, IntegerField, BooleanField, Exists, OuterRef, Count, Sum, Func, CharField, BigIntegerField
+from django.db.models import Q, F, Case, When, Value, IntegerField, BooleanField, Exists, OuterRef, Count, Sum, Func, CharField, BigIntegerField, Subquery
 from django.db.models.functions import Coalesce, TruncMonth
 from django.urls import reverse
 
@@ -352,14 +352,18 @@ class FinancialData:
 
 
 def eager_bms(queryset):
-    return queryset.select_related("contrato__empresa_terceira", "contrato__cod_projeto",
+    return queryset.annotate(cycle_calendar_last_date=Subquery(
+        m.CalendarioPagamento.objects.order_by('-data_pagamento').values('data_pagamento')[:1]
+    )).select_related("contrato__empresa_terceira", "contrato__cod_projeto",
         "evento__contrato_terceiro__empresa_terceira", "evento__contrato_terceiro__cod_projeto",
         "os__contrato__empresa_terceira", "os__cod_projeto")
 
 
 def eager_nfs(queryset):
     if 'ledger_paid_cents' not in queryset.query.annotations:queryset=pq.invoice_annotations(queryset)
-    return queryset.select_related("contrato__empresa_terceira", "contrato__cod_projeto", "evento", "os__cod_projeto", "os__contrato",
+    return queryset.annotate(cycle_calendar_last_date=Subquery(
+        m.CalendarioPagamento.objects.order_by('-data_pagamento').values('data_pagamento')[:1]
+    )).select_related("contrato__empresa_terceira", "contrato__cod_projeto", "evento", "os__cod_projeto", "os__contrato",
         "bm__evento__contrato_terceiro", "bm__os__contrato", "bm__contrato")
 
 
@@ -449,6 +453,8 @@ def nf_rows(nfs, user, next_url=""):
     result = []
     visible_bms = {}
     for nf in nfs:
+        if nf.bm_id and hasattr(nf, 'cycle_calendar_last_date'):
+            nf.bm.cycle_calendar_last_date = nf.cycle_calendar_last_date
         row = context_links(user, nf.contrato, nf.evento or nf.os)
         reasons = nf_review_reasons(nf)
         from . import bm_cycles

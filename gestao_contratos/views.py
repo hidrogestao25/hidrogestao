@@ -11221,7 +11221,8 @@ def prepare_forecast_bms(user,queryset):
             else ""
         )
 
-    return bms
+    from .bm_payment_views import prepare_payment_rows
+    return prepare_payment_rows(bms,user)
 
 
 @login_required
@@ -11229,6 +11230,7 @@ def previsao_pagamentos(request):
     if request.user.grupo not in ["suprimento", "gerente", "gerente_lider", "diretoria", "financeiro", "gerente_contrato"]:
         messages.error(request, "Você não tem permissão para isso!")
         return redirect("home")
+    show_forecast_charts = request.user.grupo != 'diretoria'
     form = FiltroPrevisaoForm(request.GET or None, user=request.user)
     pagamentos = []
     total_previsto = 0
@@ -11380,14 +11382,6 @@ def previsao_pagamentos(request):
                     if day:totais[chave_nome][mes_referencia(day)]["Pago"] += amount
             return totais
 
-        meses = meses_do_periodo()
-        meses_labels = [mes.strftime("%m/%Y") for mes in meses]
-        x_meses_previsto_pago = []
-        x_tipos_previsto_pago = []
-        for mes_label in meses_labels:
-            x_meses_previsto_pago.extend([mes_label, mes_label])
-            x_tipos_previsto_pago.extend(["Previsto", "Pago"])
-
         pagamentos_eventos = [
             {
                 "tipo": "Evento",
@@ -11443,243 +11437,252 @@ def previsao_pagamentos(request):
 
         # ==== GRÁFICO 1: LINHA ACUMULADA (EVENTOS + OS) ====
 
-        acumulado_previsto_por_data = defaultdict(Decimal)
-        acumulado_pago_por_data = defaultdict(Decimal)
+        if show_forecast_charts:
+            meses = meses_do_periodo()
+            meses_labels = [mes.strftime("%m/%Y") for mes in meses]
+            x_meses_previsto_pago = []
+            x_tipos_previsto_pago = []
+            for mes_label in meses_labels:
+                x_meses_previsto_pago.extend([mes_label, mes_label])
+                x_tipos_previsto_pago.extend(["Previsto", "Pago"])
 
-        # EVENTOS
-        for e in eventos:
-            if data_no_periodo(e.data_prevista_pagamento):
-                acumulado_previsto_por_data[e.data_prevista_pagamento] += e.valor_previsto or 0
-            for day,amount in cash_events.get(e.pk,[]):
-                if day:acumulado_pago_por_data[day] += amount
+            acumulado_previsto_por_data = defaultdict(Decimal)
+            acumulado_pago_por_data = defaultdict(Decimal)
 
-        # OS
-        for os in os_queryset:
-            if data_no_periodo(os.data_prevista_pagamento):
-                acumulado_previsto_por_data[os.data_prevista_pagamento] += os.valor or 0
-            for day,amount in cash_orders.get(os.pk,[]):
-                if day:acumulado_pago_por_data[day] += amount
+            # EVENTOS
+            for e in eventos:
+                if data_no_periodo(e.data_prevista_pagamento):
+                    acumulado_previsto_por_data[e.data_prevista_pagamento] += e.valor_previsto or 0
+                for day,amount in cash_events.get(e.pk,[]):
+                    if day:acumulado_pago_por_data[day] += amount
 
-        datas = sorted(set(acumulado_previsto_por_data.keys()) | set(acumulado_pago_por_data.keys()))
+            # OS
+            for os in os_queryset:
+                if data_no_periodo(os.data_prevista_pagamento):
+                    acumulado_previsto_por_data[os.data_prevista_pagamento] += os.valor or 0
+                for day,amount in cash_orders.get(os.pk,[]):
+                    if day:acumulado_pago_por_data[day] += amount
 
-        datas_prevista = []
-        acumulado_previsto = []
-        datas_pago = []
-        acumulado_pago = []
+            datas = sorted(set(acumulado_previsto_por_data.keys()) | set(acumulado_pago_por_data.keys()))
 
-        total_prev = Decimal("0.00")
-        total_pg = Decimal("0.00")
+            datas_prevista = []
+            acumulado_previsto = []
+            datas_pago = []
+            acumulado_pago = []
 
-        for d in datas:
-            total_prev += acumulado_previsto_por_data.get(d, 0)
-            total_pg += acumulado_pago_por_data.get(d, 0)
+            total_prev = Decimal("0.00")
+            total_pg = Decimal("0.00")
 
-            datas_prevista.append(d)
-            acumulado_previsto.append(total_prev)
+            for d in datas:
+                total_prev += acumulado_previsto_por_data.get(d, 0)
+                total_pg += acumulado_pago_por_data.get(d, 0)
 
-            datas_pago.append(d)
-            acumulado_pago.append(total_pg)
+                datas_prevista.append(d)
+                acumulado_previsto.append(total_prev)
 
-        if datas:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=datas_prevista,
-                y=acumulado_previsto,
-                mode='lines+markers',
-                name='Previsto',
-                line=dict(color='blue', width=3),
-                marker=dict(size=6),
-                hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
-            ))
-            fig.add_trace(go.Scatter(
-                x=datas_pago,
-                y=acumulado_pago,
-                mode='lines+markers',
-                name='Pago',
-                line=dict(color='green', width=3),
-                marker=dict(size=6),
-                hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
-            ))
-            fig.update_layout(
-                title='Previsão x Pagamentos Acumulados (Eventos + OS)',
-                xaxis=dict(
-                    title='Data',
-                    tickformat='%d/%m/%Y',
-                    hoverformat='%d/%m/%Y',
-                ),
-                yaxis_title='Valor Acumulado (R$)',
-                hovermode='x unified'
+                datas_pago.append(d)
+                acumulado_pago.append(total_pg)
+
+            if datas:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=datas_prevista,
+                    y=acumulado_previsto,
+                    mode='lines+markers',
+                    name='Previsto',
+                    line=dict(color='blue', width=3),
+                    marker=dict(size=6),
+                    hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=datas_pago,
+                    y=acumulado_pago,
+                    mode='lines+markers',
+                    name='Pago',
+                    line=dict(color='green', width=3),
+                    marker=dict(size=6),
+                    hovertemplate="Data: %{x|%d/%m/%Y}<br>Valor acumulado: R$ %{y:,.2f}<extra></extra>",
+                ))
+                fig.update_layout(
+                    title='Previsão x Pagamentos Acumulados (Eventos + OS)',
+                    xaxis=dict(
+                        title='Data',
+                        tickformat='%d/%m/%Y',
+                        hoverformat='%d/%m/%Y',
+                    ),
+                    yaxis_title='Valor Acumulado (R$)',
+                    hovermode='x unified'
+                )
+
+                grafico_html = plot(fig, auto_open=False, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
+
+
+            # ==== GRÁFICO 2: POR COORDENADOR ====
+            pagamentos_por_coordenador = totais_mensais_por_categoria("coordenador")
+            fig_barra = go.Figure()
+            for coord in sorted(pagamentos_por_coordenador):
+                valores = []
+                for mes in meses:
+                    valores.append(pagamentos_por_coordenador[coord][mes].get("Previsto", Decimal("0.00")))
+                    valores.append(pagamentos_por_coordenador[coord][mes].get("Pago", Decimal("0.00")))
+                fig_barra.add_trace(go.Bar(
+                    name=coord,
+                    x=[x_meses_previsto_pago, x_tipos_previsto_pago],
+                    y=valores
+                ))
+
+            fig_barra.update_layout(
+                barmode='stack',
+                title="Pagamentos Previstos x Pagos (Eventos + OS por Líder Técnico, por mês)",
+                xaxis_title="Mês / Tipo",
+                yaxis_title="Valor (R$)",
+                template="plotly_white",
+                height=550,
+                legend_title="Coordenador"
             )
 
-            grafico_html = plot(fig, auto_open=False, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
+            grafico_barras = plot(fig_barra, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
+
+            # ==== GRÁFICO 2.1: POR LÍDER DE CONTRATO ====
+            pagamentos_por_lider = totais_mensais_por_categoria("lider")
+            fig_barra_lider = go.Figure()
+            for lider in sorted(pagamentos_por_lider):
+                valores = []
+                for mes in meses:
+                    valores.append(pagamentos_por_lider[lider][mes].get("Previsto", Decimal("0.00")))
+                    valores.append(pagamentos_por_lider[lider][mes].get("Pago", Decimal("0.00")))
+                fig_barra_lider.add_trace(go.Bar(
+                    name=lider,
+                    x=[x_meses_previsto_pago, x_tipos_previsto_pago],
+                    y=valores
+                ))
+
+            fig_barra_lider.update_layout(
+                barmode='stack',
+                title="Pagamentos Previstos x Pagos (Eventos + OS por Líder de Contrato, por mês)",
+                xaxis_title="Mês / Tipo",
+                yaxis_title="Valor (R$)",
+                template="plotly_white",
+                height=550,
+                legend_title="Líder de Contrato"
+            )
+
+            grafico_barras_lider_contrato = plot(fig_barra_lider, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
+
+            # ==== GRÁFICO 2.2: POR PROJETO ====
+            pagamentos_por_projeto = totais_mensais_por_categoria("projeto")
+            fig_barra_proj = go.Figure()
+            for proj in sorted(pagamentos_por_projeto):
+                valores = []
+                for mes in meses:
+                    valores.append(pagamentos_por_projeto[proj][mes].get("Previsto", Decimal("0.00")))
+                    valores.append(pagamentos_por_projeto[proj][mes].get("Pago", Decimal("0.00")))
+                fig_barra_proj.add_trace(go.Bar(
+                    name=proj,
+                    x=[x_meses_previsto_pago, x_tipos_previsto_pago],
+                    y=valores
+                ))
+
+            fig_barra_proj.update_layout(
+                barmode='stack',
+                title="Pagamentos Previstos x Pagos (Eventos + OS por Projeto, por mês)",
+                xaxis_title="Mês / Tipo",
+                yaxis_title="Valor (R$)",
+                template="plotly_white",
+                height=550,
+                legend_title="Projeto"
+            )
+
+            grafico_barras_projeto = plot(fig_barra_proj, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
+
+            # ==== GRÁFICO 3: PREVISTO x PAGO (EVENTOS + OS) ====
+
+            previsto_por_mes = defaultdict(Decimal)
+            pago_por_mes = defaultdict(Decimal)
+            for evento in eventos:
+                if data_no_periodo(evento.data_prevista_pagamento):
+                    previsto_por_mes[mes_referencia(evento.data_prevista_pagamento)] += evento.valor_previsto or 0
+                for day,amount in cash_events.get(evento.pk,[]):
+                    if day:pago_por_mes[mes_referencia(day)] += amount
+            for ordem_servico in os_queryset:
+                if data_no_periodo(ordem_servico.data_prevista_pagamento):
+                    previsto_por_mes[mes_referencia(ordem_servico.data_prevista_pagamento)] += ordem_servico.valor or 0
+                for day,amount in cash_orders.get(ordem_servico.pk,[]):
+                    if day:pago_por_mes[mes_referencia(day)] += amount
+
+            y_previstos = [previsto_por_mes.get(mes, Decimal("0.00")) for mes in meses]
+            y_pagos = [pago_por_mes.get(mes, Decimal("0.00")) for mes in meses]
+
+            fig_barra_final = go.Figure(data=[
+                go.Bar(name="Previsto", x=meses_labels, y=y_previstos, marker_color="orange"),
+                go.Bar(name="Pago", x=meses_labels, y=y_pagos, marker_color="green"),
+            ])
+
+            fig_barra_final.update_layout(
+                barmode="group",
+                title="Pagamentos Previsto x Pago (Eventos + OS por mês)",
+                xaxis_title="Mês",
+                yaxis_title="Valor (R$)",
+                template="plotly_white",
+                height=500,
+            )
+
+            grafico_barra = plot(fig_barra_final, output_type="div", include_plotlyjs=False, config={"responsive":True,"displaylogo":False})
+
+            # ==== GRÁFICO 4: PREVISTO x PAGO POR CENTRO ====
+            pagamentos_por_centro = defaultdict(lambda: defaultdict(lambda: defaultdict(Decimal)))
+            for evento in eventos:
+                coordenador_ref = coordenador_evento(evento)
+                if data_no_periodo(evento.data_prevista_pagamento):
+                    distribuir_por_centros(
+                        pagamentos_por_centro,
+                        evento.data_prevista_pagamento,
+                        evento.valor_previsto,
+                        coordenador_ref,
+                        "Previsto",
+                    )
+                for day,amount in cash_events.get(evento.pk,[]):
+                    if day:distribuir_por_centros(pagamentos_por_centro,day,amount,coordenador_ref,"Pago")
+
+            for ordem_servico in os_queryset:
+                coordenador_ref = coordenador_os(ordem_servico)
+                if data_no_periodo(ordem_servico.data_prevista_pagamento):
+                    distribuir_por_centros(
+                        pagamentos_por_centro,
+                        ordem_servico.data_prevista_pagamento,
+                        ordem_servico.valor,
+                        coordenador_ref,
+                        "Previsto",
+                    )
+                for day,amount in cash_orders.get(ordem_servico.pk,[]):
+                    if day:distribuir_por_centros(pagamentos_por_centro,day,amount,coordenador_ref,"Pago")
+
+            fig_barra_centros = go.Figure()
+            for centro in sorted(pagamentos_por_centro):
+                valores = []
+                for mes in meses:
+                    valores.append(pagamentos_por_centro[centro][mes].get("Previsto", Decimal("0.00")))
+                    valores.append(pagamentos_por_centro[centro][mes].get("Pago", Decimal("0.00")))
+                fig_barra_centros.add_trace(go.Bar(
+                    name=centro,
+                    x=[x_meses_previsto_pago, x_tipos_previsto_pago],
+                    y=valores,
+                ))
+
+            fig_barra_centros.update_layout(
+                barmode="stack",
+                title="Pagamentos Previstos x Pagos por Centro (centros dos Líderes Técnicos)",
+                xaxis_title="Mês / Tipo",
+                yaxis_title="Valor (R$)",
+                template="plotly_white",
+                height=550,
+                legend_title="Centro",
+            )
+
+            grafico_barras_centros = plot(fig_barra_centros, output_type="div", include_plotlyjs=False, config={"responsive":True,"displaylogo":False})
 
 
-        # ==== GRÁFICO 2: POR COORDENADOR ====
-        pagamentos_por_coordenador = totais_mensais_por_categoria("coordenador")
-        fig_barra = go.Figure()
-        for coord in sorted(pagamentos_por_coordenador):
-            valores = []
-            for mes in meses:
-                valores.append(pagamentos_por_coordenador[coord][mes].get("Previsto", Decimal("0.00")))
-                valores.append(pagamentos_por_coordenador[coord][mes].get("Pago", Decimal("0.00")))
-            fig_barra.add_trace(go.Bar(
-                name=coord,
-                x=[x_meses_previsto_pago, x_tipos_previsto_pago],
-                y=valores
-            ))
-
-        fig_barra.update_layout(
-            barmode='stack',
-            title="Pagamentos Previstos x Pagos (Eventos + OS por Líder Técnico, por mês)",
-            xaxis_title="Mês / Tipo",
-            yaxis_title="Valor (R$)",
-            template="plotly_white",
-            height=550,
-            legend_title="Coordenador"
-        )
-
-        grafico_barras = plot(fig_barra, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
-
-        # ==== GRÁFICO 2.1: POR LÍDER DE CONTRATO ====
-        pagamentos_por_lider = totais_mensais_por_categoria("lider")
-        fig_barra_lider = go.Figure()
-        for lider in sorted(pagamentos_por_lider):
-            valores = []
-            for mes in meses:
-                valores.append(pagamentos_por_lider[lider][mes].get("Previsto", Decimal("0.00")))
-                valores.append(pagamentos_por_lider[lider][mes].get("Pago", Decimal("0.00")))
-            fig_barra_lider.add_trace(go.Bar(
-                name=lider,
-                x=[x_meses_previsto_pago, x_tipos_previsto_pago],
-                y=valores
-            ))
-
-        fig_barra_lider.update_layout(
-            barmode='stack',
-            title="Pagamentos Previstos x Pagos (Eventos + OS por Líder de Contrato, por mês)",
-            xaxis_title="Mês / Tipo",
-            yaxis_title="Valor (R$)",
-            template="plotly_white",
-            height=550,
-            legend_title="Líder de Contrato"
-        )
-
-        grafico_barras_lider_contrato = plot(fig_barra_lider, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
-
-        # ==== GRÁFICO 2.2: POR PROJETO ====
-        pagamentos_por_projeto = totais_mensais_por_categoria("projeto")
-        fig_barra_proj = go.Figure()
-        for proj in sorted(pagamentos_por_projeto):
-            valores = []
-            for mes in meses:
-                valores.append(pagamentos_por_projeto[proj][mes].get("Previsto", Decimal("0.00")))
-                valores.append(pagamentos_por_projeto[proj][mes].get("Pago", Decimal("0.00")))
-            fig_barra_proj.add_trace(go.Bar(
-                name=proj,
-                x=[x_meses_previsto_pago, x_tipos_previsto_pago],
-                y=valores
-            ))
-
-        fig_barra_proj.update_layout(
-            barmode='stack',
-            title="Pagamentos Previstos x Pagos (Eventos + OS por Projeto, por mês)",
-            xaxis_title="Mês / Tipo",
-            yaxis_title="Valor (R$)",
-            template="plotly_white",
-            height=550,
-            legend_title="Projeto"
-        )
-
-        grafico_barras_projeto = plot(fig_barra_proj, output_type='div', include_plotlyjs=False, config={'responsive':True,'displaylogo':False})
-
-        # ==== GRÁFICO 3: PREVISTO x PAGO (EVENTOS + OS) ====
-
-        previsto_por_mes = defaultdict(Decimal)
-        pago_por_mes = defaultdict(Decimal)
-        for evento in eventos:
-            if data_no_periodo(evento.data_prevista_pagamento):
-                previsto_por_mes[mes_referencia(evento.data_prevista_pagamento)] += evento.valor_previsto or 0
-            for day,amount in cash_events.get(evento.pk,[]):
-                if day:pago_por_mes[mes_referencia(day)] += amount
-        for ordem_servico in os_queryset:
-            if data_no_periodo(ordem_servico.data_prevista_pagamento):
-                previsto_por_mes[mes_referencia(ordem_servico.data_prevista_pagamento)] += ordem_servico.valor or 0
-            for day,amount in cash_orders.get(ordem_servico.pk,[]):
-                if day:pago_por_mes[mes_referencia(day)] += amount
-
-        y_previstos = [previsto_por_mes.get(mes, Decimal("0.00")) for mes in meses]
-        y_pagos = [pago_por_mes.get(mes, Decimal("0.00")) for mes in meses]
-
-        fig_barra_final = go.Figure(data=[
-            go.Bar(name="Previsto", x=meses_labels, y=y_previstos, marker_color="orange"),
-            go.Bar(name="Pago", x=meses_labels, y=y_pagos, marker_color="green"),
-        ])
-
-        fig_barra_final.update_layout(
-            barmode="group",
-            title="Pagamentos Previsto x Pago (Eventos + OS por mês)",
-            xaxis_title="Mês",
-            yaxis_title="Valor (R$)",
-            template="plotly_white",
-            height=500,
-        )
-
-        grafico_barra = plot(fig_barra_final, output_type="div", include_plotlyjs=False, config={"responsive":True,"displaylogo":False})
-
-        # ==== GRÁFICO 4: PREVISTO x PAGO POR CENTRO ====
-        pagamentos_por_centro = defaultdict(lambda: defaultdict(lambda: defaultdict(Decimal)))
-        for evento in eventos:
-            coordenador_ref = coordenador_evento(evento)
-            if data_no_periodo(evento.data_prevista_pagamento):
-                distribuir_por_centros(
-                    pagamentos_por_centro,
-                    evento.data_prevista_pagamento,
-                    evento.valor_previsto,
-                    coordenador_ref,
-                    "Previsto",
-                )
-            for day,amount in cash_events.get(evento.pk,[]):
-                if day:distribuir_por_centros(pagamentos_por_centro,day,amount,coordenador_ref,"Pago")
-
-        for ordem_servico in os_queryset:
-            coordenador_ref = coordenador_os(ordem_servico)
-            if data_no_periodo(ordem_servico.data_prevista_pagamento):
-                distribuir_por_centros(
-                    pagamentos_por_centro,
-                    ordem_servico.data_prevista_pagamento,
-                    ordem_servico.valor,
-                    coordenador_ref,
-                    "Previsto",
-                )
-            for day,amount in cash_orders.get(ordem_servico.pk,[]):
-                if day:distribuir_por_centros(pagamentos_por_centro,day,amount,coordenador_ref,"Pago")
-
-        fig_barra_centros = go.Figure()
-        for centro in sorted(pagamentos_por_centro):
-            valores = []
-            for mes in meses:
-                valores.append(pagamentos_por_centro[centro][mes].get("Previsto", Decimal("0.00")))
-                valores.append(pagamentos_por_centro[centro][mes].get("Pago", Decimal("0.00")))
-            fig_barra_centros.add_trace(go.Bar(
-                name=centro,
-                x=[x_meses_previsto_pago, x_tipos_previsto_pago],
-                y=valores,
-            ))
-
-        fig_barra_centros.update_layout(
-            barmode="stack",
-            title="Pagamentos Previstos x Pagos por Centro (centros dos Líderes Técnicos)",
-            xaxis_title="Mês / Tipo",
-            yaxis_title="Valor (R$)",
-            template="plotly_white",
-            height=550,
-            legend_title="Centro",
-        )
-
-        grafico_barras_centros = plot(fig_barra_centros, output_type="div", include_plotlyjs=False, config={"responsive":True,"displaylogo":False})
-
-
-        # Série complementar por lançamento: não muda os relatórios por origem.
+        # Total por lançamento preservado também na visualização sem gráficos.
         event_ids = filter_payment_events_for_user(usuario, Q())
         order_ids = filter_payment_os_for_user(usuario, Q())
         if coordenador:
@@ -11691,9 +11694,15 @@ def previsao_pagamentos(request):
         # Global inclui também legado sem origem, para não ocultar pagamento registrado.
         if usuario.grupo in {'financeiro','suprimento','diretoria','gerente_contrato'} and not coordenador:
             nf_scope = NF.objects.all()
-        nf_paid_series = fq.monthly_paid_series(nf_scope,data_inicio_filtro,data_limite)
-        nf_paid_total = sum((item['total'] for item in nf_paid_series), Decimal('0'))
-        nf_paid_chart = nf_monthly_chart(nf_paid_series, include_plotlyjs=False)
+        if show_forecast_charts:
+            nf_paid_series = fq.monthly_paid_series(nf_scope,data_inicio_filtro,data_limite)
+            nf_paid_total = sum((item['total'] for item in nf_paid_series), Decimal('0'))
+            nf_paid_chart = nf_monthly_chart(nf_paid_series, include_plotlyjs=False)
+        else:
+            from .models import PagamentoNF
+            nf_paid_total = pq.money(PagamentoNF.objects.filter(
+                nf_id__in=nf_scope.values('pk'), data_pagamento__range=[data_inicio_filtro,data_limite]
+            ).aggregate(total=Sum(pq.signed_cents(),default=0))['total'])
         export_params = {'data_inicial':data_inicio_filtro.isoformat(), 'data_limite':data_limite.isoformat(),
             'filtro_bm':request.GET.get('filtro_bm','pagamento')}
         if coordenador: export_params['coordenador'] = coordenador.pk
@@ -11720,7 +11729,8 @@ def previsao_pagamentos(request):
         total_bm_previsto = sum(origens_previstas.values(), Decimal("0.00"))
 
     return render(request, "gestao_contratos/previsao_pagamentos.html", {
-        "form": form, "plotly_version":get_plotlyjs_version(),
+        "form": form, "plotly_version":get_plotlyjs_version() if show_forecast_charts else '',
+        "show_forecast_charts":show_forecast_charts,
         "forecast_period_notice":forecast_period_notice,"forecast_start":forecast_start,
         "nf_paid_series": nf_paid_series, "nf_paid_chart": nf_paid_chart, "nf_paid_total":nf_paid_total,
         "export_query":export_query, "bm_export_query":bm_export_query, "financial_panel_allowed":fq.can_view_financial_panel(request.user),
@@ -12608,6 +12618,8 @@ def detalhes_entrega(request, evento_id):
         bm.aprovacao_gerente_audit = approval_info.get("gerente")
         bm.aprovacao_diretor_audit = approval_info.get("diretor")
 
+    from .bm_payment_views import prepare_payment_rows
+    bms = prepare_payment_rows(bms,request.user)
     fornecedor = contrato.empresa_terceira if contrato and contrato.empresa_terceira else None
 
     tem_reprovacao_coordenador = any(bm.status_coordenador == "reprovado" for bm in bms)
@@ -13091,6 +13103,8 @@ def detalhe_bm_financeiro(request,bm_id):
         if not bm.contrato_financeiro: raise Http404
         qs=qs.filter(evento_id=bm.evento_id,os_id=bm.os_id,contrato_id=bm.contrato_financeiro.pk)
         qs=qs.filter(pk__in=[nf.pk for nf in qs if can_view_object(request.user,nf) and can_access_document(request.user,nf)])
+    from .bm_payment_views import prepare_payment_rows
+    prepare_payment_rows([bm],request.user)
     reconciliation=fr.bm_totals(bm,qs)
     page=Paginator(qs,20).get_page(request.GET.get('page'))
     back=approval_return_url(request,reverse('home'))

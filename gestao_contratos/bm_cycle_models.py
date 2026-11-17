@@ -5,6 +5,22 @@ from django.db import models
 from .payment_models import ImmutableFinancialRecord
 
 
+class JustificativaPagamentoBM(models.Model):
+    """Texto atual da Diretoria; decisões e suas justificativas originais são históricas."""
+    bm = models.ForeignKey('BM', on_delete=models.CASCADE, related_name='justificativas_pagamento')
+    ciclo = models.ForeignKey('CicloPagamentoBM', on_delete=models.PROTECT, null=True, blank=True, related_name='justificativas_atuais')
+    versao_material = models.CharField(max_length=64)
+    texto = models.TextField(blank=True, default='')
+    atualizado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['bm'], condition=models.Q(ciclo__isnull=True), name='justificativa_bm_inicial_unica'),
+            models.UniqueConstraint(fields=['bm', 'ciclo'], condition=models.Q(ciclo__isnull=False), name='justificativa_bm_ciclo_unica'),
+        ]
+
+
 class CicloPagamentoBM(ImmutableFinancialRecord):
     TIPOS = [('inicial', 'Programação inicial'), ('reprogramacao', 'Reprogramação por saldo pendente'), ('revisao', 'Revisão expressa do ciclo')]
     bm = models.ForeignKey('BM', on_delete=models.PROTECT, related_name='ciclos_pagamento')

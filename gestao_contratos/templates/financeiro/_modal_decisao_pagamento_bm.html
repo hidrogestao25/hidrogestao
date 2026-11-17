@@ -2,10 +2,10 @@
 <div class="modal fade" id="decisaoPagamentoBMModal" tabindex="-1" aria-labelledby="decisaoPagamentoBMTitle" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
     <form method="post" data-bm-payment-form>
-      {% csrf_token %}<input type="hidden" name="acao">
+      {% csrf_token %}<input type="hidden" name="acao"><input type="hidden" name="token">
       <div class="modal-header"><h2 class="modal-title fs-5" id="decisaoPagamentoBMTitle">Decisão de pagamento do BM</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
       <div class="modal-body">
-        <p class="small text-muted">Esta decisão autoriza ou bloqueia novas liquidações. O pagamento efetivo é registrado pelo Financeiro, com saldo e comprovante próprios.</p>
+        <p class="small text-muted" data-bm-payment-description>Esta decisão autoriza ou bloqueia novas liquidações. O pagamento efetivo é registrado pelo Financeiro, com saldo e comprovante próprios.</p>
         <label for="justificativaPagamentoBM" class="form-label" data-bm-payment-label>Justificativa</label>
         <textarea id="justificativaPagamentoBM" name="justificativa" class="form-control" rows="4" maxlength="4000"></textarea>
         <p class="alert alert-danger mt-3 d-none" role="alert" data-bm-payment-error></p>
@@ -14,5 +14,5 @@
     </form>
   </div></div>
 </div>
-<script src="{% static 'js/decisao_pagamento_bm.js' %}" defer></script>
+<script src="{% static 'js/decisao_pagamento_bm.js' %}?v=20261116-previsao" defer></script>
 {% endif %}
